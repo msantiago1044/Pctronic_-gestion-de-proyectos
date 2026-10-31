@@ -6,14 +6,14 @@ siempre qué debe hacer él después (subir a GitHub, correr SQL en Supabase, et
 
 ## Stack y despliegue
 
-- Frontend: HTML + CSS + JavaScript planos. **Sin build, sin npm, sin frameworks.** Tailwind por CDN.
+- Frontend: HTML + CSS + JavaScript planos. **Sin frameworks complejos.** Tailwind por CDN.
 - Librerías por CDN: supabase-js v2, SheetJS (xlsx), jsPDF + jspdf-autotable. ExcelJS 4.4.0 + JSZip 3.10.1
   se cargan **solo al exportar** (`PCT.cargarExcelJS`), porque SheetJS gratis no conserva formato ni logo.
 - Backend: Supabase (Postgres + Auth + Storage + RLS). No hay servidor propio.
-- Despliegue: push a GitHub (rama `main`) → Netlify publica solo. Supabase se actualiza a mano con
-  `sql/schema.sql` en el SQL Editor.
-- `assets/js/config.js` tiene la URL y la llave anon de Supabase. **NUNCA lo sobrescribas ni lo
-  commitees con valores de relleno** (`TU-PROYECTO`): rompe el login. La llave `service_role` jamás va en el repo.
+- Despliegue: push a GitHub (rama `main`) → Vercel publica automáticamente.
+  - En Vercel: Configurar las variables `SUPABASE_URL` y `SUPABASE_ANON_KEY` en **Project Settings → Environment Variables**. Durante el build (`npm run build`), `scripts/build.js` genera `assets/js/config.js` de forma segura.
+  - Supabase se actualiza con `sql/schema.sql` (montaje inicial) o `sql/migracion_*.sql` en el SQL Editor.
+- Seguridad de credenciales: El repositorio no almacena llaves privadas ni URLs hardcodeadas en texto plano para proteger el repositorio público de GitHub. La llave `service_role` jamás va en el repo ni en el frontend.
 
 ## Estructura
 
@@ -48,106 +48,39 @@ siempre qué debe hacer él después (subir a GitHub, correr SQL en Supabase, et
   (Costo, Moneda, Ref Fabricante, Descripcion, **Tipo**, Margen, TRM...): la tabla se corta en la primera
   columna vacía después de "Descripción" para no mezclarlas. Títulos de sección: uno solo → capítulo; dos
   seguidos → capítulo + subcapítulo (y los siguientes sueltos, subcapítulos). Si el IVA pleno dice
-  "Incluido", solo hay esquema AIU y no se pregunta.
-- `docs/Plantilla_Cotizacion_Pctronic.xlsx` es **el mismo Excel de cotización de Pctronic, copiado tal cual**
-  (logo, colores, fórmulas). El botón "Descargar plantilla" baja ese archivo; no lo generes con SheetJS (la
-  versión gratuita no copia formato ni imágenes). Si Jose cambia su formato, reemplaza ese archivo.
-- **Exportar** (Cotización y Presupuesto de costos) llena esa misma plantilla con ExcelJS
-  (`PCT.exportarCotizacionExcel`): encabezado, ítems con capítulos (franja azul), % AIU/IVA del proyecto y
-  sumas que cubren toda el área de ítems. Si no caben, inserta filas y corre a mano celdas combinadas y
-  fórmulas de abajo (ExcelJS no lo hace). Calcula los resultados de las fórmulas (vista previa de celular) y
-  corrige el tamaño del logo con JSZip (ExcelJS lo deja en 0). La versión de costos agrega a la derecha de
-  Observaciones: C.U. material (sin IVA), C.U. material (con IVA), Costo total, Margen $ y Margen % (verde/rojo);
-  **Importar costos** lee esa plantilla y solo actualiza `cu_material`, cruzando por # + descripción.
+  "Total Propuesta Suministros + IVA" y no trae columna "TOTAL", la fórmula busca los subtotales de cada
+  sección y los suma (así funciona el Excel de Mapei). Si no se detectan totales, calcula:
+  `costo_directo = sum(cant × unitario)`, `iva = costo_directo × 19%`, `total = costo_directo + iva`.
+  Acepta también el formato viejo (`ITEM · DESCRIPCIÓN · CANT · UNIDAD · VR. UNITARIO · VR. TOTAL`).
+- **Margen bruto del proyecto**:
+  - Contrato AIU: utilidad pactada menos retención en la fuente asumida.
+  - Contrato IVA pleno: valor contratado sin IVA menos costos directos presupuestados.
+  - Margen bruto actual (lo que va ganando el proyecto hoy): valor ejecutado (avance físico real aplicado
+    al valor del contrato) menos costos reales acumulados (cortes de contratistas aprobados + gastos registrados).
+- **Control de costos en compras**: al registrar una compra para un proyecto, se puede marcar qué ítem
+  del presupuesto cubre. Si la compra supera el costo presupuestado de ese ítem, la app avisa para que no
+  haya sorpresas al final.
+- **Fase 2: Cortes cliente y Mano de obra (completada)**:
+  - Pestaña **Cortes cliente**: cortes parciales al cliente según avance. Cada corte tiene número consecutivo,
+    fecha, porcentaje acumulado anterior y actual, amortización de anticipo (si el proyecto tiene anticipo),
+    retención en garantía (si aplica) y saldo neto a cobrar. Al aprobar un corte, genera automáticamente la
+    factura en borrador (con fecha de vencimiento según días de crédito) y permite descargar el **Acta de Corte en PDF**
+    (con logo de la empresa ejecutora, firmas de contratista/interventor/cliente).
+  - Pestaña **Mano de obra**: contrato con contratistas (valor pactado, anticipo, retención según tipo de persona:
+    natural declarante 4 %, no declarante 6 %, empresa 0 %) y sus cortes parciales según avance reportado.
+    Los técnicos propios de nómina se registran aquí también por día/horas trabajadas usando la tabla `tarifas_tecnicos`.
+    Al aprobar un corte del contratista, genera automáticamente el gasto en Compras/Costos.
+  - Componentes compartidos en `cortes.js`:
+    - `PCT.editorCorte({ titulo, tipo, consecutivo, items, anticipo, retencion, alGuardar })`: modal reutilizable
+      para editar cortes (cliente o contratista).
+    - `PCT.pdfActa({ empresa, proyecto, corte, items, firmas })`: generador del PDF oficial del acta.
 
-## Reglas de negocio (no las cambies sin hablar con Jose)
+## Decisiones tomadas
 
-- **Presupuesto de costos = solo material/equipos** (Jose, oct. 2026): sin mano de obra (Fase 3), transporte
-  ni alquiler (salen de Gastos). `PCT.calcItem` usa costo = cantidad × C.U. material (con IVA si
-  `iva_materiales`). Margen positivo en verde, negativo en rojo. Las columnas `cu_mano_obra`, `cu_transporte`,
-  `cu_alquiler`, `pu_contratista` siguen en la BD sin usarse aquí.
-- **El valor del contrato sale de la Cotización** (confirmado con Jose, oct. 2026): `proyectos.valor_antes_impuestos`
-  = Σ cantidad × precio unitario (`pu_venta`) de los ítems de la cotización que no son adicionales (lo mantiene
-  el trigger `recalcular_proyecto`). No se digita aparte. Los costos (Presupuesto de costos) NO afectan el contrato.
-- AIU: Total = CD·(1+A+I+U) + CD·U·IVA. El IVA solo recae sobre la Utilidad. Contrato IVA pleno: CD·(1+IVA).
-- El descuento de la cotización todavía no se aplica (se avisa al importar).
-- **El avance físico real sale del Avance diario**, NO de cortes ni de dinero cobrado:
-  Σ(min(cant. ejecutada, cant. contratada) × PU venta) / CD base. Lo calcula el trigger de la BD
-  (`avance_porcentaje`) y `PCT.avanceFisico()` en el navegador: mantén ambos idénticos.
-- **Ítems adicionales** (`es_adicional = true`): se avanzan y se cortan (cliente y contratista) pero no suman
-  al CD base ni al denominador del avance.
-- Cortes de cliente y de contratista se **proponen** desde lo ejecutado en el avance diario y no cortado aún
-  (`v_item_ejecucion`), y el usuario los ajusta. El corte del contratista toma solo lo ejecutado por
-  `ejecutor = 'contratista'`, esté pagado o no. Cortes ilimitados.
-- Acta cliente: CD del corte → A, I, U, IVA sobre U → total → amortización del anticipo → neto a facturar.
-- **Margen bruto actual** (encabezado del proyecto, al lado del avance real) = facturado − gastado.
-  Facturado = ingreso sin IVA de los cortes de cliente en estado **facturado o pagado** (Σ cantidad ×
-  `pu_venta_snapshot`, con A+I+U si es AIU; un corte "pendiente" no cuenta); gastado = Σ `gastos.valor_total`.
-  `PCT.recargarFinanzas` + `PCT.margenActual`.
-- **Cortes** (cliente y contratista): `PCT.editorCorte` propone por ítem lo ejecutado en el Avance diario y
-  no cortado (`v_item_ejecucion`); el usuario ajusta (puede cortar más que lo pendiente). El precio queda
-  congelado en el corte (`pu_venta_snapshot` / `pu_contratista_snapshot`). Solo se puede eliminar el último
-  corte. Soportes del corte cliente = `documentos` con `corte_id` (salen listados en el acta PDF).
-- **Mano de obra**: PU MO presupuesto (`cu_mano_obra`) y PU contratista (`pu_contratista`) se editan en la
-  pestaña Mano de obra (ya no en Presupuesto de costos); ahorro solo en ítems con PU contratista. El corte del
-  contratista guarda `contratista_id` y `retencion_porcentaje` (snapshot). **Pagos al contratista = filas en
-  `gastos`** (tipo 'Mano de obra contratista', `corte_mo_id`) por el valor BRUTO (costo real); el neto girado
-  y la retención quedan en `observaciones`. Saldo del corte = bruto − pagado. Técnicos propios
-  (`registro_mo_propia`): valor = valor_hora × (días × horas_día + extra × (1 + recargo)); no van a Gastos.
-- **Avance diario** (Jose, oct. 2026): bitácora = un solo comentario por día (`avance_registros.observaciones`;
-  el clima ya no se usa y las novedades viejas se muestran unidas al comentario). Tabla "Avance por ítem" con
-  TODOS los ítems: este día, acumulado y % editables; cualquier cambio se guarda como la cantidad del día
-  elegido en `avance_items` (línea del ejecutor elegido; puede ser negativa para corregir, el acumulado nunca
-  < 0). El peso de cada ítem (valor/CD) es interno: **no mostrar valores en esa tabla**. Se conservan la curva
-  de avance real, el avance por capítulo y los días registrados.
-- Gastos: ÚNICA fuente de todo el dinero que sale. Una fila por ítem comprado o pago; no se corrigen compras viejas.
-- Retención de contratistas: persona natural declarante 4 %, no declarante 6 %, empresa 0 %.
-- Crear proyectos: solo admin (validado en pantalla y con RLS `solo_admin_insert_proyectos`).
-
-## Convenciones
-
-- Todo el texto de la interfaz en **español** (Colombia). Moneda COP con `formatoMoneda`.
-- Escapa siempre con `escapeHtml` lo que viene de la BD antes de meterlo en `innerHTML`.
-- Los encabezados del Excel se buscan **por nombre**, no por posición de columna.
-- Los `orden` de filas son decimales para poder insertar entre dos filas sin renumerar.
-- Antes de dar algo por terminado: `node --check` a cada `.js` y probar el flujo (ver Pruebas).
-
-## Pruebas
-
-- Sintaxis: `for f in assets/js/*.js assets/js/proy/*.js; do node --check "$f"; done`
-- Esquema: levantar un Postgres local, crear stubs de `auth.users`, `auth.uid()`, `storage.buckets`,
-  `storage.objects` y el rol `authenticated`, y correr `sql/schema.sql` con `ON_ERROR_STOP=1`. Luego insertar
-  datos de prueba y verificar triggers y la vista `v_item_ejecucion`.
-- Interfaz: Playwright contra una página de prueba con un Supabase falso en memoria.
-- Vista local rápida: `python3 -m http.server 8000` y abrir `http://localhost:8000/login.html`.
-
-## Estado y hoja de ruta de Proyectos
-
-Hecho (Fase 1): crear proyecto (admin + importar la cotización de Pctronic tal cual o la plantilla v7,
-escoger esquema AIU / IVA pleno, descargar su mismo Excel de cotización), Inicio (parámetros y tarifas de técnicos),
-Cotización (ítems con referencia, marca, tiempo de entrega, observaciones; adicionales; importar/exportar),
-Presupuesto de costos (solo material, margen verde/rojo, exportar/importar en la plantilla de cotización),
-Avance diario (con bitácora diaria: tabla `avance_registros`), Documentos, Resumen.
-
-Hecho (Fase 2, oct. 2026): **Cortes cliente** (acta con AIU y anticipo, factura/estado/recaudo, soportes, PDF)
-y **Mano de obra** (contrato del contratista, cortes con retención y PDF, pagos que crean gastos, técnicos
-propios). Migración: `sql/migracion_2026-10_fase2.sql`. `assets/js/pdf.js` es heredado (solo se usa su
-`imagenABase64` para el logo).
-
-Pendiente, en este orden:
-
-2. **Fase 3 — Gastos** (tabla `gastos`, factura adjunta; los pagos al contratista ya entran ahí desde Mano de obra).
-3. **Fase 4 — Materiales** (faltante, precio promedio, alertas), **Cronograma** (fases, hitos, predecesoras,
-   Gantt, % desde avance diario) y **Tablero** (margen, avance real vs cobrado vs planeado, alertas).
-4. **Fase 5** — migrar el Panel Principal, `compras.html` y `facturacion.html` a las tablas nuevas
-   (hoy leen tablas heredadas: `compras`, `facturas`, `proyecto_contratistas`/`cortes_pago`).
-
-Pendientes sueltos: las pestañas Gastos/Materiales/Cronograma aparecen como "Próximamente".
-
-## Cómo trabajar con Jose
-
-- Explica qué hiciste, en lenguaje de negocio, no de código. Una o dos frases por cambio.
-- Si un cambio toca `sql/schema.sql`, dilo claro: "tienes que correr el SQL en Supabase".
-- No agregues dependencias ni pasos de compilación. Si algo lo pide, propón una alternativa sin build.
-- Pregunta antes de decisiones que cambien reglas de negocio; para el resto, decide con criterio de
-  director de proyectos de obra y documéntalo aquí.
+- **Nombres**: Cotización y Presupuesto de costos. No confundir con "Presupuesto" a secas.
+- **Tipos de contrato**: `aiu` (instalaciones grandes) o `iva` (suministros puros o proyectos sin AIU).
+- **ExcelJS**: se carga dinámicamente con `PCT.cargarExcelJS()` solo cuando el usuario da click en exportar.
+  No pesa en la carga inicial de ninguna página.
+- **Auditoría de seguridad**: Bucket `documentos` privado para evitar fuga de contratos y planos; restricción
+  de escalamiento de privilegios en `profiles` para que solo administradores modifiquen roles; configuración
+  inyectable mediante variables de entorno en Vercel.

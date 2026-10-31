@@ -718,18 +718,38 @@ create policy "solo_admin_insert_proyectos" on public.proyectos
     exists (select 1 from public.profiles p where p.id = auth.uid() and p.rol = 'admin')
   );
 
+-- Restricción en profiles: los miembros solo actualizan su propio perfil y no pueden escalar a admin.
+drop policy if exists "authenticated_update" on public.profiles;
+create policy "usuarios_update_propio_o_admin" on public.profiles
+  for update to authenticated
+  using (
+    id = auth.uid() or
+    exists (select 1 from public.profiles p where p.id = auth.uid() and p.rol = 'admin')
+  )
+  with check (
+    (exists (select 1 from public.profiles p where p.id = auth.uid() and p.rol = 'admin'))
+    or
+    (id = auth.uid() and rol = (select p2.rol from public.profiles p2 where p2.id = auth.uid()))
+  );
+
+drop policy if exists "authenticated_delete" on public.profiles;
+create policy "solo_admin_delete_profiles" on public.profiles
+  for delete to authenticated
+  using (
+    exists (select 1 from public.profiles p where p.id = auth.uid() and p.rol = 'admin')
+  );
+
 -- ----------------------------------------------------------------------------
--- 20. ALMACENAMIENTO (fotos de perfil)
+-- 20. ALMACENAMIENTO (avatars, logos y documentos)
 -- ----------------------------------------------------------------------------
--- 'avatars' = fotos de perfil, 'logos' = logos de tus empresas (para los PDF),
--- 'documentos' = archivos adjuntos de cada proyecto (contratos, planos, etc).
--- Los tres son públicos para simplificar (igual que el resto de la app, la
--- seguridad real es que solo tu equipo tiene usuario).
+-- 'avatars' = fotos de perfil (público), 'logos' = logos para PDFs (público)
+-- 'documentos' = archivos del proyecto (planos, contratos) -> PRIVADO (requiere auth).
 do $$
 declare
   b text;
 begin
-  for b in select unnest(array['avatars','logos','documentos'])
+  -- Buckets públicos: avatars y logos
+  for b in select unnest(array['avatars','logos'])
   loop
     insert into storage.buckets (id, name, public)
     values (b, b, true)
@@ -747,6 +767,28 @@ begin
     execute format('drop policy if exists "%s_authenticated_delete" on storage.objects;', b);
     execute format('create policy "%s_authenticated_delete" on storage.objects for delete to authenticated using (bucket_id = %L);', b, b);
   end loop;
+
+  -- Bucket privado: documentos de proyecto
+  insert into storage.buckets (id, name, public)
+  values ('documentos', 'documentos', false)
+  on conflict (id) do update set public = false;
+
+  drop policy if exists "documentos_public_read" on storage.objects;
+  drop policy if exists "documentos_authenticated_read" on storage.objects;
+  create policy "documentos_authenticated_read" on storage.objects
+    for select to authenticated using (bucket_id = 'documentos');
+
+  drop policy if exists "documentos_authenticated_write" on storage.objects;
+  create policy "documentos_authenticated_write" on storage.objects
+    for insert to authenticated with check (bucket_id = 'documentos');
+
+  drop policy if exists "documentos_authenticated_update" on storage.objects;
+  create policy "documentos_authenticated_update" on storage.objects
+    for update to authenticated using (bucket_id = 'documentos');
+
+  drop policy if exists "documentos_authenticated_delete" on storage.objects;
+  create policy "documentos_authenticated_delete" on storage.objects
+    for delete to authenticated using (bucket_id = 'documentos');
 end $$;
 
 -- ----------------------------------------------------------------------------

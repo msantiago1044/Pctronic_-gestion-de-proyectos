@@ -57,6 +57,12 @@
 
 <script src="assets/js/layout.js"></script>
 <script>
+  if (!window.PCTRONIC_IS_CONFIGURED) {
+    const errorEl = document.getElementById("login-error");
+    errorEl.textContent = "⚠️ La app aún no tiene configuradas las credenciales de Supabase. Agrégalas en el panel de Vercel (Settings -> Environment Variables) o en assets/js/config.js.";
+    errorEl.classList.remove("hidden");
+  }
+
   document.getElementById("form-login").addEventListener("submit", async (e) => {
     e.preventDefault();
     const email = document.getElementById("email").value.trim();
@@ -78,7 +84,7 @@
           'Este usuario no está confirmado. En Supabase, ve a Authentication → Users, ábrelo y marca "Confirm email" (o bórralo y créalo de nuevo marcando "Auto Confirm User").';
       } else if (/failed to fetch|networkerror/i.test(error.message)) {
         mensaje =
-          "No se pudo conectar con Supabase. Revisa que copiaste bien la URL y la llave en assets/js/config.js.";
+          "No se pudo conectar con Supabase. Revisa que copiaste bien la URL y la llave en assets/js/config.js o en las variables de entorno de Vercel.";
       } else if (error.message) {
         mensaje = "Error de Supabase: " + error.message;
       }
