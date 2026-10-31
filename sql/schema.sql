@@ -28,6 +28,8 @@ create extension if not exists "pgcrypto";
 -- ----------------------------------------------------------------------------
 -- 0. LIMPIEZA PREVIA
 -- ----------------------------------------------------------------------------
+drop table if exists public.crm_actividades cascade;
+drop table if exists public.crm_oportunidades cascade;
 drop table if exists public.cronograma_actividades cascade;
 drop table if exists public.registro_mo_propia cascade;
 drop table if exists public.tarifas_tecnicos cascade;

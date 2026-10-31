@@ -56,6 +56,7 @@ Aplicación web para gestión integral de proyectos de seguridad electrónica (C
 ├── login.html              → Pantalla de autenticación
 ├── dashboard.html          → Panel de control y KPIs de gerencia
 ├── proyectos.html          → Listado general de proyectos
+├── crm.html                → CRM Comercial (embudo comercial estilo Asana con conversión a Proyectos)
 ├── proyecto-nuevo.html      → Asistente para crear proyecto (importa cotizaciones Excel)
 ├── proyecto-detalle.html    → Vista integral: Cotización, Costos, Avance, Cortes, Mano de Obra, Documentos
 ├── facturacion.html         → Control de facturas emitidas y pendientes

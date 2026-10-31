@@ -20,6 +20,10 @@ siempre qué debe hacer él después (subir a GitHub, correr SQL en Supabase, et
 - `*.html` una página por vista; `assets/js/<pagina>.js` su lógica; `assets/js/layout.js` barra lateral,
   login obligatorio y `window.pctronicReady` (→ `{session, profile}`, `profile.rol` = `admin|miembro`).
 - `assets/js/util.js` formato de moneda/fechas, `mostrarAviso`, `manejarError`, campos de moneda.
+- **CRM Comercial** (`crm.html` y `assets/js/crm.js`): ubicado en el menú entre Proyectos y Facturación.
+  Inspirado en Asana: vista dual (Tablero Kanban + Lista agrupada con subtotales), panel lateral derecho deslizante
+  (slide-over drawer) para editar sin tapar la pantalla, feed cronológico de actividades y botón para
+  **Convertir en Proyecto Operativo** en 1 solo clic al cerrar la venta.
 - **Proyectos** (el núcleo, en rediseño): `proyecto-nuevo.html`, `proyecto-detalle.html` y los módulos
   `assets/js/proy/*.js`, todos colgados de `window.PCT`:
   `core.js` (estado, carga, cálculos, modal) · `importar.js` (Excel: cotización de Pctronic y plantilla v7,

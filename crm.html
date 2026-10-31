@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CRM Comercial · Pctronic</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+<script>
+  tailwind.config = {
+    theme: { extend: { colors: { primary: "#135bec" }, fontFamily: { display: ["Inter", "sans-serif"] } } },
+  };
+</script>
+<link rel="stylesheet" href="assets/css/styles.css" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/supabaseClient.js"></script>
+<script src="assets/js/util.js"></script>
+</head>
+<body data-page="crm" data-title="CRM Comercial" class="font-display bg-gray-50 text-gray-900 antialiased overflow-x-hidden">
+
+<div id="app-sidebar"></div>
+<div class="lg:pl-64 flex flex-col min-h-screen">
+  <div id="app-topbar"></div>
+
+  <main class="flex-1 p-6 space-y-6">
+    <!-- Encabezado con título, selector de vistas estilo Asana y botón nuevo -->
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <div class="flex items-center gap-3">
+          <h1 class="text-2xl font-bold text-gray-900">Embudo de Ventas</h1>
+          <!-- Selector de Vista estilo Asana -->
+          <div class="inline-flex rounded-lg border border-gray-200 bg-white p-1 shadow-sm">
+            <button id="btn-vista-tablero" type="button"
+              class="flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold bg-primary text-white transition-colors">
+              <span class="material-symbols-outlined text-[16px]">view_kanban</span> Tablero
+            </button>
+            <button id="btn-vista-lista" type="button"
+              class="flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold text-gray-600 hover:text-gray-900 transition-colors">
+              <span class="material-symbols-outlined text-[16px]">format_list_bulleted</span> Lista
+            </button>
+          </div>
+        </div>
+        <p class="text-xs text-gray-500 mt-1">Gestión comercial, visitas técnicas y cotizaciones de seguridad electrónica</p>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button id="btn-nueva-oportunidad" type="button"
+          class="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors">
+          <span class="material-symbols-outlined text-[18px]">add</span> Nueva Oportunidad
+        </button>
+      </div>
+    </div>
+
+    <!-- KPIs Comerciales -->
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" id="kpi-cards">
+      <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <p class="text-xs font-medium text-gray-500">Pipeline Ponderado</p>
+        <p id="kpi-pipeline" class="mt-1 text-xl font-bold text-gray-900">$ 0</p>
+        <p class="text-[11px] text-gray-400 mt-0.5">Valor ajustado por probabilidad</p>
+      </div>
+      <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <p class="text-xs font-medium text-gray-500">Oportunidades Abiertas</p>
+        <p id="kpi-activas" class="mt-1 text-xl font-bold text-gray-900">0</p>
+        <p class="text-[11px] text-gray-400 mt-0.5">En proceso de negociación</p>
+      </div>
+      <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <p class="text-xs font-medium text-gray-500">Tasa de Conversión</p>
+        <p id="kpi-conversion" class="mt-1 text-xl font-bold text-emerald-600">0%</p>
+        <p class="text-[11px] text-gray-400 mt-0.5">Ganadas vs. total cerradas</p>
+      </div>
+      <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <p class="text-xs font-medium text-gray-500">Ganadas este Mes</p>
+        <p id="kpi-ganadas-mes" class="mt-1 text-xl font-bold text-emerald-600">$ 0</p>
+        <p class="text-[11px] text-gray-400 mt-0.5">Total cotizaciones cerradas</p>
+      </div>
+    </div>
+
+    <!-- Barra de Filtros y Búsqueda -->
+    <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="relative w-72">
+          <span class="material-symbols-outlined absolute left-3 top-2.5 text-gray-400 text-[18px]">search</span>
+          <input id="filtro-busqueda" type="search" placeholder="Buscar negocio, cliente o contacto..."
+            class="w-full rounded-lg border-gray-200 pl-9 text-xs focus:border-primary focus:ring-primary shadow-sm" />
+        </div>
+        <select id="filtro-servicio" class="rounded-lg border-gray-200 text-xs focus:border-primary focus:ring-primary shadow-sm">
+          <option value="">Servicio: Todos</option>
+          <option value="cctv">CCTV y Cámaras</option>
+          <option value="control_acceso">Control de Acceso</option>
+          <option value="incendio">Detección de Incendio</option>
+          <option value="cableado">Cableado / Voz y Datos</option>
+          <option value="alarmas">Alarmas y Sensores</option>
+          <option value="integral">Proyecto Integral</option>
+          <option value="otro">Otro</option>
+        </select>
+        <select id="filtro-responsable" class="rounded-lg border-gray-200 text-xs focus:border-primary focus:ring-primary shadow-sm">
+          <option value="">Comercial: Todos</option>
+        </select>
+      </div>
+
+      <div class="text-xs text-gray-500" id="contador-resultados">
+        Cargando oportunidades...
+      </div>
+    </div>
+
+    <!-- VISTA 1: TABLERO KANBAN (Estilo Asana) -->
+    <div id="vista-tablero" class="flex gap-4 overflow-x-auto pb-4 items-start select-none">
+      <!-- 1. Prospecto / Lead -->
+      <div class="kanban-col flex-shrink-0 w-80 rounded-xl bg-gray-100/90 border border-gray-200 p-3 flex flex-col max-h-[calc(100vh-280px)]" data-etapa="prospecto">
+        <div class="flex items-center justify-between pb-2 mb-2 border-b border-gray-200">
+          <div class="flex items-center gap-2">
+            <span class="h-2.5 w-2.5 rounded-full bg-slate-400"></span>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-gray-700">Prospecto / Lead</h2>
+            <span class="col-count text-[11px] font-semibold text-gray-500 bg-white px-2 py-0.5 rounded-full border border-gray-200">0</span>
+          </div>
+          <span class="col-subtotal text-xs font-semibold text-gray-600">$ 0</span>
+        </div>
+        <div class="col-cards space-y-3 overflow-y-auto flex-1 pr-1 py-1" id="cards-prospecto"></div>
+        <button type="button" data-add-etapa="prospecto" class="btn-col-add mt-2 flex items-center justify-center gap-1 w-full rounded-lg border border-dashed border-gray-300 py-2 text-xs font-medium text-gray-500 hover:border-gray-400 hover:bg-white hover:text-gray-800 transition-colors">
+          <span class="material-symbols-outlined text-[16px]">add</span> Añadir oportunidad
+        </button>
+      </div>
+
+      <!-- 2. Visita Técnica -->
+      <div class="kanban-col flex-shrink-0 w-80 rounded-xl bg-gray-100/90 border border-gray-200 p-3 flex flex-col max-h-[calc(100vh-280px)]" data-etapa="visita">
+        <div class="flex items-center justify-between pb-2 mb-2 border-b border-gray-200">
+          <div class="flex items-center gap-2">
+            <span class="h-2.5 w-2.5 rounded-full bg-indigo-500"></span>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-gray-700">Visita Técnica</h2>
+            <span class="col-count text-[11px] font-semibold text-gray-500 bg-white px-2 py-0.5 rounded-full border border-gray-200">0</span>
+          </div>
+          <span class="col-subtotal text-xs font-semibold text-gray-600">$ 0</span>
+        </div>
+        <div class="col-cards space-y-3 overflow-y-auto flex-1 pr-1 py-1" id="cards-visita"></div>
+        <button type="button" data-add-etapa="visita" class="btn-col-add mt-2 flex items-center justify-center gap-1 w-full rounded-lg border border-dashed border-gray-300 py-2 text-xs font-medium text-gray-500 hover:border-gray-400 hover:bg-white hover:text-gray-800 transition-colors">
+          <span class="material-symbols-outlined text-[16px]">add</span> Añadir oportunidad
+        </button>
+      </div>
+
+      <!-- 3. Cotización Enviada -->
+      <div class="kanban-col flex-shrink-0 w-80 rounded-xl bg-gray-100/90 border border-gray-200 p-3 flex flex-col max-h-[calc(100vh-280px)]" data-etapa="cotizacion">
+        <div class="flex items-center justify-between pb-2 mb-2 border-b border-gray-200">
+          <div class="flex items-center gap-2">
+            <span class="h-2.5 w-2.5 rounded-full bg-amber-500"></span>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-gray-700">Cotización</h2>
+            <span class="col-count text-[11px] font-semibold text-gray-500 bg-white px-2 py-0.5 rounded-full border border-gray-200">0</span>
+          </div>
+          <span class="col-subtotal text-xs font-semibold text-gray-600">$ 0</span>
+        </div>
+        <div class="col-cards space-y-3 overflow-y-auto flex-1 pr-1 py-1" id="cards-cotizacion"></div>
+        <button type="button" data-add-etapa="cotizacion" class="btn-col-add mt-2 flex items-center justify-center gap-1 w-full rounded-lg border border-dashed border-gray-300 py-2 text-xs font-medium text-gray-500 hover:border-gray-400 hover:bg-white hover:text-gray-800 transition-colors">
+          <span class="material-symbols-outlined text-[16px]">add</span> Añadir oportunidad
+        </button>
+      </div>
+
+      <!-- 4. Negociación -->
+      <div class="kanban-col flex-shrink-0 w-80 rounded-xl bg-gray-100/90 border border-gray-200 p-3 flex flex-col max-h-[calc(100vh-280px)]" data-etapa="negociacion">
+        <div class="flex items-center justify-between pb-2 mb-2 border-b border-gray-200">
+          <div class="flex items-center gap-2">
+            <span class="h-2.5 w-2.5 rounded-full bg-blue-500"></span>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-gray-700">Negociación</h2>
+            <span class="col-count text-[11px] font-semibold text-gray-500 bg-white px-2 py-0.5 rounded-full border border-gray-200">0</span>
+          </div>
+          <span class="col-subtotal text-xs font-semibold text-gray-600">$ 0</span>
+        </div>
+        <div class="col-cards space-y-3 overflow-y-auto flex-1 pr-1 py-1" id="cards-negociacion"></div>
+        <button type="button" data-add-etapa="negociacion" class="btn-col-add mt-2 flex items-center justify-center gap-1 w-full rounded-lg border border-dashed border-gray-300 py-2 text-xs font-medium text-gray-500 hover:border-gray-400 hover:bg-white hover:text-gray-800 transition-colors">
+          <span class="material-symbols-outlined text-[16px]">add</span> Añadir oportunidad
+        </button>
+      </div>
+
+      <!-- 5. Ganada -->
+      <div class="kanban-col flex-shrink-0 w-80 rounded-xl bg-emerald-50/80 border border-emerald-200 p-3 flex flex-col max-h-[calc(100vh-280px)]" data-etapa="ganada">
+        <div class="flex items-center justify-between pb-2 mb-2 border-b border-emerald-200">
+          <div class="flex items-center gap-2">
+            <span class="h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-emerald-800">Ganada / Cierre</h2>
+            <span class="col-count text-[11px] font-semibold text-emerald-700 bg-white px-2 py-0.5 rounded-full border border-emerald-200">0</span>
+          </div>
+          <span class="col-subtotal text-xs font-semibold text-emerald-800">$ 0</span>
+        </div>
+        <div class="col-cards space-y-3 overflow-y-auto flex-1 pr-1 py-1" id="cards-ganada"></div>
+        <button type="button" data-add-etapa="ganada" class="btn-col-add mt-2 flex items-center justify-center gap-1 w-full rounded-lg border border-dashed border-emerald-300 py-2 text-xs font-medium text-emerald-600 hover:bg-white transition-colors">
+          <span class="material-symbols-outlined text-[16px]">add</span> Añadir oportunidad
+        </button>
+      </div>
+
+      <!-- 6. Perdida -->
+      <div class="kanban-col flex-shrink-0 w-80 rounded-xl bg-rose-50/80 border border-rose-200 p-3 flex flex-col max-h-[calc(100vh-280px)]" data-etapa="perdida">
+        <div class="flex items-center justify-between pb-2 mb-2 border-b border-rose-200">
+          <div class="flex items-center gap-2">
+            <span class="h-2.5 w-2.5 rounded-full bg-rose-500"></span>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-rose-800">Perdida / Cancelada</h2>
+            <span class="col-count text-[11px] font-semibold text-rose-700 bg-white px-2 py-0.5 rounded-full border border-rose-200">0</span>
+          </div>
+          <span class="col-subtotal text-xs font-semibold text-rose-800">$ 0</span>
+        </div>
+        <div class="col-cards space-y-3 overflow-y-auto flex-1 pr-1 py-1" id="cards-perdida"></div>
+      </div>
+    </div>
+
+    <!-- VISTA 2: LISTA AGRUPADA (Estilo Asana) -->
+    <div id="vista-lista" class="hidden space-y-6">
+      <div id="lista-secciones" class="space-y-4"></div>
+    </div>
+  </main>
+</div>
+
+<!-- ======================================================================== -->
+<!-- SLIDE-OVER DRAWER (Panel Lateral Derecho estilo Asana)                    -->
+<!-- ======================================================================== -->
+<div id="drawer-backdrop" class="fixed inset-0 bg-gray-900/30 backdrop-blur-sm z-40 hidden transition-opacity"></div>
+
+<div id="drawer-panel"
+  class="fixed inset-y-0 right-0 z-50 w-full max-w-xl bg-white shadow-2xl flex flex-col transform translate-x-full transition-transform duration-200 ease-in-out">
+  
+  <!-- Header del Drawer -->
+  <div class="flex items-center justify-between border-b border-gray-100 px-6 py-4 bg-gray-50/70">
+    <div class="flex items-center gap-2">
+      <button id="btn-drawer-ganada" type="button"
+        class="flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors">
+        <span class="material-symbols-outlined text-[16px]">check_circle</span> Ganada
+      </button>
+      <button id="btn-drawer-perdida" type="button"
+        class="flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 transition-colors">
+        <span class="material-symbols-outlined text-[16px]">cancel</span> Perdida
+      </button>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <button id="btn-drawer-cerrar" type="button" class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-200 hover:text-gray-700" title="Cerrar panel">
+        <span class="material-symbols-outlined text-[20px]">close</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Contenido scrollable del Drawer -->
+  <div class="flex-1 overflow-y-auto p-6 space-y-6">
+    <!-- Título de la Oportunidad -->
+    <div>
+      <input id="drawer-titulo" type="text" placeholder="Nombre de la oportunidad..."
+        class="w-full text-xl font-bold text-gray-900 border-0 border-b border-transparent focus:border-primary focus:ring-0 px-0 py-1" />
+    </div>
+
+    <!-- Banner Ganada / Convertir en Proyecto -->
+    <div id="drawer-banner-ganada" class="hidden rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <p class="text-xs font-bold text-emerald-900 flex items-center gap-1">
+            <span class="material-symbols-outlined text-[18px]">verified</span> ¡Oportunidad Ganada!
+          </p>
+          <p class="text-xs text-emerald-700 mt-1" id="drawer-proyecto-info">
+            Esta cotización ha sido adjudicada. Puedes pasarla a ejecución operativa en el módulo de Proyectos con un solo clic.
+          </p>
+        </div>
+        <button id="btn-convertir-proyecto" type="button"
+          class="flex-shrink-0 flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 shadow-sm transition-colors">
+          <span class="material-symbols-outlined text-[16px]">rocket_launch</span> Convertir en Proyecto
+        </button>
+      </div>
+    </div>
+
+    <!-- Cuadrícula de Campos (Estilo Asana) -->
+    <div class="grid grid-cols-2 gap-4 text-xs">
+      <div>
+        <label class="block font-medium text-gray-500 mb-1">Etapa del Embudo</label>
+        <select id="drawer-etapa" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
+          <option value="prospecto">1. Prospecto / Lead</option>
+          <option value="visita">2. Visita Técnica</option>
+          <option value="cotizacion">3. Cotización Enviada</option>
+          <option value="negociacion">4. Negociación</option>
+          <option value="ganada">5. Ganada</option>
+          <option value="perdida">6. Perdida</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="block font-medium text-gray-500 mb-1">Cliente</label>
+        <select id="drawer-cliente" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
+          <option value="">Selecciona un cliente...</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="block font-medium text-gray-500 mb-1">Contacto Directo</label>
+        <input id="drawer-contacto" type="text" placeholder="Ej. Arq. Carlos Mendoza"
+          class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary" />
+      </div>
+
+      <div>
+        <label class="block font-medium text-gray-500 mb-1">Responsable Comercial</label>
+        <select id="drawer-responsable" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
+          <option value="">Sin asignar</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="block font-medium text-gray-500 mb-1">Valor de la Oferta (COP)</label>
+        <input id="drawer-valor" type="text" inputmode="decimal" placeholder="0"
+          class="input-moneda w-full rounded-lg border-gray-300 text-xs font-semibold focus:border-primary focus:ring-primary" />
+      </div>
+
+      <div>
+        <label class="block font-medium text-gray-500 mb-1">Costo Estimado Directo (COP)</label>
+        <input id="drawer-costo" type="text" inputmode="decimal" placeholder="0"
+          class="input-moneda w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary" />
+        <p class="text-[10px] text-gray-400 mt-0.5" id="drawer-margen-label">Margen proyectado: —</p>
+      </div>
+
+      <div>
+        <label class="block font-medium text-gray-500 mb-1">Probabilidad de Éxito (%)</label>
+        <div class="flex items-center gap-2">
+          <input id="drawer-probabilidad" type="range" min="0" max="100" step="10" value="20"
+            class="w-full accent-primary" />
+          <span id="drawer-probabilidad-badge" class="font-bold text-gray-700 w-9 text-right">20%</span>
+        </div>
+      </div>
+
+      <div>
+        <label class="block font-medium text-gray-500 mb-1">Fecha Estimada de Cierre</label>
+        <input id="drawer-fecha" type="date"
+          class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary" />
+      </div>
+
+      <div>
+        <label class="block font-medium text-gray-500 mb-1">Tipo de Servicio</label>
+        <select id="drawer-servicio" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
+          <option value="cctv">CCTV y Cámaras</option>
+          <option value="control_acceso">Control de Acceso</option>
+          <option value="incendio">Detección de Incendio</option>
+          <option value="cableado">Cableado / Redes</option>
+          <option value="alarmas">Alarmas y Sensores</option>
+          <option value="integral">Proyecto Integral</option>
+          <option value="otro">Otro</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="block font-medium text-gray-500 mb-1">Prioridad</label>
+        <select id="drawer-prioridad" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
+          <option value="baja">Baja</option>
+          <option value="media">Media</option>
+          <option value="alta">Alta</option>
+          <option value="urgente">Urgente</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Motivo de Pérdida (solo visible si etapa === 'perdida') -->
+    <div id="drawer-contenedor-perdida" class="hidden">
+      <label class="block text-xs font-medium text-rose-700 mb-1">Motivo por el que no se cerró</label>
+      <input id="drawer-motivo-perdida" type="text" placeholder="Ej. Precios altos, competencia se adjudicó, proyecto cancelado..."
+        class="w-full rounded-lg border-rose-300 bg-rose-50/50 text-xs focus:border-rose-500 focus:ring-rose-500" />
+    </div>
+
+    <!-- Descripción / Alcance técnico -->
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">Alcance y Requerimientos del Cliente</label>
+      <textarea id="drawer-descripcion" rows="3" placeholder="Detalle de cámaras solicitadas, puntos de red, ubicación, observaciones..."
+        class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary"></textarea>
+    </div>
+
+    <!-- BITÁCORA Y FEED DE ACTIVIDADES (Estilo Asana) -->
+    <div class="border-t border-gray-100 pt-5 space-y-4">
+      <h3 class="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+        <span class="material-symbols-outlined text-[16px] text-gray-400">forum</span> Seguimiento y Actividades
+      </h3>
+
+      <!-- Caja para publicar nueva actividad -->
+      <div class="rounded-xl border border-gray-200 bg-gray-50 p-3 space-y-2">
+        <div class="flex items-center gap-2">
+          <select id="actividad-tipo" class="rounded-md border-gray-300 text-xs py-1 px-2 bg-white">
+            <option value="nota">📝 Nota</option>
+            <option value="llamada">📞 Llamada</option>
+            <option value="visita">🏢 Visita Técnica</option>
+            <option value="reunion">👥 Reunión</option>
+            <option value="correo">📧 Correo</option>
+            <option value="tarea">⏱️ Tarea pendiente</option>
+          </select>
+          <input id="actividad-titulo" type="text" placeholder="Resumen breve (ej. Llamada de seguimiento)..."
+            class="flex-1 rounded-md border-gray-300 text-xs py-1 px-2 bg-white" />
+        </div>
+        <textarea id="actividad-descripcion" rows="2" placeholder="Detalla los acuerdos, avances o qué quedó pendiente..."
+          class="w-full rounded-md border-gray-300 text-xs py-1 px-2 bg-white"></textarea>
+        <div class="flex justify-end">
+          <button id="btn-agregar-actividad" type="button"
+            class="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800 transition-colors">
+            Registrar Actividad
+          </button>
+        </div>
+      </div>
+
+      <!-- Feed cronológico -->
+      <div id="drawer-actividades-feed" class="space-y-3">
+        <p class="text-xs text-gray-400 text-center py-2">Sin actividades registradas.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer del Drawer -->
+  <div class="border-t border-gray-100 p-4 bg-gray-50 flex items-center justify-between">
+    <button id="btn-drawer-eliminar" type="button" class="text-xs font-semibold text-rose-600 hover:text-rose-800">
+      Eliminar Oportunidad
+    </button>
+    <div class="flex items-center gap-2">
+      <button id="btn-drawer-cancelar" type="button"
+        class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+        Cerrar
+      </button>
+      <button id="btn-drawer-guardar" type="button"
+        class="rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm">
+        Guardar Cambios
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ======================================================================== -->
+<!-- MODAL RÁPIDO: NUEVA OPORTUNIDAD                                          -->
+<!-- ======================================================================== -->
+<div id="modal-nuevo" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
+  <div class="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl space-y-4">
+    <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+      <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
+        <span class="material-symbols-outlined text-primary">add_circle</span> Nueva Oportunidad Comercial
+      </h2>
+      <button id="btn-modal-nuevo-cerrar" type="button" class="text-gray-400 hover:text-gray-600">
+        <span class="material-symbols-outlined text-[20px]">close</span>
+      </button>
+    </div>
+
+    <form id="form-nuevo" class="space-y-3 text-xs">
+      <div>
+        <label class="block font-medium text-gray-700 mb-1">Nombre del Negocio / Proyecto *</label>
+        <input id="nuevo-titulo" type="text" required placeholder="Ej. Instalación CCTV y Acceso Torres de San Jerónimo"
+          class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary" />
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block font-medium text-gray-700 mb-1">Cliente *</label>
+          <select id="nuevo-cliente" required class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
+            <option value="">Selecciona cliente...</option>
+          </select>
+        </div>
+        <div>
+          <label class="block font-medium text-gray-700 mb-1">Etapa Inicial</label>
+          <select id="nuevo-etapa" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
+            <option value="prospecto">1. Prospecto / Lead</option>
+            <option value="visita">2. Visita Técnica</option>
+            <option value="cotizacion">3. Cotización Enviada</option>
+            <option value="negociacion">4. Negociación</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block font-medium text-gray-700 mb-1">Tipo de Servicio</label>
+          <select id="nuevo-servicio" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
+            <option value="cctv">CCTV y Cámaras</option>
+            <option value="control_acceso">Control de Acceso</option>
+            <option value="incendio">Detección de Incendio</option>
+            <option value="cableado">Cableado / Redes</option>
+            <option value="alarmas">Alarmas y Sensores</option>
+            <option value="integral">Proyecto Integral</option>
+            <option value="otro">Otro</option>
+          </select>
+        </div>
+        <div>
+          <label class="block font-medium text-gray-700 mb-1">Valor Estimado de la Oferta (COP)</label>
+          <input id="nuevo-valor" type="text" inputmode="decimal" placeholder="0"
+            class="input-moneda w-full rounded-lg border-gray-300 text-xs font-semibold focus:border-primary focus:ring-primary" />
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block font-medium text-gray-700 mb-1">Responsable</label>
+          <select id="nuevo-responsable" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
+            <option value="">Sin asignar</option>
+          </select>
+        </div>
+        <div>
+          <label class="block font-medium text-gray-700 mb-1">Fecha Estimada de Cierre</label>
+          <input id="nuevo-fecha" type="date"
+            class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary" />
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-3 border-t border-gray-100">
+        <button id="btn-modal-nuevo-cancelar" type="button"
+          class="rounded-lg border border-gray-300 px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+          Cancelar
+        </button>
+        <button type="submit"
+          class="rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm">
+          Crear Oportunidad
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="assets/js/layout.js"></script>
+<script src="assets/js/crm.js"></script>
+</body>
+</html>

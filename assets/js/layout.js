@@ -6,6 +6,7 @@
 const NAV_ITEMS = [
   { page: "dashboard", href: "dashboard.html", icon: "dashboard", label: "Panel Principal" },
   { page: "proyectos", href: "proyectos.html", icon: "folder_open", label: "Proyectos" },
+  { page: "crm", href: "crm.html", icon: "handshake", label: "CRM Comercial" },
   { page: "facturacion", href: "facturacion.html", icon: "receipt_long", label: "Facturación" },
   { page: "compras", href: "compras.html", icon: "shopping_cart", label: "Compras y Costos" },
   { page: "suministros", href: "suministros.html", icon: "inventory_2", label: "Suministros" },
