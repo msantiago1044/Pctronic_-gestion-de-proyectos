@@ -30,7 +30,7 @@
       ]
     },
     {
-      "source": "/assets/js/config.js",
+      "source": "/assets/js/(.*)",
       "headers": [
         {
           "key": "Cache-Control",
@@ -39,7 +39,7 @@
       ]
     },
     {
-      "source": "/assets/(.*)",
+      "source": "/assets/img/(.*)",
       "headers": [
         {
           "key": "Cache-Control",
