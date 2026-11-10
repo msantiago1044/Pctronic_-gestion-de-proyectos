@@ -55,12 +55,12 @@
             *,
             contacto_nombre,
             contacto_telefono,
-            clientes(id, nombre, telefono),
+            clientes(id, nombre),
             profiles:responsable_id(id, nombre_completo, avatar_url),
             proyectos:proyecto_id(id, nombre)
           `)
           .order("created_at", { ascending: false }),
-        window.sb.from("clientes").select("id, nombre, telefono").order("nombre"),
+        window.sb.from("clientes").select("id, nombre").order("nombre"),
         window.sb.from("profiles").select("id, nombre_completo").order("nombre_completo"),
       ]);
 
@@ -213,7 +213,7 @@
           const diasSinCambio = Math.floor((new Date() - fechaReferencia) / (1000 * 60 * 60 * 24));
           const esEstancada = ["visita", "cotizacion", "negociacion"].includes(op.etapa) && diasSinCambio >= 5;
 
-          const tel = op.contacto_telefono || op.clientes?.telefono;
+          const tel = op.contacto_telefono || "";
           const urlWa = obtenerUrlWhatsApp(tel, op.titulo);
 
           return `
@@ -320,7 +320,7 @@
                           const fechaReferencia = new Date(op.updated_at || op.created_at);
                           const diasSinCambio = Math.floor((new Date() - fechaReferencia) / (1000 * 60 * 60 * 24));
                           const esEstancada = ["visita", "cotizacion", "negociacion"].includes(op.etapa) && diasSinCambio >= 5;
-                          const tel = op.contacto_telefono || op.clientes?.telefono;
+                          const tel = op.contacto_telefono || "";
                           const urlWa = obtenerUrlWhatsApp(tel, op.titulo);
 
                           return `
@@ -376,7 +376,7 @@
     document.getElementById("drawer-etapa").value = op.etapa || "prospecto";
     document.getElementById("drawer-cliente").value = op.cliente_id || "";
     document.getElementById("drawer-contacto").value = op.contacto_nombre || op.contacto_id || "";
-    document.getElementById("drawer-telefono").value = op.contacto_telefono || op.clientes?.telefono || "";
+    document.getElementById("drawer-telefono").value = op.contacto_telefono || "";
     document.getElementById("drawer-responsable").value = op.responsable_id || "";
     document.getElementById("drawer-servicio").value = op.tipo_servicio || "cctv";
     document.getElementById("drawer-prioridad").value = op.prioridad || "media";
