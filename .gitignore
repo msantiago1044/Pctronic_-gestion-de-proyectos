@@ -3,6 +3,7 @@
 .env*.local
 .env.production
 .env.development
+assets/js/config.js
 
 # Vercel
 .vercel

@@ -6,6 +6,7 @@
 
 (async () => {
   const { session, profile } = await window.pctronicReady;
+  if (!session) return;
   const usuarioActualId = session?.user?.id;
 
   // 1. Constantes y Configuración de Etapas y Servicios
@@ -52,12 +53,14 @@
           .from("crm_oportunidades")
           .select(`
             *,
-            clientes(id, nombre),
+            contacto_nombre,
+            contacto_telefono,
+            clientes(id, nombre, telefono),
             profiles:responsable_id(id, nombre_completo, avatar_url),
             proyectos:proyecto_id(id, nombre)
           `)
           .order("created_at", { ascending: false }),
-        window.sb.from("clientes").select("id, nombre").order("nombre"),
+        window.sb.from("clientes").select("id, nombre, telefono").order("nombre"),
         window.sb.from("profiles").select("id, nombre_completo").order("nombre_completo"),
       ]);
 
@@ -142,6 +145,8 @@
         !texto ||
         op.titulo.toLowerCase().includes(texto) ||
         (op.clientes?.nombre || "").toLowerCase().includes(texto) ||
+        (op.contacto_nombre || "").toLowerCase().includes(texto) ||
+        (op.contacto_telefono || "").toLowerCase().includes(texto) ||
         (op.contacto_id || "").toLowerCase().includes(texto);
       const coincideServ = !serv || op.tipo_servicio === serv;
       const coincideResp = !resp || op.responsable_id === resp;
@@ -162,6 +167,16 @@
       document.getElementById("vista-lista").classList.remove("hidden");
       renderLista(filtradas);
     }
+  }
+
+  // Helper para URL de WhatsApp
+  function obtenerUrlWhatsApp(telefono, titulo) {
+    if (!telefono) return null;
+    const telLimpio = String(telefono).replace(/\D/g, "");
+    if (!telLimpio) return null;
+    const telFinal = telLimpio.length === 10 ? `57${telLimpio}` : telLimpio;
+    const msg = encodeURIComponent(`Hola, te contacto de Pctronic respecto a la propuesta: ${titulo || ""}`);
+    return `https://wa.me/${telFinal}?text=${msg}`;
   }
 
   // 7. Render Vista Tablero (Kanban Asana)
@@ -193,27 +208,45 @@
           const srv = SERVICIOS[op.tipo_servicio] || SERVICIOS.otro;
           const respNombre = op.profiles?.nombre_completo || "—";
           const inicial = respNombre.trim().charAt(0).toUpperCase();
-          const dias = Math.floor((new Date() - new Date(op.created_at)) / (1000 * 60 * 60 * 24));
+          const diasCreado = Math.floor((new Date() - new Date(op.created_at)) / (1000 * 60 * 60 * 24));
+          const fechaReferencia = new Date(op.updated_at || op.created_at);
+          const diasSinCambio = Math.floor((new Date() - fechaReferencia) / (1000 * 60 * 60 * 24));
+          const esEstancada = ["visita", "cotizacion", "negociacion"].includes(op.etapa) && diasSinCambio >= 5;
+
+          const tel = op.contacto_telefono || op.clientes?.telefono;
+          const urlWa = obtenerUrlWhatsApp(tel, op.titulo);
 
           return `
-          <div class="card-oportunidad group relative rounded-xl border border-gray-200 bg-white p-3.5 shadow-sm hover:shadow-md hover:border-primary/40 transition-all cursor-pointer" data-id="${op.id}">
+          <div draggable="true" class="card-oportunidad group relative rounded-xl border border-gray-200 bg-white p-3.5 shadow-sm hover:shadow-md hover:border-primary/40 transition-all cursor-grab active:cursor-grabbing" data-id="${op.id}">
             <div class="flex items-center justify-between gap-1 mb-2">
               <span class="inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-semibold ${srv.badge}">
                 ${srv.label}
               </span>
-              ${op.proyecto_id ? `
-                <span class="inline-flex items-center gap-0.5 rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[10px] font-bold" title="Vinculado a Proyecto">
-                  <span class="material-symbols-outlined text-[12px]">rocket_launch</span> Proyecto
-                </span>` : ""}
+              <div class="flex items-center gap-1">
+                ${esEstancada ? `
+                  <span class="inline-flex items-center gap-0.5 rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 text-[10px] font-bold" title="Sin actualización hace ${diasSinCambio} días">
+                    ⚠️ Inactiva ${diasSinCambio}d
+                  </span>` : ""}
+                ${op.proyecto_id ? `
+                  <span class="inline-flex items-center gap-0.5 rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[10px] font-bold" title="Vinculado a Proyecto">
+                    <span class="material-symbols-outlined text-[12px]">rocket_launch</span> Proyecto
+                  </span>` : ""}
+              </div>
             </div>
 
             <h3 class="text-xs font-bold text-gray-900 group-hover:text-primary transition-colors line-clamp-2">
               ${escapeHtml(op.titulo)}
             </h3>
 
-            <p class="text-[11px] text-gray-500 mt-1 truncate">
-              ${escapeHtml(op.clientes?.nombre || "Sin cliente")}
-            </p>
+            <div class="flex items-center justify-between mt-1">
+              <p class="text-[11px] text-gray-500 truncate flex-1">
+                ${escapeHtml(op.clientes?.nombre || "Sin cliente")}
+              </p>
+              ${urlWa ? `
+                <a href="${urlWa}" target="_blank" rel="noopener noreferrer" class="btn-wa flex items-center justify-center text-emerald-600 hover:text-emerald-700 p-1 rounded hover:bg-emerald-50 transition-colors" title="Contactar por WhatsApp (${escapeHtml(tel)})">
+                  <svg class="h-4 w-4 fill-current" viewBox="0 0 24 24"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2m.01 1.67c2.2 0 4.26.86 5.82 2.42a8.225 8.225 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.196 8.196 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24m4.52 11.64c-.25-.13-1.47-.72-1.7-.81-.23-.08-.39-.12-.56.13-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.13-1.06-.39-2.03-1.25-.75-.67-1.26-1.5-1.41-1.75-.15-.25-.02-.39.11-.51.11-.11.25-.29.37-.43.12-.15.17-.25.25-.42.08-.17.04-.31-.02-.44-.06-.12-.56-1.34-.76-1.84-.2-.49-.4-.42-.56-.43h-.47c-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.23.9 2.43 1.02 2.6.13.16 1.77 2.7 4.29 3.79.6.26 1.07.41 1.44.53.6.19 1.15.17 1.58.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.15-1.18-.06-.12-.22-.19-.47-.32"/></svg>
+                </a>` : ""}
+            </div>
 
             <div class="mt-3 flex items-baseline justify-between border-t border-gray-100 pt-2">
               <span class="text-xs font-bold text-gray-900">${formatoMoneda(op.valor_estimado)}</span>
@@ -225,7 +258,7 @@
             <div class="mt-2.5 flex items-center justify-between text-[11px] text-gray-400 pt-1">
               <span class="flex items-center gap-1 text-[10px]">
                 <span class="material-symbols-outlined text-[13px]">calendar_today</span>
-                ${op.fecha_cierre_estimada ? formatoFecha(op.fecha_cierre_estimada) : `${dias}d`}
+                ${op.fecha_cierre_estimada ? formatoFecha(op.fecha_cierre_estimada) : `${diasCreado}d`}
               </span>
               <div class="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-primary text-[10px] font-bold" title="${escapeHtml(respNombre)}">
                 ${inicial}
@@ -284,10 +317,32 @@
                     : opsEtapa
                         .map((op) => {
                           const srv = SERVICIOS[op.tipo_servicio] || SERVICIOS.otro;
+                          const fechaReferencia = new Date(op.updated_at || op.created_at);
+                          const diasSinCambio = Math.floor((new Date() - fechaReferencia) / (1000 * 60 * 60 * 24));
+                          const esEstancada = ["visita", "cotizacion", "negociacion"].includes(op.etapa) && diasSinCambio >= 5;
+                          const tel = op.contacto_telefono || op.clientes?.telefono;
+                          const urlWa = obtenerUrlWhatsApp(tel, op.titulo);
+
                           return `
                         <tr class="hover:bg-gray-50/80 cursor-pointer transition-colors" data-id="${op.id}">
-                          <td class="px-4 py-3 font-bold text-gray-900">${escapeHtml(op.titulo)}</td>
-                          <td class="px-4 py-3 text-gray-600">${escapeHtml(op.clientes?.nombre || "—")}</td>
+                          <td class="px-4 py-3 font-bold text-gray-900">
+                            <div class="flex items-center gap-1.5">
+                              <span>${escapeHtml(op.titulo)}</span>
+                              ${esEstancada ? `
+                                <span class="rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 text-[9px] font-bold" title="Sin actualización hace ${diasSinCambio} días">
+                                  ⚠️ Inactiva ${diasSinCambio}d
+                                </span>` : ""}
+                            </div>
+                          </td>
+                          <td class="px-4 py-3 text-gray-600">
+                            <div class="flex items-center gap-2">
+                              <span>${escapeHtml(op.clientes?.nombre || "—")}</span>
+                              ${urlWa ? `
+                                <a href="${urlWa}" target="_blank" rel="noopener noreferrer" class="btn-wa text-emerald-600 hover:text-emerald-700" title="Contactar por WhatsApp (${escapeHtml(tel)})">
+                                  <svg class="h-3.5 w-3.5 fill-current inline" viewBox="0 0 24 24"><path d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.816 9.816 0 0 0 12.04 2m.01 1.67c2.2 0 4.26.86 5.82 2.42a8.225 8.225 0 0 1 2.41 5.83c0 4.54-3.7 8.24-8.24 8.24-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.196 8.196 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24m4.52 11.64c-.25-.13-1.47-.72-1.7-.81-.23-.08-.39-.12-.56.13-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.13-1.06-.39-2.03-1.25-.75-.67-1.26-1.5-1.41-1.75-.15-.25-.02-.39.11-.51.11-.11.25-.29.37-.43.12-.15.17-.25.25-.42.08-.17.04-.31-.02-.44-.06-.12-.56-1.34-.76-1.84-.2-.49-.4-.42-.56-.43h-.47c-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.23.9 2.43 1.02 2.6.13.16 1.77 2.7 4.29 3.79.6.26 1.07.41 1.44.53.6.19 1.15.17 1.58.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.15-1.18-.06-.12-.22-.19-.47-.32"/></svg>
+                                </a>` : ""}
+                            </div>
+                          </td>
                           <td class="px-4 py-3">
                             <span class="rounded-md border px-2 py-0.5 text-[10px] font-semibold ${srv.badge}">${srv.label}</span>
                           </td>
@@ -320,7 +375,8 @@
     document.getElementById("drawer-titulo").value = op.titulo || "";
     document.getElementById("drawer-etapa").value = op.etapa || "prospecto";
     document.getElementById("drawer-cliente").value = op.cliente_id || "";
-    document.getElementById("drawer-contacto").value = op.contacto_id || "";
+    document.getElementById("drawer-contacto").value = op.contacto_nombre || op.contacto_id || "";
+    document.getElementById("drawer-telefono").value = op.contacto_telefono || op.clientes?.telefono || "";
     document.getElementById("drawer-responsable").value = op.responsable_id || "";
     document.getElementById("drawer-servicio").value = op.tipo_servicio || "cctv";
     document.getElementById("drawer-prioridad").value = op.prioridad || "media";
@@ -460,20 +516,36 @@
       return;
     }
 
-    const { error } = await window.sb.from("crm_actividades").insert({
-      oportunidad_id: oportunidadActual.id,
-      tipo,
-      titulo,
-      descripcion: descripcion || null,
-      creado_por: usuarioActualId || null,
-    });
+    const btn = document.getElementById("btn-agregar-actividad");
+    const textoOrig = btn ? btn.textContent : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Registrando...";
+    }
 
-    if (error) return manejarError(error, "No se pudo registrar la actividad");
+    try {
+      const { error } = await window.sb.from("crm_actividades").insert({
+        oportunidad_id: oportunidadActual.id,
+        tipo,
+        titulo,
+        descripcion: descripcion || null,
+        creado_por: usuarioActualId || null,
+      });
 
-    document.getElementById("actividad-titulo").value = "";
-    document.getElementById("actividad-descripcion").value = "";
-    mostrarAviso("Actividad registrada", "exito");
-    cargarActividades(oportunidadActual.id);
+      if (error) throw error;
+
+      document.getElementById("actividad-titulo").value = "";
+      document.getElementById("actividad-descripcion").value = "";
+      mostrarAviso("Actividad registrada", "exito");
+      cargarActividades(oportunidadActual.id);
+    } catch (err) {
+      manejarError(err, "No se pudo registrar la actividad");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = textoOrig;
+      }
+    }
   }
 
   // 11. Guardar Cambios en la Oportunidad
@@ -483,44 +555,67 @@
     const titulo = document.getElementById("drawer-titulo").value.trim();
     if (!titulo) return mostrarAviso("El título no puede estar vacío", "error");
 
-    const etapa = document.getElementById("drawer-etapa").value;
-    const cliente_id = document.getElementById("drawer-cliente").value || null;
-    const contacto_id = document.getElementById("drawer-contacto").value.trim() || null;
-    const responsable_id = document.getElementById("drawer-responsable").value || null;
-    const tipo_servicio = document.getElementById("drawer-servicio").value;
-    const prioridad = document.getElementById("drawer-prioridad").value;
-    const fecha_cierre_estimada = document.getElementById("drawer-fecha").value || null;
-    const descripcion = document.getElementById("drawer-descripcion").value.trim() || null;
-    const motivo_perdida = document.getElementById("drawer-motivo-perdida").value.trim() || null;
-    const valor_estimado = valorMoneda(document.getElementById("drawer-valor"));
-    const costo_estimado = valorMoneda(document.getElementById("drawer-costo"));
-    const probabilidad = Number(document.getElementById("drawer-probabilidad").value);
+    const btn = document.getElementById("btn-drawer-guardar");
+    const textoOrig = btn ? btn.textContent : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Guardando...";
+    }
 
-    const { error } = await window.sb
-      .from("crm_oportunidades")
-      .update({
-        titulo,
-        etapa,
-        cliente_id,
-        contacto_id,
-        responsable_id,
-        tipo_servicio,
-        prioridad,
-        fecha_cierre_estimada,
-        descripcion,
-        motivo_perdida,
-        valor_estimado,
-        costo_estimado,
-        probabilidad,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", oportunidadActual.id);
+    try {
+      const etapa = document.getElementById("drawer-etapa").value;
+      const cliente_id = document.getElementById("drawer-cliente").value || null;
+      const contactoRaw = document.getElementById("drawer-contacto").value.trim();
+      const contacto_telefono = document.getElementById("drawer-telefono")?.value.trim() || null;
+      const responsable_id = document.getElementById("drawer-responsable").value || null;
+      const tipo_servicio = document.getElementById("drawer-servicio").value;
+      const prioridad = document.getElementById("drawer-prioridad").value;
+      const fecha_cierre_estimada = document.getElementById("drawer-fecha").value || null;
+      const descripcion = document.getElementById("drawer-descripcion").value.trim() || null;
+      const motivo_perdida = document.getElementById("drawer-motivo-perdida").value.trim() || null;
+      const valor_estimado = valorMoneda(document.getElementById("drawer-valor"));
+      const costo_estimado = valorMoneda(document.getElementById("drawer-costo"));
+      const probabilidad = Number(document.getElementById("drawer-probabilidad").value);
 
-    if (error) return manejarError(error, "No se pudo guardar la oportunidad");
+      const esUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(contactoRaw);
+      const contacto_id = esUuid ? contactoRaw : null;
+      const contacto_nombre = esUuid ? null : (contactoRaw || null);
 
-    mostrarAviso("Oportunidad actualizada con éxito", "exito");
-    cerrarDrawer();
-    cargarDatos();
+      const { error } = await window.sb
+        .from("crm_oportunidades")
+        .update({
+          titulo,
+          etapa,
+          cliente_id,
+          contacto_id,
+          contacto_nombre,
+          contacto_telefono,
+          responsable_id,
+          tipo_servicio,
+          prioridad,
+          fecha_cierre_estimada,
+          descripcion,
+          motivo_perdida,
+          valor_estimado,
+          costo_estimado,
+          probabilidad,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", oportunidadActual.id);
+
+      if (error) throw error;
+
+      mostrarAviso("Oportunidad actualizada con éxito", "exito");
+      cerrarDrawer();
+      cargarDatos();
+    } catch (err) {
+      manejarError(err, "No se pudo guardar la oportunidad");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = textoOrig;
+      }
+    }
   }
 
   // 12. Convertir en Proyecto Operativo (1 clic)
@@ -533,17 +628,27 @@
     );
     if (!confirmar) return;
 
+    const btn = document.getElementById("btn-convertir-proyecto");
+    const textoOrig = btn ? btn.textContent : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Creando proyecto...";
+    }
+
     try {
-      // 1. Insertar el proyecto operativo
+      // 1. Insertar el proyecto operativo (NO enviar valor_total: es columna GENERATED)
       const { data: nuevoProyecto, error: errProy } = await window.sb
         .from("proyectos")
         .insert({
           nombre: op.titulo,
           cliente_id: op.cliente_id,
-          valor_total: op.valor_estimado || 0,
+          empresa_id: op.empresa_id || null,
+          valor_antes_impuestos: op.costo_estimado || op.valor_estimado || 0,
           estado: "sin_iniciar",
           fecha_inicio: new Date().toISOString().slice(0, 10),
           fecha_fin_estimada: op.fecha_cierre_estimada || null,
+          created_by: usuarioActualId || null,
+          tipo_contrato: "aiu",
         })
         .select()
         .single();
@@ -580,6 +685,11 @@
       }
     } catch (err) {
       manejarError(err, "Error al convertir la oportunidad en proyecto");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = textoOrig;
+      }
     }
   }
 
@@ -594,6 +704,60 @@
     mostrarAviso("Oportunidad eliminada", "info");
     cerrarDrawer();
     cargarDatos();
+  }
+
+  // Manejador Drag & Drop para cambiar etapa
+  let arrastrandoId = null;
+
+  async function cambiarEtapaOportunidad(id, nuevaEtapa) {
+    const op = oportunidades.find((o) => o.id === id);
+    if (!op || op.etapa === nuevaEtapa) return;
+
+    const etapaAnterior = op.etapa;
+    const etapaNombre = ETAPAS[nuevaEtapa]?.label || nuevaEtapa;
+
+    // Actualización optimista en memoria
+    op.etapa = nuevaEtapa;
+    op.updated_at = new Date().toISOString();
+    if (nuevaEtapa === "ganada") op.probabilidad = 100;
+    else if (nuevaEtapa === "perdida") op.probabilidad = 0;
+    else if (nuevaEtapa === "cotizacion" && op.probabilidad < 50) op.probabilidad = 50;
+    else if (nuevaEtapa === "negociacion" && op.probabilidad < 70) op.probabilidad = 70;
+
+    actualizarKPIs();
+    render();
+
+    try {
+      const updateData = {
+        etapa: nuevaEtapa,
+        probabilidad: op.probabilidad,
+        updated_at: op.updated_at,
+      };
+
+      const { error: errUpdate } = await window.sb
+        .from("crm_oportunidades")
+        .update(updateData)
+        .eq("id", id);
+
+      if (errUpdate) throw errUpdate;
+
+      // Registrar actividad automática en bitácora
+      await window.sb.from("crm_actividades").insert({
+        oportunidad_id: id,
+        tipo: "tarea",
+        titulo: `Etapa cambiada a ${etapaNombre}`,
+        descripcion: `Movida desde "${ETAPAS[etapaAnterior]?.label || etapaAnterior}"`,
+        creado_por: usuarioActualId || null,
+      });
+
+      mostrarAviso(`Oportunidad movida a ${etapaNombre}`, "exito");
+    } catch (err) {
+      // Revertir en memoria
+      op.etapa = etapaAnterior;
+      actualizarKPIs();
+      render();
+      manejarError(err, "No se pudo actualizar la etapa de la oportunidad");
+    }
   }
 
   // 14. Eventos de la Interfaz
@@ -624,6 +788,56 @@
     document.getElementById("filtro-busqueda")?.addEventListener("input", render);
     document.getElementById("filtro-servicio")?.addEventListener("change", render);
     document.getElementById("filtro-responsable")?.addEventListener("change", render);
+
+    // Eventos Drag & Drop en el tablero Kanban
+    const vistaTablero = document.getElementById("vista-tablero");
+
+    vistaTablero?.addEventListener("dragstart", (e) => {
+      const card = e.target.closest(".card-oportunidad");
+      if (!card) return;
+      arrastrandoId = card.dataset.id;
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", arrastrandoId);
+      card.classList.add("opacity-50", "rotate-1");
+    });
+
+    vistaTablero?.addEventListener("dragend", (e) => {
+      const card = e.target.closest(".card-oportunidad");
+      if (card) card.classList.remove("opacity-50", "rotate-1");
+      arrastrandoId = null;
+      document.querySelectorAll(".kanban-col").forEach((col) => {
+        col.classList.remove("ring-2", "ring-primary", "bg-blue-50/60");
+      });
+    });
+
+    vistaTablero?.addEventListener("dragover", (e) => {
+      const col = e.target.closest(".kanban-col");
+      if (col) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        col.classList.add("ring-2", "ring-primary", "bg-blue-50/60");
+      }
+    });
+
+    vistaTablero?.addEventListener("dragleave", (e) => {
+      const col = e.target.closest(".kanban-col");
+      if (col && !col.contains(e.relatedTarget)) {
+        col.classList.remove("ring-2", "ring-primary", "bg-blue-50/60");
+      }
+    });
+
+    vistaTablero?.addEventListener("drop", (e) => {
+      const col = e.target.closest(".kanban-col");
+      if (!col) return;
+      e.preventDefault();
+      col.classList.remove("ring-2", "ring-primary", "bg-blue-50/60");
+
+      const id = e.dataTransfer.getData("text/plain") || arrastrandoId;
+      const nuevaEtapa = col.dataset.etapa;
+      if (id && nuevaEtapa) {
+        cambiarEtapaOportunidad(id, nuevaEtapa);
+      }
+    });
 
     // Click en tarjetas o filas de lista para abrir Drawer
     document.addEventListener("click", (e) => {
@@ -681,6 +895,20 @@
     // Registrar actividad en bitácora
     document.getElementById("btn-agregar-actividad")?.addEventListener("click", agregarActividad);
 
+    // Botón Plantilla Levantamiento CCTV
+    document.getElementById("btn-plantilla-cctv")?.addEventListener("click", () => {
+      const descEl = document.getElementById("actividad-descripcion");
+      const tipoEl = document.getElementById("actividad-tipo");
+      const tituloEl = document.getElementById("actividad-titulo");
+      if (tipoEl) tipoEl.value = "visita";
+      if (tituloEl && !tituloEl.value.trim()) tituloEl.value = "Levantamiento técnico en sitio";
+      const plantilla = `• Cámaras interiores: \n• Cámaras exteriores: \n• Tubería EMT/PVC estimada (m): \n• Cable UTP estimado (m): \n• Switch PoE / Rack / UPS: \n• Obra civil / Altura especial: `;
+      if (descEl) {
+        descEl.value = descEl.value ? `${descEl.value}\n\n${plantilla}` : plantilla;
+        descEl.focus();
+      }
+    });
+
     // Modal Crear Oportunidad
     const modalNuevo = document.getElementById("modal-nuevo");
     document.getElementById("btn-nueva-oportunidad")?.addEventListener("click", () => {
@@ -696,35 +924,55 @@
 
     document.getElementById("form-nuevo")?.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const titulo = document.getElementById("nuevo-titulo").value.trim();
-      const cliente_id = document.getElementById("nuevo-cliente").value;
-      const etapa = document.getElementById("nuevo-etapa").value;
-      const tipo_servicio = document.getElementById("nuevo-servicio").value;
-      const valor_estimado = valorMoneda(document.getElementById("nuevo-valor"));
-      const responsable_id = document.getElementById("nuevo-responsable").value || usuarioActualId || null;
-      const fecha_cierre_estimada = document.getElementById("nuevo-fecha").value || null;
+      const submitBtn = e.target.querySelector('button[type="submit"]');
+      const textoOrig = submitBtn ? submitBtn.textContent : "";
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Creando oportunidad...";
+      }
 
-      const { data, error } = await window.sb
-        .from("crm_oportunidades")
-        .insert({
-          titulo,
-          cliente_id,
-          etapa,
-          tipo_servicio,
-          valor_estimado,
-          responsable_id,
-          fecha_cierre_estimada,
-          probabilidad: etapa === "cotizacion" ? 50 : etapa === "negociacion" ? 70 : 20,
-        })
-        .select()
-        .single();
+      try {
+        const titulo = document.getElementById("nuevo-titulo").value.trim();
+        const cliente_id = document.getElementById("nuevo-cliente").value;
+        const contacto_nombre = document.getElementById("nuevo-contacto")?.value.trim() || null;
+        const contacto_telefono = document.getElementById("crear-op-telefono")?.value.trim() || null;
+        const etapa = document.getElementById("nuevo-etapa").value;
+        const tipo_servicio = document.getElementById("nuevo-servicio").value;
+        const valor_estimado = valorMoneda(document.getElementById("nuevo-valor"));
+        const responsable_id = document.getElementById("nuevo-responsable").value || usuarioActualId || null;
+        const fecha_cierre_estimada = document.getElementById("nuevo-fecha").value || null;
 
-      if (error) return manejarError(error, "No se pudo crear la oportunidad");
+        const { data, error } = await window.sb
+          .from("crm_oportunidades")
+          .insert({
+            titulo,
+            cliente_id,
+            contacto_nombre,
+            contacto_telefono,
+            etapa,
+            tipo_servicio,
+            valor_estimado,
+            responsable_id,
+            fecha_cierre_estimada,
+            probabilidad: etapa === "cotizacion" ? 50 : etapa === "negociacion" ? 70 : 20,
+          })
+          .select()
+          .single();
 
-      modalNuevo.classList.add("hidden");
-      mostrarAviso("Oportunidad creada exitosamente", "exito");
-      await cargarDatos();
-      if (data?.id) abrirDrawer(data.id);
+        if (error) throw error;
+
+        modalNuevo.classList.add("hidden");
+        mostrarAviso("Oportunidad creada exitosamente", "exito");
+        await cargarDatos();
+        if (data?.id) abrirDrawer(data.id);
+      } catch (err) {
+        manejarError(err, "No se pudo crear la oportunidad");
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = textoOrig;
+        }
+      }
     });
   }
 

@@ -327,8 +327,23 @@ window.PCT = window.PCT || {};
         b.clase ||
         "rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50";
       btn.addEventListener("click", async () => {
-        const r = b.onClick ? await b.onClick({ el: fondo, cerrar }) : undefined;
-        if (r !== false) cerrar();
+        if (btn.disabled) return;
+        btn.disabled = true;
+        const textoOrig = btn.textContent;
+        btn.textContent = "Procesando...";
+        try {
+          const r = b.onClick ? await b.onClick({ el: fondo, cerrar }) : undefined;
+          if (r !== false) {
+            cerrar();
+          } else {
+            btn.disabled = false;
+            btn.textContent = textoOrig;
+          }
+        } catch (err) {
+          btn.disabled = false;
+          btn.textContent = textoOrig;
+          throw err;
+        }
       });
       cont.appendChild(btn);
     });
@@ -342,7 +357,7 @@ window.PCT = window.PCT || {};
     new Promise((resolve) => {
       PCT.modal({
         titulo,
-        html: `<p>${mensaje}</p>`,
+        html: `<p>${escapeHtml(mensaje || "")}</p>`,
         botones: [
           { texto: "Cancelar", onClick: () => resolve(false) },
           { texto: textoOk, clase: peligro ? PCT.BTN_PELIGRO : PCT.BTN_PRIMARIO, onClick: () => resolve(true) },

@@ -134,7 +134,10 @@ async function inicializarApp() {
   } = await window.sb.auth.getSession();
 
   if (!session) {
-    if (page !== "login") window.location.href = "login.html";
+    if (page !== "login") {
+      document.body.style.display = "none";
+      window.location.href = "login.html";
+    }
     return { session: null, profile: null };
   }
 
@@ -180,9 +183,11 @@ async function inicializarApp() {
   if (nombreEl) nombreEl.textContent = nombre;
   if (rolEl) rolEl.textContent = rol;
   if (avatarEl) {
-    if (profile?.avatar_url) {
+    const avatarUrl = profile?.avatar_url;
+    const esUrlSegura = typeof avatarUrl === "string" && /^(https?:\/\/|data:image\/)/i.test(avatarUrl);
+    if (esUrlSegura) {
       avatarEl.textContent = "";
-      avatarEl.style.backgroundImage = `url('${profile.avatar_url}')`;
+      avatarEl.style.backgroundImage = `url('${avatarUrl.replace(/'/g, "\\'")}')`;
     } else {
       avatarEl.style.backgroundImage = "";
       avatarEl.textContent = (nombre || "?").trim().charAt(0).toUpperCase();

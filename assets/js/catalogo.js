@@ -25,12 +25,15 @@
 
   function celdaImagen(fila) {
     if (!cfg.campoImagen) return "";
-    const url = fila[cfg.campoImagen.key];
+    const rawUrl = fila[cfg.campoImagen.key];
+    const urlSegura = typeof rawUrl === "string" && /^(https?:\/\/|data:image\/)/i.test(rawUrl)
+      ? rawUrl.replace(/'/g, "\\'").replace(/"/g, "&quot;")
+      : "";
     return `
       <td class="px-4 py-3">
         <div class="flex items-center gap-2">
-          <div class="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-gray-50 bg-cover bg-center" ${url ? `style="background-image:url('${url}')"` : ""}>
-            ${url ? "" : '<span class="material-symbols-outlined text-[18px] text-gray-300">image</span>'}
+          <div class="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-gray-50 bg-cover bg-center" ${urlSegura ? `style="background-image:url('${urlSegura}')"` : ""}>
+            ${urlSegura ? "" : '<span class="material-symbols-outlined text-[18px] text-gray-300">image</span>'}
           </div>
           <label class="cursor-pointer text-xs font-semibold text-primary hover:underline">
             Subir

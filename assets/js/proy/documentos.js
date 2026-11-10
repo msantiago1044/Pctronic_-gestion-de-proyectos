@@ -37,6 +37,38 @@
         </div>
       </div>`;
 
+    const abrirDocumento = async (d) => {
+      try {
+        let ruta = d.url || "";
+        if (ruta.includes("/documentos/")) {
+          ruta = ruta.split("/documentos/")[1];
+        } else if (ruta.startsWith("http://") || ruta.startsWith("https://")) {
+          // Extraer la última parte de la URL si viene con dominio
+          const urlObj = new URL(ruta);
+          const partes = urlObj.pathname.split("/documentos/");
+          if (partes.length > 1) {
+            ruta = partes[1];
+          }
+        }
+        // Quitar posibles query parameters de la ruta si los tiene
+        ruta = ruta.split("?")[0];
+
+        const { data, error } = await window.sb.storage
+          .from("documentos")
+          .createSignedUrl(decodeURIComponent(ruta), 3600);
+
+        if (!error && data?.signedUrl) {
+          window.open(data.signedUrl, "_blank", "noopener");
+        } else {
+          console.warn("Fallo al crear URL firmada, haciendo fallback a URL directa:", error);
+          window.open(d.url, "_blank", "noopener");
+        }
+      } catch (err) {
+        console.error("Error al abrir documento:", err);
+        window.open(d.url, "_blank", "noopener");
+      }
+    };
+
     const pintar = () => {
       root.querySelector("#doc-filtros").innerHTML = [["", "Todos"], ...Object.entries(CATEGORIAS)]
         .map(
@@ -51,7 +83,11 @@
         ? lista
             .map(
               (d) => `<tr class="border-t border-gray-100" data-id="${d.id}">
-                <td class="px-4 py-2.5"><a href="${escapeHtml(d.url)}" target="_blank" rel="noopener" class="font-medium text-primary hover:underline">${escapeHtml(d.nombre_archivo)}</a></td>
+                <td class="px-4 py-2.5">
+                  <button type="button" data-abrir-doc="${d.id}" class="text-left font-medium text-primary hover:underline">
+                    ${escapeHtml(d.nombre_archivo)}
+                  </button>
+                </td>
                 <td class="px-4 py-2.5"><span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold">${CATEGORIAS[d.categoria] || d.categoria}</span></td>
                 <td class="px-4 py-2.5 text-xs text-gray-500">${formatoFecha(d.created_at)}</td>
                 <td class="px-4 py-2.5 text-right"><button data-borrar class="text-gray-400 hover:text-red-600" title="Eliminar"><span class="material-symbols-outlined text-[18px]">delete</span></button></td>
@@ -76,6 +112,14 @@
     });
 
     root.querySelector("#doc-tabla").addEventListener("click", async (e) => {
+      const btnAbrir = e.target.closest("[data-abrir-doc]");
+      if (btnAbrir) {
+        const id = btnAbrir.dataset.abrirDoc;
+        const d = docs.find((x) => String(x.id) === String(id));
+        if (d) abrirDocumento(d);
+        return;
+      }
+
       const b = e.target.closest("[data-borrar]");
       if (!b) return;
       const id = b.closest("tr").dataset.id;
