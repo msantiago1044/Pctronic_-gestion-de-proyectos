@@ -43,13 +43,22 @@
   <div id="app-topbar"></div>
 
   <main class="p-6 space-y-4">
-    <div class="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
-      <p class="font-semibold">¿Cómo creo un usuario nuevo para un empleado?</p>
-      <p class="mt-1">
-        Entra a tu proyecto de Supabase → <strong>Authentication → Users → Add user</strong>,
-        crea el correo y una contraseña temporal, y compártesela a la persona. En cuanto inicie
-        sesión aquí por primera vez, aparecerá automáticamente en esta lista para que le asignes su rol.
-      </p>
+    <div class="grid gap-4 md:grid-cols-2">
+      <div class="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+        <p class="font-semibold">¿Cómo creo un usuario nuevo para un empleado?</p>
+        <p class="mt-1">
+          Entra a tu proyecto de Supabase → <strong>Authentication → Users → Add user</strong>,
+          crea el correo y una contraseña temporal, y compártesela a la persona. En cuanto inicie
+          sesión aquí por primera vez, aparecerá automáticamente en esta lista para que le asignes su rol.
+        </p>
+      </div>
+      <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <p class="font-semibold">Restablecimiento de contraseñas</p>
+        <p class="mt-1">
+          Los usuarios deben solicitar cualquier cambio o recuperación de contraseña directamente al <strong>Super Usuario</strong>.
+          Para restablecer una clave, ingresa a Supabase → <strong>Authentication → Users</strong>, busca al usuario y usa <strong>Send password recovery</strong> o actualiza su contraseña temporal.
+        </p>
+      </div>
     </div>
 
     <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white">
@@ -73,12 +82,27 @@
 <script>
   (async () => {
     const { profile } = await window.pctronicReady;
-    if (profile?.rol !== "admin") {
+    const esSuper = profile?.rol === "super_usuario" || profile?.rol === "admin";
+    if (!esSuper) {
       document.querySelector("main").innerHTML = `
         <div class="rounded-xl border border-gray-200 bg-white p-8 text-center text-gray-500">
-          Solo un administrador puede ver esta página.
+          Solo un Super Usuario puede ver y administrar esta página.
         </div>`;
       return;
+    }
+
+    const ROLES_OPCIONES = [
+      { value: "super_usuario", label: "Super Usuario" },
+      { value: "directivo", label: "Directivo" },
+      { value: "comercial", label: "Comercial" },
+      { value: "proyectos", label: "Proyectos" },
+      { value: "compras", label: "Compras" },
+    ];
+
+    function rolNormalizado(rol) {
+      if (rol === "admin") return "super_usuario";
+      if (rol === "miembro" || !rol) return "proyectos";
+      return rol;
     }
 
     async function cargar() {
@@ -89,19 +113,23 @@
       if (error) return manejarError(error, "No se pudo cargar los usuarios");
 
       document.getElementById("tabla-usuarios").innerHTML = data
-        .map(
-          (u) => `
+        .map((u) => {
+          const rolActual = rolNormalizado(u.rol);
+          const esLegacy = u.rol === "admin" || u.rol === "miembro";
+          return `
         <tr class="border-b border-gray-50 last:border-0">
-          <td class="px-4 py-3 font-medium">${escapeHtml(u.nombre_completo || "—")}</td>
+          <td class="px-4 py-3 font-medium">
+            ${escapeHtml(u.nombre_completo || "—")}
+            ${esLegacy ? `<span class="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">legacy: ${escapeHtml(u.rol)}</span>` : ""}
+          </td>
           <td class="px-4 py-3">
             <select class="select-rol rounded-lg border-gray-300 text-xs" data-id="${u.id}">
-              <option value="miembro" ${u.rol === "miembro" ? "selected" : ""}>Miembro del equipo</option>
-              <option value="admin" ${u.rol === "admin" ? "selected" : ""}>Administrador</option>
+              ${ROLES_OPCIONES.map((opt) => `<option value="${opt.value}" ${rolActual === opt.value ? "selected" : ""}>${opt.label}</option>`).join("")}
             </select>
           </td>
           <td class="px-4 py-3 text-gray-500">${formatoFecha(u.created_at)}</td>
-        </tr>`
-        )
+        </tr>`;
+        })
         .join("");
 
       document.querySelectorAll(".select-rol").forEach((sel) =>

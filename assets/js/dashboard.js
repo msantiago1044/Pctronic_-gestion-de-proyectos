@@ -10,6 +10,7 @@
     { id: "kpi-valor-ejecucion", label: "Valor en Ejecución" },
     { id: "kpi-facturas-pendientes", label: "Facturas Pendientes (cantidad)" },
     { id: "kpi-por-cobrar", label: "Por Cobrar" },
+    { id: "seccion-resumen-comite", label: "Resumen Ejecutivo (Mes en cifras)" },
     { id: "seccion-proyectos-recientes", label: "Tabla: Proyectos recientes" },
     { id: "seccion-facturas-pendientes", label: "Tabla: Facturas pendientes" },
   ];
@@ -42,7 +43,7 @@
       const el = document.getElementById(id);
       if (el) el.classList.toggle("hidden", !preferencias[id]);
     });
-    ["seccion-proyectos-recientes", "seccion-facturas-pendientes"].forEach((id) => {
+    ["seccion-resumen-comite", "seccion-proyectos-recientes", "seccion-facturas-pendientes"].forEach((id) => {
       const el = document.getElementById(id);
       if (el) el.classList.toggle("hidden", !preferencias[id]);
     });
@@ -91,20 +92,90 @@
     </div>`;
   }
 
-  let datosGlobales = { proyectos: [], facturas: [], compras: [], vinculos: [], suministros: [], empresas: [] };
+  let datosGlobales = { proyectos: [], facturas: [], compras: [], gastos: [], comprasSolicitudes: [], vinculos: [], suministros: [], empresas: [] };
+
+  const costosPorProyecto = (proyectoId) => {
+    const gastosProy = datosGlobales.gastos.filter((g) => g.proyecto_id === proyectoId);
+    if (gastosProy.length > 0) {
+      return gastosProy.reduce((a, g) => a + Number(g.valor_total || 0), 0);
+    }
+    const c = datosGlobales.compras.filter((c) => c.proyecto_id === proyectoId).reduce((a, c) => a + Number(c.valor || 0), 0);
+    const v = datosGlobales.vinculos.filter((v) => v.proyecto_id === proyectoId);
+    const pagC = v.reduce((a, vi) => a + (vi.cortes_pago || []).reduce((a2, cp) => a2 + Number(cp.valor_neto || 0), 0), 0);
+    return c + pagC;
+  };
+
+  const facturadoPorProyecto = (proyectoId) =>
+    datosGlobales.facturas
+      .filter((f) => f.proyecto_id === proyectoId && f.estado !== "anulada")
+      .reduce((a, f) => a + Number(f.valor || 0), 0);
+
+  function cerrarModalProyectoResumen() {
+    const modal = document.getElementById("modal-proyecto-resumen");
+    if (modal) {
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+    }
+  }
+
+  function abrirResumenProyecto(proyectoId) {
+    const p = datosGlobales.proyectos.find((x) => x.id === proyectoId);
+    if (!p) return;
+
+    const facturado = facturadoPorProyecto(p.id);
+    const gastado = costosPorProyecto(p.id);
+    const margen = facturado - gastado;
+    const margenPct = facturado > 0 ? ((margen / facturado) * 100).toFixed(1) + "%" : "—";
+    const sols = datosGlobales.comprasSolicitudes.filter((s) => s.proyecto_id === p.id);
+    const solsPend = sols.filter((s) => ["pendiente", "en_comparativo", "presentada"].includes(s.estado)).length;
+    const solsOrd = sols.filter((s) => ["aprobada", "ordenada"].includes(s.estado)).length;
+    const estadoCompras = sols.length ? `${solsPend} pend. · ${solsOrd} aprob./ord.` : "Sin solicitudes";
+
+    document.getElementById("mpr-titulo").textContent = p.nombre || "Proyecto";
+    document.getElementById("mpr-estado").innerHTML = badgeHtml(ESTADOS_PROYECTO, p.estado);
+    document.getElementById("mpr-subtitulo").textContent = [p.clientes?.nombre, p.empresas?.nombre, p.ciudad].filter(Boolean).join(" · ") || "Sin cliente asignado";
+    document.getElementById("mpr-link-detalle").href = `proyecto-detalle.html?id=${p.id}`;
+
+    const box = (lbl, val, sub = "", cls = "text-gray-900") => `
+      <div class="rounded-xl border border-gray-200 bg-gray-50/70 p-3.5">
+        <p class="text-[11px] font-semibold uppercase text-gray-500">${lbl}</p>
+        <p class="mt-1 text-base font-bold tabular-nums ${cls}">${val}</p>
+        ${sub ? `<p class="mt-0.5 text-[11px] text-gray-400">${sub}</p>` : ""}
+      </div>`;
+
+    const av = Number(p.avance_porcentaje || 0);
+    document.getElementById("mpr-kpis").innerHTML =
+      box("Valor contrato", formatoMoneda(p.valor_total), p.tipo_contrato === "aiu" ? "Esquema AIU" : "IVA pleno") +
+      box("Avance físico", `${av}%`, `<div class="barra-progreso mt-1"><span style="width:${av}%"></span></div>`) +
+      box("Facturado", formatoMoneda(facturado), "Facturas emitidas") +
+      box("Gastado", formatoMoneda(gastado), "Costos / gastos reales") +
+      box("Margen bruto actual", formatoMoneda(margen), `Margen: ${margenPct}`, margen > 0 ? "text-emerald-600" : margen < 0 ? "text-red-600" : "text-gray-900") +
+      box("Estado compras", `<span class="text-sm">${estadoCompras}</span>`, `${sols.length} solicitud${sols.length === 1 ? "" : "es"}`);
+
+    const modal = document.getElementById("modal-proyecto-resumen");
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+  }
+
+  document.getElementById("btn-cerrar-proyecto-resumen")?.addEventListener("click", cerrarModalProyectoResumen);
+  document.getElementById("btn-cerrar-proyecto-resumen-2")?.addEventListener("click", cerrarModalProyectoResumen);
 
   try {
     const [
       { data: proyectos, error: errProyectos },
       { data: facturasTodas, error: errFacturasTodas },
       { data: compras },
+      { data: gastos },
+      { data: comprasSolicitudes },
       { data: vinculos },
       { data: suministros },
       { data: empresas },
     ] = await Promise.all([
       window.sb.from("proyectos").select("*, clientes(nombre), empresas(id, nombre)").order("created_at", { ascending: false }),
-      window.sb.from("facturas").select("id, valor, estado, fecha_emision, fecha_vencimiento, proyecto_id, proyectos(nombre, empresa_id)"),
+      window.sb.from("facturas").select("id, valor, estado, fecha_emision, fecha_vencimiento, numero_factura, proyecto_id, proyectos(nombre, empresa_id)"),
       window.sb.from("compras").select("proyecto_id, valor"),
+      window.sb.from("gastos").select("proyecto_id, valor_total, fecha, tipo"),
+      window.sb.from("compras_solicitudes").select("id, proyecto_id, estado, titulo"),
       window.sb.from("proyecto_contratistas").select("proyecto_id, cortes_pago(valor_neto)"),
       window.sb.from("suministros").select("*, clientes(nombre), empresas(nombre)").order("created_at", { ascending: false }),
       window.sb.from("empresas").select("id, nombre").order("nombre"),
@@ -116,6 +187,8 @@
       proyectos: proyectos || [],
       facturas: facturasTodas || [],
       compras: compras || [],
+      gastos: gastos || [],
+      comprasSolicitudes: comprasSolicitudes || [],
       vinculos: vinculos || [],
       suministros: suministros || [],
       empresas: empresas || [],
@@ -133,10 +206,59 @@
       kpiCard("kpi-facturas-pendientes", "receipt_long", "Facturas Pendientes", facturasPendientes.length, "bg-amber-100 text-amber-700") +
       kpiCard("kpi-por-cobrar", "account_balance_wallet", "Por Cobrar", formatoMoneda(totalPendiente), "bg-red-100 text-red-700");
 
+    // Resumen Ejecutivo · Mes en cifras
+    const ahora = new Date();
+    const mesActual = ahora.getMonth();
+    const anioActual = ahora.getFullYear();
+    const hoyStr = `${anioActual}-${String(mesActual + 1).padStart(2, "0")}-${String(ahora.getDate()).padStart(2, "0")}`;
+
+    const facturacionMes = datosGlobales.facturas
+      .filter((f) => {
+        if (!f.fecha_emision || f.estado === "anulada") return false;
+        const d = new Date(f.fecha_emision + "T00:00:00");
+        return d.getMonth() === mesActual && d.getFullYear() === anioActual;
+      })
+      .reduce((s, f) => s + Number(f.valor || 0), 0);
+
+    const gastosMes = datosGlobales.gastos
+      .filter((g) => {
+        if (!g.fecha) return false;
+        const d = new Date(g.fecha + "T00:00:00");
+        return d.getMonth() === mesActual && d.getFullYear() === anioActual;
+      })
+      .reduce((s, g) => s + Number(g.valor_total || 0), 0);
+
+    const margenMes = facturacionMes - gastosMes;
+    const margenMesPct = facturacionMes > 0 ? ((margenMes / facturacionMes) * 100).toFixed(1) + "%" : "—";
+    const criticos = datosGlobales.proyectos.filter(
+      (p) => p.estado === "detenido" || (p.estado === "en_curso" && p.fecha_fin_estimada && p.fecha_fin_estimada < hoyStr)
+    ).length;
+    const comprasPendAprob = datosGlobales.comprasSolicitudes.filter((s) =>
+      ["pendiente", "en_comparativo", "presentada"].includes(s.estado)
+    ).length;
+
+    const nombreMes = ahora.toLocaleDateString("es-CO", { month: "long", year: "numeric" });
+    const subEl = document.getElementById("comite-mes-subtitulo");
+    if (subEl) subEl.textContent = `Indicadores consolidados · ${nombreMes}`;
+
+    const cardComite = (lbl, val, sub, cls = "text-gray-900") => `
+      <div class="rounded-lg border border-gray-100 bg-gray-50/70 p-3.5">
+        <p class="text-[11px] font-semibold uppercase text-gray-500">${lbl}</p>
+        <p class="mt-1 text-lg font-bold tabular-nums ${cls}">${val}</p>
+        <p class="mt-0.5 text-[11px] text-gray-400">${sub}</p>
+      </div>`;
+
+    document.getElementById("resumen-comite-grid").innerHTML =
+      cardComite("Facturación del mes", formatoMoneda(facturacionMes), "Facturas emitidas") +
+      cardComite("Costos / Gastos del mes", formatoMoneda(gastosMes), "Gastos registrados") +
+      cardComite("Margen bruto estimado", formatoMoneda(margenMes), `Margen mes: ${margenMesPct}`, margenMes > 0 ? "text-emerald-600" : margenMes < 0 ? "text-red-600" : "text-gray-900") +
+      cardComite("Proyectos críticos / detenidos", criticos, "Detenidos o vencidos", criticos > 0 ? "text-rose-600" : "text-gray-900") +
+      cardComite("Compras por aprobar", comprasPendAprob, "Solicitudes pendientes", comprasPendAprob > 0 ? "text-amber-600" : "text-gray-900");
+
     const filaProyecto = (p) => `
-      <tr class="border-b border-gray-50 last:border-0 hover:bg-gray-50">
+      <tr class="border-b border-gray-50 last:border-0 hover:bg-blue-50/40 cursor-pointer transition-colors" data-proyecto-id="${p.id}">
         <td class="px-5 py-3">
-          <a href="proyecto-detalle.html?id=${p.id}" class="font-medium text-gray-900 hover:text-primary">${escapeHtml(p.nombre)}</a>
+          <span class="font-medium text-gray-900 hover:text-primary">${escapeHtml(p.nombre)}</span>
         </td>
         <td class="px-5 py-3">${badgeHtml(ESTADOS_PROYECTO, p.estado)}</td>
         <td class="px-5 py-3">
@@ -152,6 +274,11 @@
     tbodyP.innerHTML = datosGlobales.proyectos.length
       ? datosGlobales.proyectos.slice(0, 6).map(filaProyecto).join("")
       : `<tr><td class="px-5 py-6 text-gray-400" colspan="4">Aún no has creado proyectos. <a class="text-primary font-semibold" href="proyecto-nuevo.html">Crea el primero →</a></td></tr>`;
+
+    tbodyP.addEventListener("click", (e) => {
+      const tr = e.target.closest("tr[data-proyecto-id]");
+      if (tr) abrirResumenProyecto(tr.dataset.proyectoId);
+    });
 
     const filaFactura = (f) => `
       <tr class="border-b border-gray-50 last:border-0 hover:bg-gray-50">
@@ -181,16 +308,7 @@
   let comiteSlides = [];
 
   function construirSlidesComite() {
-    const { proyectos, facturas, compras, vinculos, suministros, empresas } = datosGlobales;
-
-    const costosPorProyecto = (proyectoId) => {
-      const c = compras.filter((c) => c.proyecto_id === proyectoId).reduce((a, c) => a + Number(c.valor || 0), 0);
-      const v = vinculos.filter((v) => v.proyecto_id === proyectoId);
-      const pagC = v.reduce((a, vi) => a + (vi.cortes_pago || []).reduce((a2, cp) => a2 + Number(cp.valor_neto || 0), 0), 0);
-      return c + pagC;
-    };
-    const facturadoPorProyecto = (proyectoId) =>
-      facturas.filter((f) => f.proyecto_id === proyectoId).reduce((a, f) => a + Number(f.valor || 0), 0);
+    const { proyectos, facturas, suministros, empresas } = datosGlobales;
 
     function slideEstadoProyectos(empresaId, tituloSlide) {
       const lista = proyectos.filter((p) => (empresaId ? p.empresa_id === empresaId : true));

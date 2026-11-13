@@ -5,20 +5,58 @@
 
 const NAV_ITEMS = [
   { page: "dashboard", href: "dashboard.html", icon: "dashboard", label: "Panel Principal" },
+  {
+    group: "comercial",
+    label: "Comercial",
+    items: [
+      { page: "crm", href: "crm.html", icon: "handshake", label: "CRM Comercial" },
+      { page: "ofertas", href: "ofertas.html", icon: "assignment", label: "Ofertas Pre-venta" },
+    ],
+  },
   { page: "proyectos", href: "proyectos.html", icon: "folder_open", label: "Proyectos" },
-  { page: "crm", href: "crm.html", icon: "handshake", label: "CRM Comercial" },
+  { page: "compras", href: "compras.html", icon: "shopping_cart", label: "Compras" },
   { page: "facturacion", href: "facturacion.html", icon: "receipt_long", label: "Facturación" },
-  { page: "compras", href: "compras.html", icon: "shopping_cart", label: "Compras y Costos" },
-  { page: "suministros", href: "suministros.html", icon: "inventory_2", label: "Suministros" },
-  { page: "clientes", href: "clientes.html", icon: "groups", label: "Clientes" },
-  { page: "contratistas", href: "contratistas.html", icon: "engineering", label: "Contratistas" },
-  { page: "proveedores", href: "proveedores.html", icon: "local_shipping", label: "Proveedores" },
+  { page: "terceros", href: "terceros.html", icon: "groups", label: "Terceros" },
   { page: "empresas", href: "empresas.html", icon: "domain", label: "Empresas" },
 ];
 
 const NAV_ITEMS_ADMIN = [
   { page: "usuarios", href: "usuarios.html", icon: "manage_accounts", label: "Usuarios" },
 ];
+
+const ROLES_CONFIG = {
+  super_usuario: {
+    label: "Super Usuario",
+    pages: ["dashboard", "crm", "ofertas", "proyectos", "compras", "facturacion", "terceros", "empresas", "usuarios"],
+    admin: true,
+  },
+  directivo: {
+    label: "Directivo",
+    pages: ["dashboard", "crm", "ofertas", "proyectos", "compras", "facturacion", "terceros", "empresas"],
+    admin: false,
+  },
+  comercial: {
+    label: "Comercial",
+    pages: ["dashboard", "crm", "ofertas", "terceros"],
+    admin: false,
+  },
+  proyectos: {
+    label: "Proyectos",
+    pages: ["dashboard", "proyectos", "terceros"],
+    admin: false,
+  },
+  compras: {
+    label: "Compras",
+    pages: ["dashboard", "compras", "terceros"],
+    admin: false,
+  },
+};
+
+function normalizarRol(rolRaw) {
+  if (rolRaw === "admin") return "super_usuario";
+  if (rolRaw === "miembro" || !rolRaw) return "proyectos";
+  return ROLES_CONFIG[rolRaw] ? rolRaw : "proyectos";
+}
 
 function logoSvg() {
   return `
@@ -28,23 +66,36 @@ function logoSvg() {
     </svg>`;
 }
 
-function renderSidebar(activePage) {
-  const cfg = window.PCTRONIC_CONFIG || {};
-  const items = [...NAV_ITEMS];
-  const linksHtml = (arr) =>
-    arr
-      .map((item) => {
-        const active = item.page === activePage;
-        return `
-        <a href="${item.href}" title="${escapeHtml(item.label)}"
-           class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors
-             ${active ? "bg-blue-50 text-primary" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"}">
-          <span class="material-symbols-outlined shrink-0 text-[20px]">${item.icon}</span>
-          <span class="nav-label truncate">${item.label}</span>
-        </a>`;
-      })
-      .join("");
+function renderNavLinksHtml(activePage, allowedPages = null) {
+  const linkItem = (item) => {
+    const active = item.page === activePage;
+    return `
+      <a href="${item.href}" title="${escapeHtml(item.label)}"
+         class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors
+           ${active ? "bg-blue-50 text-primary" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"}">
+        <span class="material-symbols-outlined shrink-0 text-[20px]">${item.icon}</span>
+        <span class="nav-label truncate">${item.label}</span>
+      </a>`;
+  };
 
+  return NAV_ITEMS.map((entry) => {
+    if (entry.group) {
+      const visibles = allowedPages
+        ? entry.items.filter((sub) => allowedPages.includes(sub.page))
+        : entry.items;
+      if (!visibles.length) return "";
+      return `
+        <div class="pt-2 pb-1">
+          <p class="nav-label px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">${escapeHtml(entry.label)}</p>
+          <div class="space-y-1">${visibles.map(linkItem).join("")}</div>
+        </div>`;
+    }
+    if (allowedPages && !allowedPages.includes(entry.page)) return "";
+    return linkItem(entry);
+  }).join("");
+}
+
+function renderSidebar(activePage) {
   return `
   <aside id="app-aside" class="fixed inset-y-0 left-0 z-30 flex w-64 flex-col border-r border-gray-200 bg-white transition-[width] duration-150">
     <div class="flex items-center gap-3 px-5 py-5 border-b border-gray-100">
@@ -55,7 +106,7 @@ function renderSidebar(activePage) {
       </div>
     </div>
     <nav class="flex-1 space-y-1 overflow-y-auto overflow-x-hidden px-3 py-4" id="nav-links">
-      ${linksHtml(items)}
+      ${renderNavLinksHtml(activePage, null)}
       <div id="nav-admin-slot"></div>
     </nav>
     <div class="border-t border-gray-100 p-3 space-y-1">
@@ -174,8 +225,28 @@ async function inicializarApp() {
     console.warn("No se pudo cargar el perfil", e);
   }
 
+  const rolRaw = profile?.rol || "miembro";
+  const rolNorm = normalizarRol(rolRaw);
+  const rolCfg = ROLES_CONFIG[rolNorm] || ROLES_CONFIG.proyectos;
+
+  window.PCT_ROL_INFO = {
+    rolRaw,
+    rol: rolNorm,
+    label: rolCfg.label,
+    pages: rolCfg.pages,
+    esSuperUsuario: rolNorm === "super_usuario",
+    esDirectivo: rolNorm === "directivo",
+    puedeAprobarCompras: rolNorm === "super_usuario" || rolNorm === "directivo",
+    puedeEliminar: rolNorm === "super_usuario",
+  };
+
+  const navLinksEl = document.getElementById("nav-links");
+  if (navLinksEl) {
+    navLinksEl.innerHTML = `${renderNavLinksHtml(page, rolCfg.pages)}<div id="nav-admin-slot"></div>`;
+  }
+
   const nombre = profile?.nombre_completo || session.user.email;
-  const rol = profile?.rol === "admin" ? "Administrador" : "Miembro del equipo";
+  const rol = rolCfg.label;
 
   const nombreEl = document.getElementById("topbar-nombre");
   const rolEl = document.getElementById("topbar-rol");
@@ -194,21 +265,23 @@ async function inicializarApp() {
     }
   }
 
-  if (profile?.rol === "admin") {
+  if (rolCfg.admin) {
     const slot = document.getElementById("nav-admin-slot");
     if (slot) {
       slot.innerHTML = NAV_ITEMS_ADMIN.map((item) => {
         const active = item.page === page;
         return `
-        <a href="${item.href}"
+        <a href="${item.href}" title="${escapeHtml(item.label)}"
            class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors
              ${active ? "bg-blue-50 text-primary" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"}">
-          <span class="material-symbols-outlined text-[20px]">${item.icon}</span>
-          ${item.label}
+          <span class="material-symbols-outlined shrink-0 text-[20px]">${item.icon}</span>
+          <span class="nav-label truncate">${item.label}</span>
         </a>`;
       }).join("");
     }
   }
+
+  aplicarEstadoSidebar(colapsada);
 
   const btnLogout = document.getElementById("btn-logout");
   if (btnLogout) {

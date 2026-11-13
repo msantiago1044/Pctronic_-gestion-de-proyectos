@@ -8,15 +8,26 @@
   const { session, profile } = await window.pctronicReady;
   if (!session) return;
   const usuarioActualId = session?.user?.id;
+  const rolNorm = typeof normalizarRol === "function" ? normalizarRol(profile?.rol) : (profile?.rol || "proyectos");
+  const esComercialSolo = rolNorm === "comercial";
 
   // 1. Constantes y Configuración de Etapas y Servicios
   const ETAPAS = {
-    prospecto: { label: "Prospecto / Lead", color: "bg-slate-500", badge: "bg-slate-100 text-slate-800" },
-    visita: { label: "Visita Técnica", color: "bg-indigo-500", badge: "bg-indigo-100 text-indigo-800" },
-    cotizacion: { label: "Cotización Enviada", color: "bg-amber-500", badge: "bg-amber-100 text-amber-800" },
-    negociacion: { label: "Negociación", color: "bg-blue-500", badge: "bg-blue-100 text-blue-800" },
-    ganada: { label: "Ganada", color: "bg-emerald-500", badge: "bg-emerald-100 text-emerald-800" },
-    perdida: { label: "Perdida", color: "bg-rose-500", badge: "bg-rose-100 text-rose-800" },
+    por_revisar: { label: "Por revisar / Contacto inicial", color: "bg-gray-400", badge: "bg-gray-100 text-gray-800" },
+    prospecto: { label: "Contactado / Prospecto", color: "bg-slate-500", badge: "bg-slate-100 text-slate-800" },
+    visita: { label: "Visita / Levantamiento", color: "bg-indigo-500", badge: "bg-indigo-100 text-indigo-800" },
+    cotizacion: { label: "En Oferta / Cotización", color: "bg-amber-500", badge: "bg-amber-100 text-amber-800" },
+    negociacion: { label: "Enviado al cliente / Seguimiento", color: "bg-blue-500", badge: "bg-blue-100 text-blue-800" },
+    ganada: { label: "Cerrado ganado", color: "bg-emerald-500", badge: "bg-emerald-100 text-emerald-800" },
+    perdida: { label: "Cerrado perdido", color: "bg-rose-500", badge: "bg-rose-100 text-rose-800" },
+    descartada: { label: "Descartado", color: "bg-zinc-400", badge: "bg-zinc-100 text-zinc-700" },
+  };
+
+  const ESTADOS_OFERTA = {
+    levantamiento: { label: "Pre-venta: Levantamiento", badge: "bg-slate-100 text-slate-700 border-slate-200" },
+    en_proceso: { label: "Pre-venta: En proceso", badge: "bg-blue-100 text-blue-700 border-blue-200" },
+    finalizado: { label: "Pre-venta: Finalizado", badge: "bg-amber-100 text-amber-800 border-amber-200" },
+    enviado_cliente: { label: "Pre-venta: Enviado al cliente", badge: "bg-emerald-100 text-emerald-700 border-emerald-200" },
   };
 
   const SERVICIOS = {
@@ -48,7 +59,7 @@
   // 3. Cargar datos desde Supabase
   async function cargarDatos() {
     try {
-      const [resOps, resCli, resProf] = await Promise.all([
+      const [resOps, resCli, resProf, resOfertas] = await Promise.all([
         window.sb
           .from("crm_oportunidades")
           .select(`
@@ -62,10 +73,18 @@
           .order("created_at", { ascending: false }),
         window.sb.from("clientes").select("id, nombre").order("nombre"),
         window.sb.from("profiles").select("id, nombre_completo").order("nombre_completo"),
+        window.sb.from("crm_ofertas_preventa").select("id, oportunidad_id, estado, titulo"),
       ]);
 
       if (resOps.error) throw resOps.error;
-      oportunidades = resOps.data || [];
+      const ofertas = resOfertas.error ? [] : (resOfertas.data || []);
+      const ofertasPorId = new Map(ofertas.map((o) => [o.id, o]));
+      const ofertasPorOpId = new Map(ofertas.filter((o) => o.oportunidad_id).map((o) => [o.oportunidad_id, o]));
+
+      oportunidades = (resOps.data || []).map((op) => ({
+        ...op,
+        _oferta: (op.oferta_preventa_id && ofertasPorId.get(op.oferta_preventa_id)) || ofertasPorOpId.get(op.id) || null,
+      }));
       clientes = resCli.data || [];
       perfiles = resProf.data || [];
 
@@ -111,7 +130,7 @@
       const valor = Number(op.valor_estimado || 0);
       const prob = Number(op.probabilidad || 0);
 
-      if (["prospecto", "visita", "cotizacion", "negociacion"].includes(op.etapa)) {
+      if (["por_revisar", "prospecto", "visita", "cotizacion", "negociacion"].includes(op.etapa)) {
         activasCount++;
         pipelinePonderado += valor * (prob / 100);
       } else if (op.etapa === "ganada") {
@@ -120,7 +139,7 @@
         if (d.getMonth() === mesActual && d.getFullYear() === anioActual) {
           ganadasMesMonto += valor;
         }
-      } else if (op.etapa === "perdida") {
+      } else if (op.etapa === "perdida" || op.etapa === "descartada") {
         perdidasCount++;
       }
     });
@@ -227,6 +246,10 @@
                   <span class="inline-flex items-center gap-0.5 rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 text-[10px] font-bold" title="Sin actualización hace ${diasSinCambio} días">
                     ⚠️ Inactiva ${diasSinCambio}d
                   </span>` : ""}
+                ${op._oferta ? `
+                  <span class="inline-flex items-center gap-0.5 rounded-full border px-2 py-0.5 text-[10px] font-bold ${(ESTADOS_OFERTA[op._oferta.estado] || ESTADOS_OFERTA.levantamiento).badge}" title="Estado en Ofertas Pre-venta">
+                    ${(ESTADOS_OFERTA[op._oferta.estado] || ESTADOS_OFERTA.levantamiento).label}
+                  </span>` : ""}
                 ${op.proyecto_id ? `
                   <span class="inline-flex items-center gap-0.5 rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[10px] font-bold" title="Vinculado a Proyecto">
                     <span class="material-symbols-outlined text-[12px]">rocket_launch</span> Proyecto
@@ -326,8 +349,12 @@
                           return `
                         <tr class="hover:bg-gray-50/80 cursor-pointer transition-colors" data-id="${op.id}">
                           <td class="px-4 py-3 font-bold text-gray-900">
-                            <div class="flex items-center gap-1.5">
+                            <div class="flex flex-wrap items-center gap-1.5">
                               <span>${escapeHtml(op.titulo)}</span>
+                              ${op._oferta ? `
+                                <span class="rounded-full border px-2 py-0.5 text-[9px] font-bold ${(ESTADOS_OFERTA[op._oferta.estado] || ESTADOS_OFERTA.levantamiento).badge}">
+                                  ${(ESTADOS_OFERTA[op._oferta.estado] || ESTADOS_OFERTA.levantamiento).label}
+                                </span>` : ""}
                               ${esEstancada ? `
                                 <span class="rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 text-[9px] font-bold" title="Sin actualización hace ${diasSinCambio} días">
                                   ⚠️ Inactiva ${diasSinCambio}d
@@ -390,6 +417,10 @@
     const prob = op.probabilidad || 20;
     document.getElementById("drawer-probabilidad").value = prob;
     document.getElementById("drawer-probabilidad-badge").textContent = `${prob}%`;
+
+    if (esComercialSolo) {
+      document.getElementById("drawer-costo")?.closest("div")?.classList.add("hidden");
+    }
 
     actualizarMargenLabel();
     actualizarEstadoBanners(op);
@@ -454,10 +485,119 @@
       bannerGanada.classList.add("hidden");
     }
 
-    if (op.etapa === "perdida") {
+    if (op.etapa === "perdida" || op.etapa === "descartada") {
       contPerdida.classList.remove("hidden");
     } else {
       contPerdida.classList.add("hidden");
+    }
+
+    // Banner Oferta Pre-venta vinculada
+    const ofertaBadge = document.getElementById("drawer-oferta-estado-badge");
+    const ofertaInfo = document.getElementById("drawer-oferta-info");
+    const btnEnviarPreventa = document.getElementById("btn-enviar-preventa");
+    const linkVerOferta = document.getElementById("link-ver-oferta");
+    const oferta = op._oferta || (oportunidadActual && oportunidadActual._oferta);
+
+    if (ofertaBadge && ofertaInfo && btnEnviarPreventa && linkVerOferta) {
+      if (oferta) {
+        const est = ESTADOS_OFERTA[oferta.estado] || ESTADOS_OFERTA.levantamiento;
+        ofertaBadge.textContent = est.label;
+        ofertaBadge.className = `rounded-full border px-2 py-0.5 text-[10px] font-bold ${est.badge}`;
+        ofertaBadge.classList.remove("hidden");
+        ofertaInfo.textContent = `Vinculada a "${oferta.titulo || op.titulo}".`;
+        btnEnviarPreventa.classList.add("hidden");
+        linkVerOferta.href = `ofertas.html?id=${oferta.id}`;
+        linkVerOferta.classList.remove("hidden");
+        linkVerOferta.classList.add("inline-flex");
+      } else {
+        ofertaBadge.classList.add("hidden");
+        ofertaInfo.textContent = "Envía esta oportunidad al tablero de Ofertas Pre-venta para levantamiento y cotización técnica.";
+        btnEnviarPreventa.classList.remove("hidden");
+        linkVerOferta.classList.add("hidden");
+        linkVerOferta.classList.remove("inline-flex");
+      }
+    }
+  }
+
+  async function enviarAOfertasPreventa() {
+    if (!oportunidadActual) return;
+    const op = oportunidadActual;
+    if (op._oferta || op.oferta_preventa_id) {
+      mostrarAviso("Esta oportunidad ya tiene una oferta vinculada", "info");
+      return;
+    }
+
+    const btn = document.getElementById("btn-enviar-preventa");
+    const textoOrig = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Enviando...";
+    }
+
+    try {
+      const relevoInicial = [
+        {
+          fecha: new Date().toISOString(),
+          de_estado: null,
+          a_estado: "levantamiento",
+          de_responsable_id: null,
+          a_responsable_id: op.responsable_id || usuarioActualId || null,
+          nota: "Enviado desde CRM Comercial",
+          usuario_id: usuarioActualId || null,
+        },
+      ];
+
+      const { data: nuevaOferta, error: errOferta } = await window.sb
+        .from("crm_ofertas_preventa")
+        .insert({
+          oportunidad_id: op.id,
+          titulo: op.titulo,
+          cliente_id: op.cliente_id || null,
+          empresa_id: op.empresa_id || null,
+          responsable_id: op.responsable_id || usuarioActualId || null,
+          estado: "levantamiento",
+          prioridad: op.prioridad || "media",
+          valor_estimado: Number(op.valor_estimado || 0),
+          fecha_limite: op.fecha_cierre_estimada || null,
+          descripcion: op.descripcion || null,
+          historial_relevos: relevoInicial,
+          creado_por: usuarioActualId || null,
+        })
+        .select()
+        .single();
+
+      if (errOferta) throw errOferta;
+
+      const { error: errUpd } = await window.sb
+        .from("crm_oportunidades")
+        .update({
+          oferta_preventa_id: nuevaOferta.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", op.id);
+
+      if (errUpd) throw errUpd;
+
+      await window.sb.from("crm_actividades").insert({
+        oportunidad_id: op.id,
+        tipo: "tarea",
+        titulo: "Enviada a Ofertas Pre-venta",
+        descripcion: `Se creó la oferta en Pre-venta en estado Levantamiento.`,
+        creado_por: usuarioActualId || null,
+      });
+
+      oportunidadActual._oferta = nuevaOferta;
+      oportunidadActual.oferta_preventa_id = nuevaOferta.id;
+      actualizarEstadoBanners(oportunidadActual);
+      mostrarAviso("Oportunidad enviada a Ofertas Pre-venta.", "exito");
+      await cargarDatos();
+    } catch (err) {
+      manejarError(err, "No se pudo enviar a Ofertas Pre-venta");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = textoOrig;
+      }
     }
   }
 
@@ -865,6 +1005,7 @@
     document.getElementById("btn-drawer-guardar")?.addEventListener("click", guardarOportunidad);
     document.getElementById("btn-drawer-eliminar")?.addEventListener("click", eliminarOportunidad);
     document.getElementById("btn-convertir-proyecto")?.addEventListener("click", convertirEnProyecto);
+    document.getElementById("btn-enviar-preventa")?.addEventListener("click", enviarAOfertasPreventa);
 
     // Botones rápidos Ganada / Perdida en Drawer
     document.getElementById("btn-drawer-ganada")?.addEventListener("click", () => {

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="assets/img/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32x32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/img/apple-touch-icon.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Pctronic · Sistema de Gestión y CRM" />
+  <meta property="og:description" content="Plataforma de gestión de proyectos, cotizaciones, CRM comercial y avance de obra para Pctronic Seguridad Electrónica." />
+  <meta property="og:image" content="https://pctronic-gestion-de-proyectos.vercel.app/assets/img/og-preview.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:url" content="https://pctronic-gestion-de-proyectos.vercel.app" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Pctronic · Sistema de Gestión y CRM" />
+  <meta name="twitter:description" content="Plataforma de proyectos, cotizaciones y CRM comercial para Pctronic Seguridad Electrónica." />
+  <meta name="twitter:image" content="https://pctronic-gestion-de-proyectos.vercel.app/assets/img/og-preview.png" />
+
+<title>Terceros · Pctronic</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+<script>
+  tailwind.config = {
+    theme: { extend: { colors: { primary: "#135bec" }, fontFamily: { display: ["Inter", "sans-serif"] } } },
+  };
+</script>
+<link rel="stylesheet" href="assets/css/styles.css" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/supabaseClient.js"></script>
+<script src="assets/js/util.js"></script>
+<script src="assets/js/excel.js"></script>
+</head>
+<body data-page="terceros" data-title="Terceros" class="font-display bg-gray-50 text-gray-900 antialiased">
+
+<div id="app-sidebar"></div>
+<div class="lg:pl-64">
+  <div id="app-topbar"></div>
+
+  <main class="p-6 space-y-4">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div class="flex flex-wrap items-center gap-2" id="filtros-tipo">
+        <button type="button" data-filtro="todos" class="pill-filtro rounded-full bg-primary px-3.5 py-1.5 text-xs font-semibold text-white">Todos</button>
+        <button type="button" data-filtro="cliente" class="pill-filtro rounded-full border border-gray-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">Clientes</button>
+        <button type="button" data-filtro="contratista" class="pill-filtro rounded-full border border-gray-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">Contratistas</button>
+        <button type="button" data-filtro="proveedor" class="pill-filtro rounded-full border border-gray-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">Proveedores</button>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <input id="filtro-busqueda" type="search" placeholder="Buscar por nombre, NIT, categoría..."
+          class="w-64 rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary" />
+        <button id="btn-sincronizar" title="Importar clientes, proveedores y contratistas existentes"
+          class="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+          <span class="material-symbols-outlined text-[16px]">sync</span> Sincronizar
+        </button>
+        <button id="btn-exportar"
+          class="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+          <span class="material-symbols-outlined text-[16px]">download</span> Excel
+        </button>
+        <button id="btn-nuevo"
+          class="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+          <span class="material-symbols-outlined text-[18px]">add</span> Nuevo Tercero
+        </button>
+      </div>
+    </div>
+
+    <p class="text-xs text-gray-400">
+      Directorio unificado de clientes, proveedores y contratistas. Un mismo tercero puede cumplir varios roles y se sincroniza automáticamente con los proyectos, compras y cortes. Haz clic en una fila para ver su ficha y contactos.
+    </p>
+
+    <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+      <table class="w-full text-left text-sm">
+        <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+          <tr>
+            <th class="px-4 py-3">Nombre / Razón social</th>
+            <th class="px-4 py-3">NIT / ID</th>
+            <th class="px-4 py-3">Roles</th>
+            <th class="px-4 py-3">Contacto</th>
+            <th class="px-4 py-3">Detalle / Retención</th>
+            <th class="px-4 py-3 text-right">Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="tabla-terceros">
+          <tr><td class="px-4 py-6 text-gray-400" colspan="6">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- Modal Crear / Editar Tercero -->
+<div id="modal-tercero" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/40 p-4 overflow-y-auto">
+  <div class="w-full max-w-2xl rounded-xl bg-white p-6 shadow-xl my-8">
+    <div class="mb-4 flex items-center justify-between">
+      <h3 id="modal-titulo" class="text-base font-bold text-gray-900">Nuevo tercero</h3>
+      <button type="button" id="modal-cerrar" class="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+        <span class="material-symbols-outlined text-[20px]">close</span>
+      </button>
+    </div>
+
+    <form id="form-tercero" class="space-y-4">
+      <div class="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label class="mb-1 block text-xs font-semibold text-gray-700">Nombre / Razón social *</label>
+          <input id="t-nombre" type="text" required class="block w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary" />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-semibold text-gray-700">NIT / Cédula</label>
+          <input id="t-identificacion" type="text" class="block w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary" />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-semibold text-gray-700">Teléfono</label>
+          <input id="t-telefono" type="text" class="block w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary" />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-semibold text-gray-700">Correo electrónico</label>
+          <input id="t-email" type="email" class="block w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary" />
+        </div>
+        <div class="sm:col-span-2">
+          <label class="mb-1 block text-xs font-semibold text-gray-700">Dirección</label>
+          <input id="t-direccion" type="text" class="block w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary" />
+        </div>
+      </div>
+
+      <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
+        <p class="mb-2 text-xs font-semibold uppercase text-gray-600">Roles del tercero</p>
+        <div class="flex flex-wrap gap-5">
+          <label class="flex items-center gap-2 text-sm font-medium text-gray-800 cursor-pointer">
+            <input id="t-es-cliente" type="checkbox" class="rounded border-gray-300 text-primary focus:ring-primary" />
+            Es Cliente
+          </label>
+          <label class="flex items-center gap-2 text-sm font-medium text-gray-800 cursor-pointer">
+            <input id="t-es-proveedor" type="checkbox" class="rounded border-gray-300 text-primary focus:ring-primary" />
+            Es Proveedor
+          </label>
+          <label class="flex items-center gap-2 text-sm font-medium text-gray-800 cursor-pointer">
+            <input id="t-es-contratista" type="checkbox" class="rounded border-gray-300 text-primary focus:ring-primary" />
+            Es Contratista
+          </label>
+        </div>
+      </div>
+
+      <!-- Campos condicionales Proveedor -->
+      <div id="sec-proveedor" class="hidden rounded-lg border border-blue-200 bg-blue-50/50 p-3 space-y-3">
+        <p class="text-xs font-bold uppercase text-primary">Configuración de Proveedor y Retenciones</p>
+        <div class="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label class="mb-1 block text-xs font-medium text-gray-700">Categoría</label>
+            <input id="t-categoria" type="text" placeholder="Ej. Seguridad electrónica, Cableado..." class="block w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary" />
+          </div>
+          <div class="flex items-end pb-1">
+            <label class="flex items-center gap-2 text-sm font-medium text-gray-800 cursor-pointer">
+              <input id="t-aplica-retencion" type="checkbox" class="rounded border-gray-300 text-primary focus:ring-primary" />
+              Aplica Retención en la Fuente
+            </label>
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-medium text-gray-700">% Retención</label>
+            <input id="t-porcentaje-retencion" type="number" step="0.01" min="0" value="0" class="block w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary" />
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-medium text-gray-700">% ICA</label>
+            <input id="t-porcentaje-ica" type="number" step="0.01" min="0" value="0" class="block w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary" />
+          </div>
+          <div class="sm:col-span-2">
+            <label class="mb-1 block text-xs font-medium text-gray-700">Monto mínimo para aplicar retención (COP)</label>
+            <input id="t-monto-minimo" type="number" step="1" min="0" value="0" class="block w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Campos condicionales Contratista -->
+      <div id="sec-contratista" class="hidden rounded-lg border border-amber-200 bg-amber-50/50 p-3 space-y-3">
+        <p class="text-xs font-bold uppercase text-amber-800">Configuración de Contratista</p>
+        <div class="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label class="mb-1 block text-xs font-medium text-gray-700">Especialidad</label>
+            <input id="t-especialidad" type="text" placeholder="Ej. CCTV, Obra civil, Eléctrico..." class="block w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary" />
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-medium text-gray-700">Tipo de persona</label>
+            <select id="t-tipo-persona" class="block w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary">
+              <option value="empresa">Empresa (0% retención)</option>
+              <option value="persona_natural">Persona natural</option>
+            </select>
+          </div>
+          <div class="sm:col-span-2" id="wrap-declarante">
+            <label class="flex items-center gap-2 text-sm font-medium text-gray-800 cursor-pointer">
+              <input id="t-declarante-renta" type="checkbox" class="rounded border-gray-300 text-primary focus:ring-primary" />
+              Es declarante de renta (Persona natural: 4% si declara, 6% si no declara)
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <label class="mb-1 block text-xs font-semibold text-gray-700">Notas</label>
+        <textarea id="t-notas" rows="2" class="block w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary"></textarea>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2 border-t border-gray-100">
+        <button type="button" id="modal-cancelar" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancelar</button>
+        <button type="submit" id="modal-guardar" class="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Guardar Tercero</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="assets/js/layout.js?v=2.2"></script>
+<script src="assets/js/terceros.js"></script>
+</body>
+</html>

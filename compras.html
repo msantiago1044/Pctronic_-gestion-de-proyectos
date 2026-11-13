@@ -6,7 +6,6 @@
   <link rel="icon" type="image/svg+xml" href="assets/img/favicon.svg" />
   <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32x32.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="assets/img/apple-touch-icon.png" />
-  <!-- Open Graph / Compartir en Redes Sociales (WhatsApp, LinkedIn, Facebook) -->
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Pctronic · Sistema de Gestión y CRM" />
   <meta property="og:description" content="Plataforma de gestión de proyectos, cotizaciones, CRM comercial y avance de obra para Pctronic Seguridad Electrónica." />
@@ -14,13 +13,12 @@
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:url" content="https://pctronic-gestion-de-proyectos.vercel.app" />
-  <!-- Twitter Cards -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Pctronic · Sistema de Gestión y CRM" />
   <meta name="twitter:description" content="Plataforma de proyectos, cotizaciones y CRM comercial para Pctronic Seguridad Electrónica." />
   <meta name="twitter:image" content="https://pctronic-gestion-de-proyectos.vercel.app/assets/img/og-preview.png" />
 
-<title>Compras y Costos · Pctronic</title>
+<title>Compras · Pctronic</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
@@ -41,76 +39,315 @@
 <script src="assets/js/excel.js"></script>
 <script src="assets/js/pdf.js"></script>
 </head>
-<body data-page="compras" data-title="Compras y Costos" class="font-display bg-gray-50 text-gray-900 antialiased">
+<body data-page="compras" data-title="Compras" class="font-display bg-gray-50 text-gray-900 antialiased">
 
 <div id="app-sidebar"></div>
 <div class="lg:pl-64">
   <div id="app-topbar"></div>
 
-  <main class="p-6 space-y-4">
-    <p class="text-sm text-gray-500">
-      Vista global de todas las compras y costos de todos los proyectos. Para registrar una compra nueva, entra al proyecto correspondiente → pestaña "Compras".
-    </p>
-
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+  <main class="p-6 space-y-5">
+    <!-- KPIs -->
+    <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
       <div class="rounded-xl border border-gray-200 bg-white p-4">
-        <p class="text-xs font-medium text-gray-500">Total Comprado (filtro actual)</p>
-        <p class="text-lg font-bold" id="kpi-total">$ 0</p>
+        <p class="text-xs font-medium text-gray-500">Pendientes</p>
+        <p class="mt-1 text-2xl font-bold text-amber-600" id="kpi-pendientes">0</p>
       </div>
       <div class="rounded-xl border border-gray-200 bg-white p-4">
-        <p class="text-xs font-medium text-gray-500" id="kpi-mes-label">Total Comprado Este Mes</p>
-        <p class="text-lg font-bold text-primary" id="kpi-mes">$ 0</p>
+        <p class="text-xs font-medium text-gray-500">En Comparativo / Presentadas</p>
+        <p class="mt-1 text-2xl font-bold text-blue-600" id="kpi-comparativo">0</p>
       </div>
       <div class="rounded-xl border border-gray-200 bg-white p-4">
-        <p class="text-xs font-medium text-gray-500" id="kpi-anio-label">Total Comprado Este Año</p>
-        <p class="text-lg font-bold text-primary" id="kpi-anio">$ 0</p>
+        <p class="text-xs font-medium text-gray-500">Aprobadas / Ordenadas</p>
+        <p class="mt-1 text-2xl font-bold text-emerald-600" id="kpi-aprobadas">0</p>
+      </div>
+      <div class="rounded-xl border border-gray-200 bg-white p-4">
+        <p class="text-xs font-medium text-gray-500">Total Ordenado</p>
+        <p class="mt-1 text-2xl font-bold text-gray-900 tabular-nums" id="kpi-total-comprado">$ 0</p>
       </div>
     </div>
 
-    <div class="flex flex-wrap items-center gap-3">
-      <input id="filtro-busqueda" type="search" placeholder="Buscar por proyecto o descripción..."
-        class="w-72 rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary" />
-      <select id="filtro-categoria" class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary">
-        <option value="">Categoría: Todas</option>
-        <option value="equipos">Equipos</option>
-        <option value="mano_obra">Mano de Obra</option>
-        <option value="materiales">Materiales</option>
-        <option value="alquiler">Alquiler</option>
-        <option value="otros">Otros</option>
-      </select>
-      <input id="filtro-mes" type="month" class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary" title="Filtrar por mes" />
-      <div class="ml-auto flex gap-2">
-        <button id="btn-exportar-excel" class="flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
-          <span class="material-symbols-outlined text-[16px]">download</span> Excel
+    <!-- Tabs y Botones de Acción -->
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-3">
+      <div class="flex gap-2">
+        <button type="button" data-tab="solicitudes" class="tab-compras rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-white">Solicitudes y Comparativos</button>
+        <button type="button" data-tab="ordenes" class="tab-compras rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">Órdenes Emitidas</button>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button type="button" id="btn-nueva-manual" class="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+          <span class="material-symbols-outlined text-[16px]">post_add</span> + Nueva Solicitud Manual / Plantilla Excel
         </button>
-        <button id="btn-exportar-pdf" class="flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
-          <span class="material-symbols-outlined text-[16px]">picture_as_pdf</span> PDF
+        <button type="button" id="btn-nueva-suministro" class="flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-700">
+          <span class="material-symbols-outlined text-[16px]">inventory_2</span> + Iniciar Compra de Suministro
         </button>
       </div>
     </div>
 
-    <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white">
-      <table class="w-full text-left text-sm">
-        <thead class="bg-gray-50 text-xs uppercase text-gray-500">
-          <tr>
-            <th class="px-4 py-3">Proyecto</th>
-            <th class="px-4 py-3">Descripción</th>
-            <th class="px-4 py-3">Proveedor</th>
-            <th class="px-4 py-3">Categoría</th>
-            <th class="px-4 py-3">N° Factura</th>
-            <th class="px-4 py-3">Fecha</th>
-            <th class="px-4 py-3">Valor</th>
-          </tr>
-        </thead>
-        <tbody id="tabla-compras">
-          <tr><td class="px-4 py-6 text-gray-400" colspan="6">Cargando…</td></tr>
-        </tbody>
-      </table>
-    </div>
+    <!-- Vista: Solicitudes y Comparativos -->
+    <section id="vista-solicitudes" class="space-y-4">
+      <div class="flex flex-wrap items-center gap-3">
+        <input id="filtro-busqueda" type="search" placeholder="Buscar por número, título, proyecto, cliente..."
+          class="w-72 rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary" />
+        <select id="filtro-estado" class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary">
+          <option value="">Estado: Todos</option>
+          <option value="pendiente">Pendiente</option>
+          <option value="en_comparativo">En Comparativo</option>
+          <option value="presentada">Presentada</option>
+          <option value="aprobada">Aprobada</option>
+          <option value="ordenada">Ordenada</option>
+          <option value="rechazada">Rechazada</option>
+        </select>
+        <select id="filtro-origen" class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary">
+          <option value="">Origen: Todos</option>
+          <option value="proyecto">Proyecto</option>
+          <option value="suministro">Suministro</option>
+          <option value="manual">Manual / Excel</option>
+        </select>
+      </div>
+
+      <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+        <table class="w-full text-left text-sm">
+          <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+            <tr>
+              <th class="px-4 py-3">N°</th>
+              <th class="px-4 py-3">Título</th>
+              <th class="px-4 py-3">Origen</th>
+              <th class="px-4 py-3">Proyecto / Cliente</th>
+              <th class="px-4 py-3">Empresa</th>
+              <th class="px-4 py-3">Fecha</th>
+              <th class="px-4 py-3">Estado</th>
+              <th class="px-4 py-3 text-right">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tabla-solicitudes">
+            <tr><td class="px-4 py-6 text-gray-400" colspan="8">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Vista: Órdenes Emitidas -->
+    <section id="vista-ordenes" class="hidden space-y-4">
+      <div class="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+        <table class="w-full text-left text-sm">
+          <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+            <tr>
+              <th class="px-4 py-3">N° Orden</th>
+              <th class="px-4 py-3">Tipo</th>
+              <th class="px-4 py-3">Empresa</th>
+              <th class="px-4 py-3">Proveedor</th>
+              <th class="px-4 py-3 text-right">Subtotal</th>
+              <th class="px-4 py-3 text-right">Retenciones</th>
+              <th class="px-4 py-3 text-right">Total</th>
+              <th class="px-4 py-3">Fecha</th>
+              <th class="px-4 py-3 text-right">PDF</th>
+            </tr>
+          </thead>
+          <tbody id="tabla-ordenes">
+            <tr><td class="px-4 py-6 text-gray-400" colspan="9">Cargando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   </main>
 </div>
 
-<script src="assets/js/layout.js?v=2.1"></script>
+<!-- Modal Nueva Solicitud (Manual/Excel o Suministro) -->
+<div id="modal-nueva-sol" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/40 p-4 overflow-y-auto">
+  <div class="w-full max-w-3xl rounded-xl bg-white p-6 shadow-xl my-8 space-y-4">
+    <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+      <h3 id="ns-titulo-modal" class="text-base font-bold text-gray-900">Nueva Solicitud de Compra</h3>
+      <button type="button" id="ns-cerrar" class="rounded-lg p-1 text-gray-400 hover:bg-gray-100">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+
+    <div class="grid gap-3 sm:grid-cols-2">
+      <div class="sm:col-span-2">
+        <label class="mb-1 block text-xs font-semibold text-gray-700">Título de la solicitud *</label>
+        <input id="ns-titulo" type="text" placeholder="Ej. Equipos CCTV Torre Norte" class="block w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary" />
+      </div>
+      <div>
+        <label class="mb-1 block text-xs font-semibold text-gray-700">Empresa que compra *</label>
+        <select id="ns-empresa" class="block w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary"></select>
+      </div>
+      <div id="ns-wrap-proyecto">
+        <label class="mb-1 block text-xs font-semibold text-gray-700">Proyecto (opcional)</label>
+        <select id="ns-proyecto" class="block w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary"></select>
+      </div>
+      <div id="ns-wrap-cliente" class="hidden">
+        <label class="mb-1 block text-xs font-semibold text-gray-700">Cliente (Suministro) *</label>
+        <select id="ns-cliente" class="block w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary"></select>
+      </div>
+      <div class="sm:col-span-2">
+        <label class="mb-1 block text-xs font-semibold text-gray-700">Notas</label>
+        <input id="ns-notas" type="text" class="block w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary" />
+      </div>
+    </div>
+
+    <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-100">
+      <p class="text-xs font-bold uppercase text-gray-600">Ítems a solicitar</p>
+      <div class="flex flex-wrap gap-2">
+        <button type="button" id="ns-descargar-plantilla" class="flex items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+          <span class="material-symbols-outlined text-[15px]">download</span> Plantilla Excel
+        </button>
+        <label class="flex items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 cursor-pointer">
+          <span class="material-symbols-outlined text-[15px]">upload</span> Cargar Excel
+          <input type="file" id="ns-cargar-excel" accept=".xlsx,.xls" class="hidden" />
+        </label>
+        <button type="button" id="ns-agregar-item" class="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-blue-100">+ Agregar Ítem</button>
+      </div>
+    </div>
+
+    <div class="max-h-64 overflow-y-auto rounded-lg border border-gray-200">
+      <table class="w-full text-left text-xs">
+        <thead class="bg-gray-50 uppercase text-gray-500">
+          <tr>
+            <th class="px-2 py-2 w-20">Código</th>
+            <th class="px-2 py-2">Descripción *</th>
+            <th class="px-2 py-2 w-16">Und</th>
+            <th class="px-2 py-2 w-20">Cant.</th>
+            <th class="px-2 py-2 w-28">Costo Presup.</th>
+            <th class="px-2 py-2 w-10"></th>
+          </tr>
+        </thead>
+        <tbody id="ns-items-tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="flex justify-end gap-2 pt-2">
+      <button type="button" id="ns-cancelar" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Cancelar</button>
+      <button type="button" id="ns-guardar" class="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Crear Solicitud</button>
+    </div>
+  </div>
+</div>
+
+<!-- Drawer / Modal Amplio: Cuadro Comparativo -->
+<div id="modal-comparativo" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/50 p-3 overflow-y-auto">
+  <div class="w-full max-w-6xl rounded-xl bg-white p-6 shadow-2xl my-4 space-y-4">
+    <div class="flex flex-wrap items-start justify-between gap-3 border-b border-gray-200 pb-3">
+      <div>
+        <div class="flex items-center gap-2">
+          <h3 id="cmp-titulo" class="text-lg font-bold text-gray-900">Cuadro Comparativo</h3>
+          <span id="cmp-estado-badge"></span>
+        </div>
+        <p id="cmp-subtitulo" class="text-xs text-gray-500 mt-0.5">—</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <button type="button" id="cmp-btn-presentar" class="flex items-center gap-1 rounded-lg bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-indigo-700">
+          <span class="material-symbols-outlined text-[16px]">co_present</span> Presentar Compra (Comité)
+        </button>
+        <button type="button" id="cmp-btn-orden" class="hidden flex items-center gap-1 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-emerald-700">
+          <span class="material-symbols-outlined text-[16px]">receipt_long</span> Generar Orden / Pre-orden
+        </button>
+        <button type="button" id="cmp-cerrar" class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Alertas -->
+    <div id="cmp-alertas" class="space-y-2"></div>
+
+    <!-- Selección de 3 Proveedores -->
+    <div class="grid gap-3 sm:grid-cols-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
+      <div>
+        <label class="mb-1 block text-xs font-bold text-gray-700">Proveedor 1</label>
+        <select id="cmp-prov-1" class="cmp-prov-select block w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary"></select>
+      </div>
+      <div>
+        <label class="mb-1 block text-xs font-bold text-gray-700">Proveedor 2</label>
+        <select id="cmp-prov-2" class="cmp-prov-select block w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary"></select>
+      </div>
+      <div>
+        <label class="mb-1 block text-xs font-bold text-gray-700">Proveedor 3</label>
+        <select id="cmp-prov-3" class="cmp-prov-select block w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary"></select>
+      </div>
+    </div>
+
+    <!-- Resumen Comparativo -->
+    <div id="cmp-resumen" class="grid grid-cols-2 gap-3 sm:grid-cols-4"></div>
+
+    <!-- Tabla Comparativa -->
+    <div class="overflow-x-auto max-h-[50vh] rounded-xl border border-gray-200">
+      <table class="w-full text-left text-xs">
+        <thead class="sticky top-0 bg-gray-100 text-[11px] uppercase text-gray-600">
+          <tr>
+            <th class="px-2 py-2.5">Ítem / Descripción</th>
+            <th class="px-2 py-2.5 text-right">Cant.</th>
+            <th class="px-2 py-2.5 text-right">Presup. Unit</th>
+            <th class="px-2 py-2.5 text-right" id="th-prov-1">Precio Prov 1</th>
+            <th class="px-2 py-2.5 text-right" id="th-prov-2">Precio Prov 2</th>
+            <th class="px-2 py-2.5 text-right" id="th-prov-3">Precio Prov 3</th>
+            <th class="px-2 py-2.5">Ganador</th>
+            <th class="px-2 py-2.5 text-right">Ahorro / Sobrecosto</th>
+          </tr>
+        </thead>
+        <tbody id="cmp-tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="flex justify-end gap-2 pt-2 border-t border-gray-100">
+      <button type="button" id="cmp-btn-guardar" class="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Guardar Comparativo</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Presentación Comité -->
+<div id="modal-comite" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60 p-4 overflow-y-auto">
+  <div class="w-full max-w-5xl rounded-xl bg-white p-6 shadow-2xl my-6 space-y-4">
+    <div class="flex items-center justify-between border-b border-gray-200 pb-3">
+      <div>
+        <h3 class="text-lg font-bold text-gray-900">Presentación de Compra — Comité</h3>
+        <p id="comite-subtitulo" class="text-xs text-gray-500">—</p>
+      </div>
+      <button type="button" id="comite-cerrar" class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+
+    <div id="comite-kpis" class="grid grid-cols-2 gap-3 sm:grid-cols-4"></div>
+
+    <div class="overflow-x-auto max-h-[50vh] rounded-xl border border-gray-200">
+      <table class="w-full text-left text-xs">
+        <thead class="sticky top-0 bg-gray-50 uppercase text-gray-600">
+          <tr>
+            <th class="px-3 py-2.5">Descripción</th>
+            <th class="px-3 py-2.5 text-right">Cant. Inicial Presup.</th>
+            <th class="px-3 py-2.5 text-right">Comprado (Historial)</th>
+            <th class="px-3 py-2.5 text-right">Pendiente por Comprar</th>
+            <th class="px-3 py-2.5 text-right">Cant. Solicitud</th>
+            <th class="px-3 py-2.5">Proveedor Ganador</th>
+            <th class="px-3 py-2.5 text-right">Precio Unit.</th>
+            <th class="px-3 py-2.5 text-right">Total Ítem</th>
+          </tr>
+        </thead>
+        <tbody id="comite-tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-gray-200">
+      <p id="comite-permiso-msg" class="text-xs text-gray-500"></p>
+      <div class="flex gap-2">
+        <button type="button" id="comite-btn-rechazar" class="hidden rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100">Rechazar</button>
+        <button type="button" id="comite-btn-aprobar" class="hidden rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Aprobar Compra</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Historial Compras Previas de un Ítem -->
+<div id="modal-historial-item" class="fixed inset-0 z-[60] hidden items-center justify-center bg-black/50 p-4">
+  <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl space-y-3">
+    <div class="flex items-center justify-between border-b border-gray-100 pb-2">
+      <h4 class="text-sm font-bold text-gray-900">Historial de compras previas del ítem</h4>
+      <button type="button" id="hist-cerrar" class="rounded p-1 text-gray-400 hover:bg-gray-100"><span class="material-symbols-outlined text-[18px]">close</span></button>
+    </div>
+    <p id="hist-desc" class="text-xs font-medium text-gray-700"></p>
+    <div id="hist-contenido" class="max-h-60 overflow-y-auto text-xs space-y-2"></div>
+  </div>
+</div>
+
+<script src="assets/js/layout.js?v=2.2"></script>
 <script src="assets/js/compras.js"></script>
 </body>
 </html>

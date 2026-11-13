@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="assets/img/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32x32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/img/apple-touch-icon.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Pctronic · Sistema de Gestión y CRM" />
+  <meta property="og:description" content="Plataforma de gestión de proyectos, cotizaciones, CRM comercial y avance de obra para Pctronic Seguridad Electrónica." />
+  <meta property="og:image" content="https://pctronic-gestion-de-proyectos.vercel.app/assets/img/og-preview.png" />
+  <meta property="og:url" content="https://pctronic-gestion-de-proyectos.vercel.app" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+<title>Ofertas Pre-venta · Pctronic</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+<script>
+  tailwind.config = {
+    theme: { extend: { colors: { primary: "#135bec" }, fontFamily: { display: ["Inter", "sans-serif"] } } },
+  };
+</script>
+<link rel="stylesheet" href="assets/css/styles.css" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/supabaseClient.js"></script>
+<script src="assets/js/util.js"></script>
+</head>
+<body data-page="ofertas" data-title="Ofertas Pre-venta" class="font-display bg-gray-50 text-gray-900 antialiased overflow-x-hidden">
+
+<div id="app-sidebar"></div>
+<div class="lg:pl-64 flex flex-col min-h-screen">
+  <div id="app-topbar"></div>
+
+  <main class="flex-1 p-6 space-y-6">
+    <!-- Encabezado -->
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <div class="flex items-center gap-3">
+          <h1 class="text-2xl font-bold text-gray-900">Ofertas Pre-venta</h1>
+          <div class="inline-flex rounded-lg border border-gray-200 bg-white p-1 shadow-sm">
+            <button id="btn-vista-tablero" type="button"
+              class="flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold bg-primary text-white transition-colors">
+              <span class="material-symbols-outlined text-[16px]">view_kanban</span> Tablero
+            </button>
+            <button id="btn-vista-lista" type="button"
+              class="flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold text-gray-600 hover:text-gray-900 transition-colors">
+              <span class="material-symbols-outlined text-[16px]">format_list_bulleted</span> Lista
+            </button>
+          </div>
+        </div>
+        <p class="text-xs text-gray-500 mt-1">Levantamiento técnico, elaboración de ofertas y relevos entre Comercial y Pre-venta</p>
+      </div>
+
+      <button id="btn-nueva-oferta" type="button"
+        class="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors">
+        <span class="material-symbols-outlined text-[18px]">add</span> Nueva Oferta
+      </button>
+    </div>
+
+    <!-- KPIs -->
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <p class="text-xs font-medium text-gray-500">Total Ofertas</p>
+        <p id="kpi-total" class="mt-1 text-xl font-bold text-gray-900">0</p>
+        <p class="text-[11px] text-gray-400 mt-0.5">En seguimiento pre-venta</p>
+      </div>
+      <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <p class="text-xs font-medium text-gray-500">Levantamiento / Proceso</p>
+        <p id="kpi-activas" class="mt-1 text-xl font-bold text-primary">0</p>
+        <p class="text-[11px] text-gray-400 mt-0.5">En diseño técnico</p>
+      </div>
+      <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <p class="text-xs font-medium text-gray-500">Finalizadas</p>
+        <p id="kpi-finalizadas" class="mt-1 text-xl font-bold text-amber-600">0</p>
+        <p class="text-[11px] text-gray-400 mt-0.5">Listas para envío</p>
+      </div>
+      <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <p class="text-xs font-medium text-gray-500">Enviadas al Cliente</p>
+        <p id="kpi-enviadas" class="mt-1 text-xl font-bold text-emerald-600">0</p>
+        <p id="kpi-enviadas-monto" class="text-[11px] text-gray-400 mt-0.5">$ 0</p>
+      </div>
+    </div>
+
+    <!-- Filtros -->
+    <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="relative w-72">
+          <span class="material-symbols-outlined absolute left-3 top-2.5 text-gray-400 text-[18px]">search</span>
+          <input id="filtro-busqueda" type="search" placeholder="Buscar oferta, cliente o empresa..."
+            class="w-full rounded-lg border-gray-200 pl-9 text-xs focus:border-primary focus:ring-primary shadow-sm" />
+        </div>
+        <select id="filtro-prioridad" class="rounded-lg border-gray-200 text-xs focus:border-primary focus:ring-primary shadow-sm">
+          <option value="">Prioridad: Todas</option>
+          <option value="urgente">Urgente</option>
+          <option value="alta">Alta</option>
+          <option value="media">Media</option>
+          <option value="baja">Baja</option>
+        </select>
+        <select id="filtro-responsable" class="rounded-lg border-gray-200 text-xs focus:border-primary focus:ring-primary shadow-sm">
+          <option value="">Responsable: Todos</option>
+        </select>
+      </div>
+      <div class="text-xs text-gray-500" id="contador-resultados">Cargando ofertas...</div>
+    </div>
+
+    <!-- VISTA 1: TABLERO KANBAN -->
+    <div id="vista-tablero" class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 items-start select-none">
+      <!-- 1. Levantamiento -->
+      <div class="kanban-col rounded-xl bg-gray-100/90 border border-gray-200 p-3 flex flex-col max-h-[calc(100vh-280px)]" data-estado="levantamiento">
+        <div class="flex items-center justify-between pb-2 mb-2 border-b border-gray-200">
+          <div class="flex items-center gap-2">
+            <span class="h-2.5 w-2.5 rounded-full bg-slate-500"></span>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-gray-700">Levantamiento</h2>
+            <span class="col-count text-[11px] font-semibold text-gray-500 bg-white px-2 py-0.5 rounded-full border border-gray-200">0</span>
+          </div>
+          <span class="col-subtotal text-xs font-semibold text-gray-600">$ 0</span>
+        </div>
+        <div class="col-cards space-y-3 overflow-y-auto flex-1 pr-1 py-1" id="cards-levantamiento"></div>
+      </div>
+
+      <!-- 2. En proceso -->
+      <div class="kanban-col rounded-xl bg-gray-100/90 border border-gray-200 p-3 flex flex-col max-h-[calc(100vh-280px)]" data-estado="en_proceso">
+        <div class="flex items-center justify-between pb-2 mb-2 border-b border-gray-200">
+          <div class="flex items-center gap-2">
+            <span class="h-2.5 w-2.5 rounded-full bg-primary"></span>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-gray-700">En proceso</h2>
+            <span class="col-count text-[11px] font-semibold text-gray-500 bg-white px-2 py-0.5 rounded-full border border-gray-200">0</span>
+          </div>
+          <span class="col-subtotal text-xs font-semibold text-gray-600">$ 0</span>
+        </div>
+        <div class="col-cards space-y-3 overflow-y-auto flex-1 pr-1 py-1" id="cards-en_proceso"></div>
+      </div>
+
+      <!-- 3. Finalizado -->
+      <div class="kanban-col rounded-xl bg-amber-50/70 border border-amber-200 p-3 flex flex-col max-h-[calc(100vh-280px)]" data-estado="finalizado">
+        <div class="flex items-center justify-between pb-2 mb-2 border-b border-amber-200">
+          <div class="flex items-center gap-2">
+            <span class="h-2.5 w-2.5 rounded-full bg-amber-500"></span>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-amber-800">Finalizado</h2>
+            <span class="col-count text-[11px] font-semibold text-amber-700 bg-white px-2 py-0.5 rounded-full border border-amber-200">0</span>
+          </div>
+          <span class="col-subtotal text-xs font-semibold text-amber-800">$ 0</span>
+        </div>
+        <div class="col-cards space-y-3 overflow-y-auto flex-1 pr-1 py-1" id="cards-finalizado"></div>
+      </div>
+
+      <!-- 4. Enviado al cliente -->
+      <div class="kanban-col rounded-xl bg-emerald-50/70 border border-emerald-200 p-3 flex flex-col max-h-[calc(100vh-280px)]" data-estado="enviado_cliente">
+        <div class="flex items-center justify-between pb-2 mb-2 border-b border-emerald-200">
+          <div class="flex items-center gap-2">
+            <span class="h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+            <h2 class="text-xs font-bold uppercase tracking-wider text-emerald-800">Enviado al cliente</h2>
+            <span class="col-count text-[11px] font-semibold text-emerald-700 bg-white px-2 py-0.5 rounded-full border border-emerald-200">0</span>
+          </div>
+          <span class="col-subtotal text-xs font-semibold text-emerald-800">$ 0</span>
+        </div>
+        <div class="col-cards space-y-3 overflow-y-auto flex-1 pr-1 py-1" id="cards-enviado_cliente"></div>
+      </div>
+    </div>
+
+    <!-- VISTA 2: LISTA -->
+    <div id="vista-lista" class="hidden overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
+      <table class="w-full text-left text-xs">
+        <thead class="bg-gray-50 text-[10px] uppercase text-gray-500 border-b border-gray-100">
+          <tr>
+            <th class="px-4 py-3">Oferta</th>
+            <th class="px-4 py-3">Cliente</th>
+            <th class="px-4 py-3">Estado</th>
+            <th class="px-4 py-3">Prioridad</th>
+            <th class="px-4 py-3">Responsable</th>
+            <th class="px-4 py-3">Valor Est.</th>
+            <th class="px-4 py-3">Fecha Límite</th>
+            <th class="px-4 py-3 text-right">Subtareas</th>
+          </tr>
+        </thead>
+        <tbody id="lista-tbody" class="divide-y divide-gray-100"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- DRAWER LATERAL DE OFERTA -->
+<div id="drawer-backdrop" class="fixed inset-0 bg-gray-900/30 backdrop-blur-sm z-40 hidden transition-opacity"></div>
+<div id="drawer-panel"
+  class="fixed inset-y-0 right-0 z-50 w-full max-w-2xl bg-white shadow-2xl flex flex-col transform translate-x-full transition-transform duration-200 ease-in-out">
+
+  <div class="flex items-center justify-between border-b border-gray-100 px-6 py-4 bg-gray-50/70">
+    <div class="flex items-center gap-2">
+      <span class="text-xs font-bold uppercase tracking-wider text-gray-500">Detalle de Oferta Pre-venta</span>
+      <a id="drawer-link-crm" href="crm.html" class="hidden items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-[11px] font-semibold text-primary hover:bg-blue-100">
+        <span class="material-symbols-outlined text-[13px]">handshake</span> Ver en CRM
+      </a>
+    </div>
+    <button id="btn-drawer-cerrar" type="button" class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-200 hover:text-gray-700">
+      <span class="material-symbols-outlined text-[20px]">close</span>
+    </button>
+  </div>
+
+  <div class="flex-1 overflow-y-auto p-6 space-y-6">
+    <div>
+      <input id="drawer-titulo" type="text" placeholder="Título de la oferta..."
+        class="w-full text-xl font-bold text-gray-900 border-0 border-b border-transparent focus:border-primary focus:ring-0 px-0 py-1" />
+    </div>
+
+    <div class="grid grid-cols-2 gap-4 text-xs">
+      <div>
+        <label class="block font-medium text-gray-500 mb-1">Estado (con relevo)</label>
+        <select id="drawer-estado" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
+          <option value="levantamiento">1. Levantamiento</option>
+          <option value="en_proceso">2. En proceso</option>
+          <option value="finalizado">3. Finalizado</option>
+          <option value="enviado_cliente">4. Enviado al cliente</option>
+        </select>
+      </div>
+      <div>
+        <label class="block font-medium text-gray-500 mb-1">Responsable actual</label>
+        <select id="drawer-responsable" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
+          <option value="">Sin asignar</option>
+        </select>
+      </div>
+      <div>
+        <label class="block font-medium text-gray-500 mb-1">Cliente</label>
+        <select id="drawer-cliente" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
+          <option value="">Sin cliente</option>
+        </select>
+      </div>
+      <div>
+        <label class="block font-medium text-gray-500 mb-1">Empresa</label>
+        <select id="drawer-empresa" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
+          <option value="">Sin empresa</option>
+        </select>
+      </div>
+      <div>
+        <label class="block font-medium text-gray-500 mb-1">Prioridad</label>
+        <select id="drawer-prioridad" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
+          <option value="baja">Baja</option>
+          <option value="media">Media</option>
+          <option value="alta">Alta</option>
+          <option value="urgente">Urgente</option>
+        </select>
+      </div>
+      <div>
+        <label class="block font-medium text-gray-500 mb-1">Fecha límite</label>
+        <input id="drawer-fecha" type="date" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary" />
+      </div>
+      <div id="drawer-valor-wrap">
+        <label class="block font-medium text-gray-500 mb-1">Valor estimado (COP)</label>
+        <input id="drawer-valor" type="text" inputmode="decimal" placeholder="0"
+          class="input-moneda w-full rounded-lg border-gray-300 text-xs font-semibold focus:border-primary focus:ring-primary" />
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">Descripción / Alcance</label>
+      <textarea id="drawer-descripcion" rows="2" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary"
+        placeholder="Requerimientos del cliente..."></textarea>
+    </div>
+
+    <div>
+      <label class="block text-xs font-medium text-gray-500 mb-1">Informe de Levantamiento (notas o enlace Drive)</label>
+      <textarea id="drawer-informe" rows="2" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary"
+        placeholder="Resumen técnico del levantamiento o URL de carpeta/documento..."></textarea>
+    </div>
+
+    <!-- Subtareas -->
+    <div class="border-t border-gray-100 pt-4 space-y-2.5">
+      <div class="flex items-center justify-between">
+        <h3 class="text-xs font-bold uppercase tracking-wider text-gray-700">Subtareas</h3>
+        <span id="drawer-subtareas-count" class="text-[11px] text-gray-400">0/0</span>
+      </div>
+      <div id="drawer-subtareas-lista" class="space-y-1.5"></div>
+      <div class="flex gap-2">
+        <input id="nueva-subtarea-txt" type="text" placeholder="Agregar subtarea (ej. Solicitar precios a proveedor)..."
+          class="flex-1 rounded-lg border-gray-300 text-xs py-1.5 px-2.5" />
+        <button id="btn-agregar-subtarea" type="button"
+          class="rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-700">Agregar</button>
+      </div>
+    </div>
+
+    <!-- Adjuntos (Enlaces) -->
+    <div class="border-t border-gray-100 pt-4 space-y-2.5">
+      <h3 class="text-xs font-bold uppercase tracking-wider text-gray-700">Adjuntos y Enlaces (Drive / Planos)</h3>
+      <div id="drawer-adjuntos-lista" class="space-y-1.5"></div>
+      <div class="grid grid-cols-1 sm:grid-cols-5 gap-2">
+        <input id="nuevo-adj-nombre" type="text" placeholder="Nombre (ej. Planos)" class="sm:col-span-2 rounded-lg border-gray-300 text-xs py-1.5 px-2.5" />
+        <input id="nuevo-adj-url" type="url" placeholder="https://drive.google.com/..." class="sm:col-span-2 rounded-lg border-gray-300 text-xs py-1.5 px-2.5" />
+        <button id="btn-agregar-adjunto" type="button"
+          class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">Vincular</button>
+      </div>
+    </div>
+
+    <!-- Historial de Relevos -->
+    <div class="border-t border-gray-100 pt-4 space-y-2.5">
+      <h3 class="text-xs font-bold uppercase tracking-wider text-gray-700">Historial de Relevos</h3>
+      <div id="drawer-relevos-lista" class="space-y-2"></div>
+    </div>
+  </div>
+
+  <div class="border-t border-gray-100 p-4 bg-gray-50 flex items-center justify-between">
+    <button id="btn-drawer-eliminar" type="button" class="text-xs font-semibold text-rose-600 hover:text-rose-800">
+      Eliminar Oferta
+    </button>
+    <div class="flex items-center gap-2">
+      <button id="btn-drawer-cancelar" type="button"
+        class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cerrar</button>
+      <button id="btn-drawer-guardar" type="button"
+        class="rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm">Guardar Cambios</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL NUEVA OFERTA -->
+<div id="modal-nuevo" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
+  <div class="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl space-y-4">
+    <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+      <h2 class="text-base font-bold text-gray-900">Nueva Oferta Pre-venta</h2>
+      <button id="btn-modal-nuevo-cerrar" type="button" class="text-gray-400 hover:text-gray-600">
+        <span class="material-symbols-outlined text-[20px]">close</span>
+      </button>
+    </div>
+    <form id="form-nuevo" class="space-y-3 text-xs">
+      <div>
+        <label class="block font-medium text-gray-700 mb-1">Título de la Oferta *</label>
+        <input id="nuevo-titulo" type="text" required placeholder="Ej. Cotización CCTV Bodega Norte" class="w-full rounded-lg border-gray-300 text-xs" />
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block font-medium text-gray-700 mb-1">Cliente</label>
+          <select id="nuevo-cliente" class="w-full rounded-lg border-gray-300 text-xs"><option value="">Selecciona cliente...</option></select>
+        </div>
+        <div>
+          <label class="block font-medium text-gray-700 mb-1">Empresa</label>
+          <select id="nuevo-empresa" class="w-full rounded-lg border-gray-300 text-xs"><option value="">Selecciona empresa...</option></select>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block font-medium text-gray-700 mb-1">Responsable</label>
+          <select id="nuevo-responsable" class="w-full rounded-lg border-gray-300 text-xs"><option value="">Sin asignar</option></select>
+        </div>
+        <div>
+          <label class="block font-medium text-gray-700 mb-1">Prioridad</label>
+          <select id="nuevo-prioridad" class="w-full rounded-lg border-gray-300 text-xs">
+            <option value="media">Media</option>
+            <option value="alta">Alta</option>
+            <option value="urgente">Urgente</option>
+            <option value="baja">Baja</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block font-medium text-gray-700 mb-1">Valor Estimado (COP)</label>
+          <input id="nuevo-valor" type="text" inputmode="decimal" placeholder="0" class="input-moneda w-full rounded-lg border-gray-300 text-xs font-semibold" />
+        </div>
+        <div>
+          <label class="block font-medium text-gray-700 mb-1">Fecha Límite</label>
+          <input id="nuevo-fecha" type="date" class="w-full rounded-lg border-gray-300 text-xs" />
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 pt-3 border-t border-gray-100">
+        <button id="btn-modal-nuevo-cancelar" type="button" class="rounded-lg border border-gray-300 px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancelar</button>
+        <button type="submit" class="rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700">Crear Oferta</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL RELEVO AL CAMBIAR ETAPA -->
+<div id="modal-relevo" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
+  <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl space-y-4">
+    <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+      <h2 class="text-base font-bold text-gray-900">Confirmar Relevo de Etapa</h2>
+      <button id="btn-relevo-cerrar" type="button" class="text-gray-400 hover:text-gray-600">
+        <span class="material-symbols-outlined text-[20px]">close</span>
+      </button>
+    </div>
+    <p id="relevo-resumen" class="text-xs text-gray-600"></p>
+    <div class="space-y-3 text-xs">
+      <div>
+        <label class="block font-medium text-gray-700 mb-1">Nuevo Responsable *</label>
+        <select id="relevo-responsable" class="w-full rounded-lg border-gray-300 text-xs"></select>
+      </div>
+      <div>
+        <label class="block font-medium text-gray-700 mb-1">Nota del relevo (opcional)</label>
+        <textarea id="relevo-nota" rows="2" placeholder="Ej. Levantamiento completo, pasa a diseño de oferta..."
+          class="w-full rounded-lg border-gray-300 text-xs"></textarea>
+      </div>
+    </div>
+    <div class="flex justify-end gap-2 pt-3 border-t border-gray-100">
+      <button id="btn-relevo-cancelar" type="button" class="rounded-lg border border-gray-300 px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancelar</button>
+      <button id="btn-relevo-confirmar" type="button" class="rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700">Confirmar Relevo</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/layout.js?v=2.1"></script>
+<script src="assets/js/ofertas.js"></script>
+</body>
+</html>

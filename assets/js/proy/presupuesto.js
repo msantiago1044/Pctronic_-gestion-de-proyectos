@@ -76,6 +76,10 @@
     const M = MODOS[modo];
     const VISTAS = M.vistas;
     let vista = Object.keys(VISTAS)[0];
+    const esCostos = modo === "costos";
+    const capitulosColapsados = new Set();
+    const seleccionadosCompra = new Set();
+    const cantCompraMap = new Map();
 
     const btnBarra = "flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50";
     const barraExcel =
@@ -83,7 +87,8 @@
         ? `<button type="button" id="pres-plantilla" class="${btnBarra}"><span class="material-symbols-outlined text-[16px]">download</span> Plantilla</button>
            <label class="${btnBarra} cursor-pointer"><span class="material-symbols-outlined text-[16px]">upload</span> Importar cotización<input type="file" id="pres-importar" accept=".xlsx,.xls" class="hidden" /></label>
            <button type="button" id="pres-exportar" class="${btnBarra}"><span class="material-symbols-outlined text-[16px]">table_view</span> Exportar</button>`
-        : `<button type="button" id="pres-exportar" class="${btnBarra}"><span class="material-symbols-outlined text-[16px]">table_view</span> Exportar costos (plantilla)</button>
+        : `<button type="button" id="pres-enviar-compras" class="flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"><span class="material-symbols-outlined text-[16px]">shopping_cart</span> Enviar a Compras (<span id="pres-sel-count">0</span>)</button>
+           <button type="button" id="pres-exportar" class="${btnBarra}"><span class="material-symbols-outlined text-[16px]">table_view</span> Exportar costos (plantilla)</button>
            <label class="${btnBarra} cursor-pointer"><span class="material-symbols-outlined text-[16px]">upload</span> Importar costos<input type="file" id="pres-importar" accept=".xlsx,.xls" class="hidden" /></label>`;
 
     const barraFilas = M.editaFilas
@@ -224,11 +229,17 @@
     const pintarTabla = () => {
       const v = VISTAS[vista];
       const cols = v.cols.map((k) => COL[k]);
-      thead.innerHTML = `<tr>${cols.map((c) => `<th class="px-2 py-2 ${c.w || ""} ${c.calc || c.t === "money" || c.t === "num" ? "text-right" : ""}">${c.l}</th>`).join("")}${M.editaFilas ? `<th class="w-28"></th>` : ""}</tr>`;
+      const extraCols = esCostos ? 2 : 0;
+      thead.innerHTML = `<tr>
+        ${esCostos ? `<th class="w-8 px-2 py-2 text-center"><input type="checkbox" id="pres-sel-todos" title="Seleccionar todos" class="rounded border-gray-300 text-primary focus:ring-primary" /></th>` : ""}
+        ${cols.map((c) => `<th class="px-2 py-2 ${c.w || ""} ${c.calc || c.t === "money" || c.t === "num" ? "text-right" : ""}">${c.l}</th>`).join("")}
+        ${esCostos ? `<th class="w-24 px-2 py-2 text-right">Cant. a comprar</th>` : ""}
+        ${M.editaFilas ? `<th class="w-28"></th>` : ""}
+      </tr>`;
 
       const items = filasVisibles();
       if (!items.length) {
-        tbody.innerHTML = `<tr><td colspan="${cols.length + 1}" class="px-4 py-10 text-center text-gray-400">${
+        tbody.innerHTML = `<tr><td colspan="${cols.length + 1 + extraCols}" class="px-4 py-10 text-center text-gray-400">${
           v.soloAdicionales
             ? "Aún no hay ítems adicionales. Usa «+ Ítem adicional» cuando salga trabajo fuera del contrato."
             : modo === "cotizacion"
@@ -240,16 +251,31 @@
         return;
       }
 
+      let capColapsado = false;
+      let subColapsado = false;
+
       tbody.innerHTML = items
         .map((item, idx) => {
           if (item.tipo !== "item") {
             const esCap = item.tipo === "capitulo";
-            const span = cols.length - 1;
+            if (esCap) {
+              capColapsado = capitulosColapsados.has(item.id);
+              subColapsado = false;
+            } else {
+              subColapsado = capitulosColapsados.has(item.id);
+            }
+            const ocultoPorCap = !esCap && capColapsado;
+            const colapsado = capitulosColapsados.has(item.id);
+            const span = cols.length - 1 + extraCols;
             return `
-              <tr data-id="${item.id}" class="${esCap ? "bg-blue-100/70 font-bold" : "bg-blue-50/70 font-semibold"}">
+              <tr data-id="${item.id}" class="${esCap ? "bg-blue-100/70 font-bold" : "bg-blue-50/70 font-semibold"} ${ocultoPorCap ? "hidden" : ""}">
+                ${esCostos ? `<td></td>` : ""}
                 <td class="px-1">${celdaEditable("codigo", item)}</td>
                 <td colspan="${span}" class="px-1">
-                  <div class="flex items-center gap-3">
+                  <div class="flex items-center gap-2">
+                    <button type="button" data-toggle-cap="${item.id}" class="rounded p-0.5 text-primary hover:bg-blue-200/60" title="Contraer / expandir">
+                      <span class="material-symbols-outlined text-[16px]">${colapsado ? "chevron_right" : "expand_more"}</span>
+                    </button>
                     <span class="text-[10px] font-bold uppercase text-primary">${esCap ? "Capítulo" : "Subcapítulo"}</span>
                     <div class="flex-1">${celdaEditable("descripcion", item)}</div>
                     <span class="subtotal-cap whitespace-nowrap pr-2 text-xs tabular-nums text-gray-600"></span>
@@ -258,8 +284,16 @@
                 ${acciones(idx, items.length)}
               </tr>`;
           }
+          const oculto = capColapsado || subColapsado;
+          const checked = seleccionadosCompra.has(item.id);
+          const cantDef = cantCompraMap.has(item.id) ? cantCompraMap.get(item.id) : PCT.num(item.cantidad);
           return `
-            <tr data-id="${item.id}" class="border-t border-gray-100 ${item.es_adicional ? "bg-amber-50/60" : ""}">
+            <tr data-id="${item.id}" class="border-t border-gray-100 ${item.es_adicional ? "bg-amber-50/60" : ""} ${oculto ? "hidden" : ""}">
+              ${
+                esCostos
+                  ? `<td class="px-2 text-center"><input type="checkbox" class="pres-chk-compra rounded border-gray-300 text-primary focus:ring-primary" data-item-id="${item.id}" ${checked ? "checked" : ""} /></td>`
+                  : ""
+              }
               ${v.cols
                 .map((k) =>
                   COL[k].calc
@@ -267,6 +301,11 @@
                     : `<td class="px-1">${celdaEditable(k, item)}</td>`
                 )
                 .join("")}
+              ${
+                esCostos
+                  ? `<td class="px-1 text-right"><input type="number" step="0.01" min="0" data-item-id="${item.id}" value="${cantDef}" class="pres-cant-compra w-20 rounded border-gray-300 px-1.5 py-1 text-right text-xs tabular-nums focus:border-primary focus:ring-primary" /></td>`
+                  : ""
+              }
               ${acciones(idx, items.length)}
             </tr>`;
         })
@@ -317,8 +356,26 @@
         const c = PCT.calcItem(it, p);
         if (c) total += COL[v.resumen].calc(c) || 0;
       });
-      const ncols = v.cols.length;
-      tfoot.innerHTML = `<tr><td colspan="${Math.max(ncols - 1, 1)}" class="px-3 py-2 text-right uppercase">Total ${v.etiqueta}${v.soloAdicionales ? "" : " (incluye adicionales)"}</td><td class="px-2 py-2 text-right tabular-nums">${formatoMoneda(total)}</td>${M.editaFilas ? "<td></td>" : ""}</tr>`;
+      const ncols = v.cols.length + (esCostos ? 2 : 0);
+      let tfootHtml = `<tr><td colspan="${Math.max(ncols - 1, 1)}" class="px-3 py-2 text-right uppercase">Total ${v.etiqueta}${v.soloAdicionales ? "" : " (incluye adicionales)"}</td><td class="px-2 py-2 text-right tabular-nums">${formatoMoneda(total)}</td>${M.editaFilas ? "<td></td>" : ""}</tr>`;
+
+      if (esCostos) {
+        const { base } = PCT.resumenPresupuesto();
+        const c = PCT.contrato(p, base.venta);
+        const aiu = p.tipo_contrato === "aiu";
+        tfootHtml += `
+          <tr class="border-t border-gray-200 bg-blue-50/50 text-xs text-gray-700">
+            <td colspan="${Math.max(ncols - 1, 1)}" class="px-3 py-2 text-right">
+              ${
+                aiu
+                  ? `Subtotal Venta: ${formatoMoneda(base.venta)} · A (${p.administracion_porcentaje}%): ${formatoMoneda(c.admin)} · I (${p.imprevistos_porcentaje}%): ${formatoMoneda(c.imprev)} · U (${p.utilidad_porcentaje}%): ${formatoMoneda(c.util)} · IVA s/U (${p.iva_porcentaje}%): ${formatoMoneda(c.iva)} — <span class="font-bold text-gray-900 uppercase">Valor Total Contrato (AIU)</span>`
+                  : `Subtotal Venta: ${formatoMoneda(base.venta)} · IVA (${p.iva_porcentaje}%): ${formatoMoneda(c.iva)} — <span class="font-bold text-gray-900 uppercase">Valor Total Contrato</span>`
+              }
+            </td>
+            <td class="px-2 py-2 text-right font-bold text-primary tabular-nums">${formatoMoneda(c.total)}</td>
+          </tr>`;
+      }
+      tfoot.innerHTML = tfootHtml;
       pintarKpis();
     };
 
@@ -418,6 +475,15 @@
     };
 
     tbody.addEventListener("click", async (e) => {
+      const btnCap = e.target.closest("[data-toggle-cap]");
+      if (btnCap) {
+        const capId = btnCap.dataset.toggleCap;
+        if (capitulosColapsados.has(capId)) capitulosColapsados.delete(capId);
+        else capitulosColapsados.add(capId);
+        pintarTabla();
+        return;
+      }
+
       const btn = e.target.closest("[data-acc]");
       if (!btn) return;
       const tr = btn.closest("tr[data-id]");
@@ -536,6 +602,109 @@
     } else {
       // Exportar costos (la plantilla con los ítems y la columna C.U. material)
       // → llenar en Excel → importar costos. Se cruzan por # y descripción.
+      const actualizarContadorCompra = () => {
+        const el = root.querySelector("#pres-sel-count");
+        if (el) el.textContent = String(seleccionadosCompra.size);
+      };
+
+      thead.addEventListener("change", (e) => {
+        if (e.target.id !== "pres-sel-todos") return;
+        const marcar = e.target.checked;
+        PCT.estado.items
+          .filter((i) => i.tipo === "item")
+          .forEach((i) => {
+            if (marcar) seleccionadosCompra.add(i.id);
+            else seleccionadosCompra.delete(i.id);
+          });
+        tbody.querySelectorAll(".pres-chk-compra").forEach((chk) => {
+          chk.checked = marcar;
+        });
+        actualizarContadorCompra();
+      });
+
+      tbody.addEventListener("change", (e) => {
+        if (e.target.classList.contains("pres-chk-compra")) {
+          const id = e.target.dataset.itemId;
+          if (e.target.checked) seleccionadosCompra.add(id);
+          else seleccionadosCompra.delete(id);
+          actualizarContadorCompra();
+        } else if (e.target.classList.contains("pres-cant-compra")) {
+          cantCompraMap.set(e.target.dataset.itemId, PCT.num(e.target.value));
+        }
+      });
+
+      root.querySelector("#pres-enviar-compras").addEventListener("click", async () => {
+        if (!seleccionadosCompra.size) {
+          return mostrarAviso("Selecciona al menos un ítem para enviar a Compras.", "error");
+        }
+        const p = PCT.estado.proyecto;
+        const itemsSeleccionados = PCT.estado.items.filter((i) => i.tipo === "item" && seleccionadosCompra.has(i.id));
+        const conCantidad = itemsSeleccionados
+          .map((i) => ({
+            item: i,
+            cant: cantCompraMap.has(i.id) ? cantCompraMap.get(i.id) : PCT.num(i.cantidad),
+          }))
+          .filter((x) => x.cant > 0);
+
+        if (!conCantidad.length) {
+          return mostrarAviso("La cantidad a comprar debe ser mayor a 0.", "error");
+        }
+
+        const btn = root.querySelector("#pres-enviar-compras");
+        btn.disabled = true;
+        try {
+          const {
+            data: { user },
+          } = await window.sb.auth.getUser();
+          const numero = `SOL-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+          const { data: sol, error } = await window.sb
+            .from("compras_solicitudes")
+            .insert({
+              numero,
+              proyecto_id: p.id,
+              origen: "proyecto",
+              empresa_id: p.empresa_id || null,
+              cliente_id: p.cliente_id || null,
+              titulo: `Solicitud desde Proyecto: ${p.nombre}`,
+              solicitado_por: user?.id || null,
+            })
+            .select()
+            .single();
+          if (error) throw error;
+
+          const rows = conCantidad.map(({ item, cant }) => {
+            const c = PCT.calcItem(item, p);
+            return {
+              solicitud_id: sol.id,
+              presupuesto_item_id: item.id,
+              codigo: item.codigo || null,
+              descripcion: item.descripcion,
+              unidad: item.unidad || "Und",
+              cantidad_presupuestada: PCT.num(item.cantidad),
+              cantidad_solicitada: cant,
+              costo_presupuestado_unit: c ? c.cuMatIva : PCT.num(item.cu_material),
+            };
+          });
+          const { error: errIt } = await window.sb.from("compras_solicitud_items").insert(rows);
+          if (errIt) throw errIt;
+
+          seleccionadosCompra.clear();
+          pintarTabla();
+          actualizarContadorCompra();
+
+          PCT.modal({
+            titulo: "Solicitud enviada a Compras",
+            html: `<p class="text-sm text-gray-700">Se creó la solicitud <strong>${escapeHtml(numero)}</strong> con <strong>${rows.length}</strong> ítem(s) para el proyecto <strong>${escapeHtml(p.nombre)}</strong>.</p>
+              <p class="mt-3"><a href="compras.html" class="inline-flex items-center gap-1 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700">Ir al módulo de Compras →</a></p>`,
+            botones: [{ texto: "Cerrar", clase: PCT.BTN_PRIMARIO }],
+          });
+        } catch (err) {
+          manejarError(err, "No se pudo enviar la solicitud a Compras");
+        } finally {
+          btn.disabled = false;
+        }
+      });
+
       root.querySelector("#pres-exportar").addEventListener("click", () => exportar(true));
 
       root.querySelector("#pres-importar").addEventListener("change", async (e) => {
