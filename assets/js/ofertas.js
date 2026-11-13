@@ -166,7 +166,10 @@
             <div draggable="true" class="card-oferta group rounded-xl border border-gray-200 bg-white p-3.5 shadow-sm hover:shadow-md hover:border-primary/40 transition-all cursor-grab active:cursor-grabbing" data-id="${o.id}">
               <div class="flex items-center justify-between gap-1 mb-2">
                 <span class="inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-semibold ${pr.badge}">${pr.label}</span>
-                ${o.oportunidad_id ? `<span class="inline-flex items-center gap-0.5 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700" title="Vinculada al CRM"><span class="material-symbols-outlined text-[12px]">handshake</span> CRM</span>` : ""}
+                <div class="flex items-center gap-1 flex-wrap justify-end">
+                  ${o.plazo_ejecucion ? `<span class="inline-flex items-center gap-0.5 rounded-md bg-sky-50 border border-sky-200 px-1.5 py-0.5 text-[10px] font-medium text-sky-700" title="Plazo de ejecución"><span class="material-symbols-outlined text-[12px]">schedule</span>${escapeHtml(o.plazo_ejecucion)}</span>` : ""}
+                  ${o.oportunidad_id ? `<span class="inline-flex items-center gap-0.5 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700" title="Vinculada al CRM"><span class="material-symbols-outlined text-[12px]">handshake</span> CRM</span>` : ""}
+                </div>
               </div>
               <h3 class="text-xs font-bold text-gray-900 group-hover:text-primary line-clamp-2">${escapeHtml(o.titulo)}</h3>
               <p class="mt-1 text-[11px] text-gray-500 truncate">${escapeHtml(o.clientes?.nombre || "Sin cliente")}${o.empresas?.nombre ? " · " + escapeHtml(o.empresas.nombre) : ""}</p>
@@ -177,6 +180,20 @@
               <div class="mt-2 flex items-center justify-between text-[10px] text-gray-400">
                 <span class="flex items-center gap-1"><span class="material-symbols-outlined text-[13px]">event</span>${o.fecha_limite ? formatoFecha(o.fecha_limite) : "Sin fecha"}</span>
                 <div class="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-primary font-bold" title="${escapeHtml(resp)}">${inicial}</div>
+              </div>
+              <div class="mt-2.5 flex items-center justify-between gap-1 border-t border-gray-100 pt-2">
+                <button type="button" data-action="duplicar" data-oferta-id="${o.id}"
+                  class="inline-flex items-center gap-0.5 rounded-md px-1.5 py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors" title="Duplicar oferta en Levantamiento">
+                  <span class="material-symbols-outlined text-[13px]">content_copy</span> Duplicar
+                </button>
+                <button type="button" data-action="seguimiento" data-oferta-id="${o.id}"
+                  class="inline-flex items-center gap-0.5 rounded-md px-1.5 py-1 text-[10px] font-medium text-blue-600 hover:bg-blue-50 hover:text-blue-800 transition-colors" title="Registrar nota de seguimiento">
+                  <span class="material-symbols-outlined text-[13px]">rate_review</span> Seguimiento
+                </button>
+                <button type="button" data-action="finalizar" data-oferta-id="${o.id}" ${o.estado === "finalizado" ? "disabled" : ""}
+                  class="inline-flex items-center gap-0.5 rounded-md px-1.5 py-1 text-[10px] font-medium ${o.estado === "finalizado" ? "text-gray-300 cursor-not-allowed" : "text-amber-700 hover:bg-amber-50 hover:text-amber-900"} transition-colors" title="Mover a Finalizado">
+                  <span class="material-symbols-outlined text-[13px]">task_alt</span> Finalizar
+                </button>
               </div>
             </div>`;
         })
@@ -259,10 +276,11 @@
           .map((r) => {
             const deEst = r.de_estado ? (ESTADOS[r.de_estado]?.label || r.de_estado) : "Inicio";
             const aEst = ESTADOS[r.a_estado]?.label || r.a_estado;
+            const tituloRelevo = r.de_estado && r.de_estado === r.a_estado ? `Seguimiento · ${aEst}` : `${deEst} → ${aEst}`;
             return `
             <div class="rounded-lg border border-gray-100 bg-gray-50 p-2.5 text-xs">
               <div class="flex items-center justify-between">
-                <span class="font-semibold text-gray-800">${escapeHtml(deEst)} → ${escapeHtml(aEst)}</span>
+                <span class="font-semibold text-gray-800">${escapeHtml(tituloRelevo)}</span>
                 <span class="text-[10px] text-gray-400">${formatoFecha(r.fecha)}</span>
               </div>
               <p class="mt-0.5 text-[11px] text-gray-600">Responsable: <b>${escapeHtml(nombrePerfil(r.a_responsable_id))}</b></p>
@@ -285,6 +303,7 @@
     document.getElementById("drawer-empresa").value = o.empresa_id || "";
     document.getElementById("drawer-prioridad").value = o.prioridad || "media";
     document.getElementById("drawer-fecha").value = o.fecha_limite || "";
+    document.getElementById("of-plazo").value = o.plazo_ejecucion || "";
     document.getElementById("drawer-descripcion").value = o.descripcion || "";
     document.getElementById("drawer-informe").value = o.informe_levantamiento || "";
     establecerValorMoneda(document.getElementById("drawer-valor"), o.valor_estimado || 0);
@@ -403,6 +422,7 @@
           empresa_id: document.getElementById("drawer-empresa").value || null,
           prioridad: document.getElementById("drawer-prioridad").value,
           fecha_limite: document.getElementById("drawer-fecha").value || null,
+          plazo_ejecucion: document.getElementById("of-plazo").value.trim() || null,
           valor_estimado: valorMoneda(document.getElementById("drawer-valor")),
           descripcion: document.getElementById("drawer-descripcion").value.trim() || null,
           informe_levantamiento: document.getElementById("drawer-informe").value.trim() || null,
@@ -429,6 +449,81 @@
     mostrarAviso("Oferta eliminada.", "info");
     cerrarDrawer();
     await cargarDatos();
+  }
+
+  async function duplicarOferta(id) {
+    const o = ofertas.find((x) => x.id === id);
+    if (!o) return;
+    try {
+      const respId = o.responsable_id || usuarioActualId || null;
+      const { error } = await window.sb.from("crm_ofertas_preventa").insert({
+        titulo: `${o.titulo} (Copia)`,
+        cliente_id: o.cliente_id || null,
+        empresa_id: o.empresa_id || null,
+        responsable_id: respId,
+        estado: "levantamiento",
+        prioridad: o.prioridad || "media",
+        valor_estimado: Number(o.valor_estimado || 0),
+        fecha_limite: o.fecha_limite || null,
+        plazo_ejecucion: o.plazo_ejecucion || null,
+        descripcion: o.descripcion || null,
+        informe_levantamiento: o.informe_levantamiento || null,
+        subtareas: Array.isArray(o.subtareas) ? JSON.parse(JSON.stringify(o.subtareas)) : [],
+        adjuntos: Array.isArray(o.adjuntos) ? JSON.parse(JSON.stringify(o.adjuntos)) : [],
+        historial_relevos: [
+          {
+            fecha: new Date().toISOString(),
+            de_estado: null,
+            a_estado: "levantamiento",
+            de_responsable_id: null,
+            a_responsable_id: respId,
+            nota: `Duplicada desde "${o.titulo}"`,
+            usuario_id: usuarioActualId || null,
+          },
+        ],
+        creado_por: usuarioActualId || null,
+      });
+      if (error) throw error;
+      mostrarAviso("Oferta duplicada en Levantamiento.", "exito");
+      await cargarDatos();
+    } catch (err) {
+      manejarError(err, "No se pudo duplicar la oferta");
+    }
+  }
+
+  async function registrarSeguimiento(id) {
+    const o = ofertas.find((x) => x.id === id);
+    if (!o) return;
+    const nota = prompt(`Nota de seguimiento para "${o.titulo}":`);
+    if (nota === null) return;
+    const notaLimpia = nota.trim();
+    if (!notaLimpia) return;
+
+    const historial = Array.isArray(o.historial_relevos) ? [...o.historial_relevos] : [];
+    historial.push({
+      fecha: new Date().toISOString(),
+      de_estado: o.estado,
+      a_estado: o.estado,
+      de_responsable_id: o.responsable_id || null,
+      a_responsable_id: o.responsable_id || null,
+      nota: notaLimpia,
+      usuario_id: usuarioActualId || null,
+    });
+
+    try {
+      const { error } = await window.sb
+        .from("crm_ofertas_preventa")
+        .update({
+          historial_relevos: historial,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id);
+      if (error) throw error;
+      mostrarAviso("Seguimiento registrado.", "exito");
+      await cargarDatos();
+    } catch (err) {
+      manejarError(err, "No se pudo registrar el seguimiento");
+    }
   }
 
   function bindEventos() {
@@ -488,6 +583,17 @@
       const id = e.dataTransfer.getData("text/plain") || arrastrandoId;
       const nuevoEstado = col.dataset.estado;
       if (id && nuevoEstado) abrirModalRelevo(id, nuevoEstado, "kanban");
+    });
+
+    // Acciones rápidas en tarjetas Kanban
+    vistaTablero?.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-action][data-oferta-id]");
+      if (!btn) return;
+      e.stopPropagation();
+      const { action, ofertaId } = btn.dataset;
+      if (action === "duplicar") duplicarOferta(ofertaId);
+      else if (action === "seguimiento") registrarSeguimiento(ofertaId);
+      else if (action === "finalizar") abrirModalRelevo(ofertaId, "finalizado", "kanban");
     });
 
     // Abrir drawer al hacer clic en tarjeta o fila

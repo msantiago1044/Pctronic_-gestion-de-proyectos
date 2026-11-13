@@ -304,6 +304,7 @@ drop policy if exists "ofertas_delete" on public.crm_ofertas_preventa;
 create policy "ofertas_delete" on public.crm_ofertas_preventa for delete to authenticated using (public.es_super_usuario());
 
 alter table public.crm_oportunidades add column if not exists oferta_preventa_id uuid;
+alter table public.crm_ofertas_preventa add column if not exists plazo_ejecucion text;
 
 do $$
 declare

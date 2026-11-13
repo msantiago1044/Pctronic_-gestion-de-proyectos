@@ -293,6 +293,19 @@
       }
     };
 
+    const fmtTipoPersona = (c, retPct) => {
+      const tp = String(c?.tipo_persona || "").trim().toLowerCase();
+      if (tp === "empresa" || tp === "juridica" || tp === "persona juridica") return "Empresa";
+      if (tp === "natural" || tp === "persona natural") {
+        return c?.es_declarante_renta ? "Persona natural declarante" : "Persona natural no declarante";
+      }
+      if (c?.tipo_persona) return c.tipo_persona;
+      if (retPct === 0) return "Empresa";
+      if (retPct === 4) return "Persona natural declarante";
+      if (retPct === 6) return "Persona natural no declarante";
+      return "—";
+    };
+
     const descargarPdf = async (corte) => {
       const anteriores = new Map();
       cortes
@@ -304,20 +317,45 @@
         .sort((a, b) => PCT.num(a.i.orden) - PCT.num(b.i.orden))
         .map(({ l, i }) => ({ codigo: i.codigo, descripcion: i.descripcion, unidad: i.unidad, contratado: i.cantidad, precio: l.pu_contratista_snapshot, anterior: anteriores.get(i.id) || 0, actual: l.cantidad }));
       const x = calcCorte(corte);
-      const k = contratista();
+      let k = contratista();
+      const cid = corte.contratista_id || k?.id;
+      if (cid && (k?.identificacion === undefined || k?.tipo_persona === undefined || k?.especialidad === undefined)) {
+        const { data: kFull } = await window.sb
+          .from("contratistas")
+          .select("id, nombre, identificacion, especialidad, tipo_persona, es_declarante_renta, porcentaje_retencion")
+          .eq("id", cid)
+          .maybeSingle();
+        if (kFull) k = { ...(k || {}), ...kFull };
+      }
+      const retPct = PCT.num(corte.retencion_porcentaje);
+      const tipoPersona = fmtTipoPersona(k, retPct);
+      const amortizacion = PCT.num(corte.amortizacion_anticipo || 0);
+      const netoPagar = x.bruto - amortizacion - x.retencion;
+      const empNombre = p().empresas?.nombre || window.PCTRONIC_CONFIG?.NOMBRE_EMPRESA || "Pctronic";
       await PCT.pdfActa({
         titulo: `CORTE DE MANO DE OBRA N° ${corte.numero}`,
-        subtitulo: `Contratista: ${k?.nombre || ""}${corte.numero_cuenta_cobro ? " · Cuenta de cobro " + corte.numero_cuenta_cobro : ""}`,
+        subtitulo: `Contratista: ${k?.nombre || "—"}${corte.numero_cuenta_cobro ? " · Cuenta de cobro " + corte.numero_cuenta_cobro : ""}`,
         proyecto: p(),
-        corte,
+        corte: {
+          ...corte,
+          extra: [
+            ["Contratista", k?.nombre || "—", "NIT / CC", k?.identificacion || "—"],
+            ["Especialidad", k?.especialidad || "—", "Tipo de persona", tipoPersona],
+            ["Cuenta de cobro", corte.numero_cuenta_cobro || "—", "Retención aplicada", `${retPct}%`],
+          ],
+        },
         filas,
         encabezadoPrecio: "PU contratista",
         resumen: [
-          ["Valor del corte", x.bruto],
-          [`Retención (${PCT.num(corte.retencion_porcentaje)}%)`, -x.retencion],
-          ["NETO A GIRAR", x.neto, "fuerte"],
+          ["Valor bruto corte", x.bruto],
+          ["Amortización anticipo", -amortizacion],
+          [`Retención en la fuente (${retPct}%)`, -x.retencion],
+          ["Neto a pagar", netoPagar, "fuerte"],
         ],
-        firmas: [`Contratista: ${k?.nombre || ""}`, `Aprobado por ${p().empresas?.nombre || "Pctronic"}`],
+        firmas: [
+          { titulo: "Contratista", nombre: k?.nombre || "—", detalle: k?.identificacion ? `NIT / CC ${k.identificacion}` : "" },
+          { titulo: "Aprobado por", nombre: empNombre, detalle: p().empresas?.nit ? `NIT ${p().empresas.nit}` : "" },
+        ],
         nombreArchivo: `Corte_contratista_${corte.numero}_${(p().nombre || "proyecto").replace(/[^\w\-]+/g, "_")}.pdf`,
       });
     };

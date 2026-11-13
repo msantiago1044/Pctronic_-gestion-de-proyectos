@@ -80,6 +80,28 @@
     const capitulosColapsados = new Set();
     const seleccionadosCompra = new Set();
     const cantCompraMap = new Map();
+    const cantCompradaMap = new Map();
+
+    const cargarComprado = async () => {
+      const p = PCT.estado.proyecto;
+      if (!p?.id) return;
+      try {
+        const { data, error } = await window.sb
+          .from("compras_solicitud_items")
+          .select("presupuesto_item_id, cantidad_solicitada, compras_solicitudes!inner(proyecto_id, estado)")
+          .eq("compras_solicitudes.proyecto_id", p.id)
+          .neq("compras_solicitudes.estado", "rechazada");
+        if (error) throw error;
+        cantCompradaMap.clear();
+        (data || []).forEach((r) => {
+          if (!r.presupuesto_item_id) return;
+          const prev = cantCompradaMap.get(r.presupuesto_item_id) || 0;
+          cantCompradaMap.set(r.presupuesto_item_id, prev + PCT.num(r.cantidad_solicitada));
+        });
+      } catch (err) {
+        manejarError(err, "No se pudieron cargar las cantidades compradas");
+      }
+    };
 
     const btnBarra = "flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50";
     const barraExcel =
@@ -229,11 +251,11 @@
     const pintarTabla = () => {
       const v = VISTAS[vista];
       const cols = v.cols.map((k) => COL[k]);
-      const extraCols = esCostos ? 2 : 0;
+      const extraCols = esCostos ? 4 : 0;
       thead.innerHTML = `<tr>
         ${esCostos ? `<th class="w-8 px-2 py-2 text-center"><input type="checkbox" id="pres-sel-todos" title="Seleccionar todos" class="rounded border-gray-300 text-primary focus:ring-primary" /></th>` : ""}
         ${cols.map((c) => `<th class="px-2 py-2 ${c.w || ""} ${c.calc || c.t === "money" || c.t === "num" ? "text-right" : ""}">${c.l}</th>`).join("")}
-        ${esCostos ? `<th class="w-24 px-2 py-2 text-right">Cant. a comprar</th>` : ""}
+        ${esCostos ? `<th class="w-20 px-2 py-2 text-right">Comprado</th><th class="w-20 px-2 py-2 text-right">Pendiente</th><th class="w-24 px-2 py-2 text-right">Cant. a comprar</th>` : ""}
         ${M.editaFilas ? `<th class="w-28"></th>` : ""}
       </tr>`;
 
@@ -286,7 +308,16 @@
           }
           const oculto = capColapsado || subColapsado;
           const checked = seleccionadosCompra.has(item.id);
-          const cantDef = cantCompraMap.has(item.id) ? cantCompraMap.get(item.id) : PCT.num(item.cantidad);
+          const cantPresup = PCT.num(item.cantidad);
+          const cantComprada = cantCompradaMap.get(item.id) || 0;
+          const cantPendiente = Math.max(0, cantPresup - cantComprada);
+          const clasePendiente =
+            cantPendiente === 0
+              ? "text-green-600 font-semibold"
+              : cantComprada > 0
+                ? "text-amber-600 font-semibold"
+                : "text-gray-700";
+          const cantDef = cantCompraMap.has(item.id) ? cantCompraMap.get(item.id) : cantPendiente;
           return `
             <tr data-id="${item.id}" class="border-t border-gray-100 ${item.es_adicional ? "bg-amber-50/60" : ""} ${oculto ? "hidden" : ""}">
               ${
@@ -303,7 +334,9 @@
                 .join("")}
               ${
                 esCostos
-                  ? `<td class="px-1 text-right"><input type="number" step="0.01" min="0" data-item-id="${item.id}" value="${cantDef}" class="pres-cant-compra w-20 rounded border-gray-300 px-1.5 py-1 text-right text-xs tabular-nums focus:border-primary focus:ring-primary" /></td>`
+                  ? `<td class="px-2 text-right text-xs tabular-nums text-gray-700">${PCT.fmtCant(cantComprada)}</td>
+                     <td class="px-2 text-right text-xs tabular-nums ${clasePendiente}">${PCT.fmtCant(cantPendiente)}</td>
+                     <td class="px-1 text-right"><input type="number" step="0.01" min="0" data-item-id="${item.id}" value="${cantDef}" placeholder="${cantPendiente}" class="pres-cant-compra w-20 rounded border-gray-300 px-1.5 py-1 text-right text-xs tabular-nums focus:border-primary focus:ring-primary" /></td>`
                   : ""
               }
               ${acciones(idx, items.length)}
@@ -356,7 +389,7 @@
         const c = PCT.calcItem(it, p);
         if (c) total += COL[v.resumen].calc(c) || 0;
       });
-      const ncols = v.cols.length + (esCostos ? 2 : 0);
+      const ncols = v.cols.length + (esCostos ? 4 : 0);
       let tfootHtml = `<tr><td colspan="${Math.max(ncols - 1, 1)}" class="px-3 py-2 text-right uppercase">Total ${v.etiqueta}${v.soloAdicionales ? "" : " (incluye adicionales)"}</td><td class="px-2 py-2 text-right tabular-nums">${formatoMoneda(total)}</td>${M.editaFilas ? "<td></td>" : ""}</tr>`;
 
       if (esCostos) {
@@ -640,10 +673,13 @@
         const p = PCT.estado.proyecto;
         const itemsSeleccionados = PCT.estado.items.filter((i) => i.tipo === "item" && seleccionadosCompra.has(i.id));
         const conCantidad = itemsSeleccionados
-          .map((i) => ({
-            item: i,
-            cant: cantCompraMap.has(i.id) ? cantCompraMap.get(i.id) : PCT.num(i.cantidad),
-          }))
+          .map((i) => {
+            const cantPend = Math.max(0, PCT.num(i.cantidad) - (cantCompradaMap.get(i.id) || 0));
+            return {
+              item: i,
+              cant: cantCompraMap.has(i.id) ? cantCompraMap.get(i.id) : cantPend,
+            };
+          })
           .filter((x) => x.cant > 0);
 
         if (!conCantidad.length) {
@@ -689,6 +725,8 @@
           if (errIt) throw errIt;
 
           seleccionadosCompra.clear();
+          cantCompraMap.clear();
+          await cargarComprado();
           pintarTabla();
           actualizarContadorCompra();
 
@@ -754,5 +792,10 @@
 
     pintarVistas();
     pintarTabla();
+    if (esCostos) {
+      cargarComprado().then(() => {
+        if (root.isConnected) pintarTabla();
+      });
+    }
   }
 })(window.PCT);

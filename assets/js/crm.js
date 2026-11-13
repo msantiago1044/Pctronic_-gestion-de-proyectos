@@ -54,7 +54,8 @@
   let clientes = [];
   let perfiles = [];
   let oportunidadActual = null;
-  let vistaActual = localStorage.getItem("pctronic_crm_vista") || "tablero";
+  const vistaGuardada = localStorage.getItem("pctronic_crm_vista");
+  let vistaActual = ["tablero", "lista", "dashboard"].includes(vistaGuardada) ? vistaGuardada : "tablero";
 
   // 3. Cargar datos desde Supabase
   async function cargarDatos() {
@@ -177,14 +178,16 @@
     const filtradas = getFiltradas();
     document.getElementById("contador-resultados").textContent = `${filtradas.length} oportunidad${filtradas.length === 1 ? "" : "es"}`;
 
+    document.getElementById("vista-tablero")?.classList.toggle("hidden", vistaActual !== "tablero");
+    document.getElementById("vista-lista")?.classList.toggle("hidden", vistaActual !== "lista");
+    document.getElementById("vista-dashboard")?.classList.toggle("hidden", vistaActual !== "dashboard");
+
     if (vistaActual === "tablero") {
-      document.getElementById("vista-tablero").classList.remove("hidden");
-      document.getElementById("vista-lista").classList.add("hidden");
       renderTablero(filtradas);
-    } else {
-      document.getElementById("vista-tablero").classList.add("hidden");
-      document.getElementById("vista-lista").classList.remove("hidden");
+    } else if (vistaActual === "lista") {
       renderLista(filtradas);
+    } else if (vistaActual === "dashboard") {
+      renderDashboardCRM(filtradas);
     }
   }
 
@@ -390,6 +393,211 @@
         </div>`;
       })
       .join("");
+  }
+
+  // 8b. Render Vista Dashboard de Proyección
+  function formatMesProyeccion(ym) {
+    if (!ym || ym === "sin_fecha") return "Sin fecha estimada";
+    const [anio, mes] = ym.split("-").map(Number);
+    if (!anio || !mes) return escapeHtml(ym);
+    const fecha = new Date(anio, mes - 1, 1);
+    const texto = fecha.toLocaleDateString("es-CO", { month: "short", year: "numeric" });
+    return texto.charAt(0).toUpperCase() + texto.slice(1);
+  }
+
+  function renderDashboardCRM(filtradas = getFiltradas()) {
+    const contenedor = document.getElementById("vista-dashboard");
+    if (!contenedor) return;
+
+    // 1) Embudo de Conversión por Etapa
+    const etapasEmbudo = ["por_revisar", "prospecto", "visita", "cotizacion", "negociacion", "ganada"];
+    const datosEmbudo = etapasEmbudo.map((etapaKey) => {
+      const ops = filtradas.filter((o) => o.etapa === etapaKey);
+      const total = ops.reduce((acc, cur) => acc + Number(cur.valor_estimado || 0), 0);
+      return {
+        key: etapaKey,
+        label: ETAPAS[etapaKey]?.label || etapaKey,
+        color: ETAPAS[etapaKey]?.color || "bg-gray-400",
+        count: ops.length,
+        total,
+      };
+    });
+    const maxCountEmbudo = Math.max(...datosEmbudo.map((d) => d.count), 1);
+    const totalOpsEmbudo = datosEmbudo.reduce((acc, d) => acc + d.count, 0);
+    const totalValorEmbudo = datosEmbudo.reduce((acc, d) => acc + d.total, 0);
+
+    const htmlEmbudo = datosEmbudo
+      .map((item) => {
+        const anchoBarra = item.count === 0 ? 0 : Math.max(4, Math.round((item.count / maxCountEmbudo) * 100));
+        const pctTotal = totalOpsEmbudo > 0 ? Math.round((item.count / totalOpsEmbudo) * 100) : 0;
+        return `
+          <div class="space-y-1.5">
+            <div class="flex items-center justify-between text-xs">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="h-2.5 w-2.5 rounded-full flex-shrink-0 ${item.color}"></span>
+                <span class="font-semibold text-gray-800 truncate">${escapeHtml(item.label)}</span>
+                <span class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-bold text-gray-700">${item.count}</span>
+              </div>
+              <div class="flex items-center gap-3 flex-shrink-0">
+                <span class="text-[11px] text-gray-400">${pctTotal}%</span>
+                <span class="font-bold text-gray-900">${formatoMoneda(item.total)}</span>
+              </div>
+            </div>
+            <div class="h-2.5 w-full overflow-hidden rounded-full bg-gray-100">
+              <div class="h-full rounded-full ${item.color} transition-all duration-300" style="width: ${anchoBarra}%"></div>
+            </div>
+          </div>`;
+      })
+      .join("");
+
+    // 2) Proyección Ponderada Mensual (valor_estimado * probabilidad / 100)
+    const mapaMensual = new Map();
+    filtradas.forEach((op) => {
+      if (op.etapa === "perdida" || op.etapa === "descartada") return;
+      const valor = Number(op.valor_estimado || 0);
+      const prob = Number(op.probabilidad || 0);
+      const ponderado = valor * (prob / 100);
+
+      let claveMes = "sin_fecha";
+      if (op.fecha_cierre_estimada) {
+        const match = String(op.fecha_cierre_estimada).match(/^(\d{4}-\d{2})/);
+        if (match) claveMes = match[1];
+      }
+
+      const actual = mapaMensual.get(claveMes) || { mes: claveMes, count: 0, bruto: 0, ponderado: 0 };
+      actual.count += 1;
+      actual.bruto += valor;
+      actual.ponderado += ponderado;
+      mapaMensual.set(claveMes, actual);
+    });
+
+    const mesesOrdenados = Array.from(mapaMensual.values()).sort((a, b) => {
+      if (a.mes === "sin_fecha") return 1;
+      if (b.mes === "sin_fecha") return -1;
+      return a.mes.localeCompare(b.mes);
+    });
+    const maxPonderadoMes = Math.max(...mesesOrdenados.map((m) => m.ponderado), 1);
+    const totalPonderado = mesesOrdenados.reduce((acc, m) => acc + m.ponderado, 0);
+    const totalBruto = mesesOrdenados.reduce((acc, m) => acc + m.bruto, 0);
+
+    const htmlProyeccion =
+      mesesOrdenados.length === 0
+        ? `<div class="rounded-lg border border-dashed border-gray-200 p-6 text-center text-xs text-gray-400">No hay oportunidades activas para proyectar.</div>`
+        : mesesOrdenados
+            .map((m) => {
+              const ancho = m.ponderado <= 0 ? 0 : Math.max(4, Math.round((m.ponderado / maxPonderadoMes) * 100));
+              return `
+                <div class="space-y-1.5">
+                  <div class="flex items-center justify-between text-xs">
+                    <div class="flex items-center gap-2">
+                      <span class="font-semibold text-gray-800">${escapeHtml(formatMesProyeccion(m.mes))}</span>
+                      <span class="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">${m.count} op.</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                      <span class="text-[11px] text-gray-400">Bruto: ${formatoMoneda(m.bruto)}</span>
+                      <span class="font-bold text-primary">${formatoMoneda(m.ponderado)}</span>
+                    </div>
+                  </div>
+                  <div class="h-2.5 w-full overflow-hidden rounded-full bg-gray-100">
+                    <div class="h-full rounded-full bg-primary transition-all duration-300" style="width: ${ancho}%"></div>
+                  </div>
+                </div>`;
+            })
+            .join("");
+
+    // 3) Resumen de Cierres (ganada vs perdida vs descartada) y Win-Rate
+    const cierresConfig = [
+      { key: "ganada", label: "Ganadas", color: "bg-emerald-500", textColor: "text-emerald-700", bgSoft: "bg-emerald-50 border-emerald-200" },
+      { key: "perdida", label: "Perdidas", color: "bg-rose-500", textColor: "text-rose-700", bgSoft: "bg-rose-50 border-rose-200" },
+      { key: "descartada", label: "Descartadas", color: "bg-zinc-400", textColor: "text-zinc-700", bgSoft: "bg-zinc-50 border-zinc-200" },
+    ];
+    const datosCierres = cierresConfig.map((c) => {
+      const ops = filtradas.filter((o) => o.etapa === c.key);
+      const total = ops.reduce((acc, cur) => acc + Number(cur.valor_estimado || 0), 0);
+      return { ...c, count: ops.length, total };
+    });
+
+    const totalCerradas = datosCierres.reduce((acc, c) => acc + c.count, 0);
+    const ganadasCount = datosCierres[0].count;
+    const winRate = totalCerradas > 0 ? Math.round((ganadasCount / totalCerradas) * 100) : 0;
+
+    const htmlCierres = datosCierres
+      .map((c) => {
+        const pct = totalCerradas > 0 ? Math.round((c.count / totalCerradas) * 100) : 0;
+        return `
+          <div class="rounded-lg border p-3.5 ${c.bgSoft}">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="h-2.5 w-2.5 rounded-full ${c.color}"></span>
+                <span class="text-xs font-bold uppercase tracking-wider ${c.textColor}">${c.label}</span>
+              </div>
+              <span class="text-xs font-bold ${c.textColor}">${pct}%</span>
+            </div>
+            <div class="mt-2 flex items-baseline justify-between">
+              <span class="text-lg font-bold text-gray-900">${c.count}</span>
+              <span class="text-xs font-semibold text-gray-700">${formatoMoneda(c.total)}</span>
+            </div>
+            <div class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/80">
+              <div class="h-full rounded-full ${c.color}" style="width: ${pct}%"></div>
+            </div>
+          </div>`;
+      })
+      .join("");
+
+    contenedor.innerHTML = `
+      <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <!-- Embudo de Conversión por Etapa -->
+        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+          <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+            <div>
+              <h2 class="text-sm font-bold text-gray-900">Embudo de Conversión por Etapa</h2>
+              <p class="text-[11px] text-gray-500">Distribución desde contacto inicial hasta cierre ganado</p>
+            </div>
+            <div class="text-right">
+              <p class="text-xs font-bold text-gray-900">${totalOpsEmbudo} op.</p>
+              <p class="text-[11px] text-gray-500">${formatoMoneda(totalValorEmbudo)}</p>
+            </div>
+          </div>
+          <div class="space-y-3.5">
+            ${htmlEmbudo}
+          </div>
+        </div>
+
+        <!-- Proyección Ponderada Mensual -->
+        <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+          <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+            <div>
+              <h2 class="text-sm font-bold text-gray-900">Proyección Ponderada Mensual</h2>
+              <p class="text-[11px] text-gray-500">Valor estimado × probabilidad según fecha de cierre</p>
+            </div>
+            <div class="text-right">
+              <p class="text-xs font-bold text-primary">${formatoMoneda(totalPonderado)}</p>
+              <p class="text-[11px] text-gray-500">Bruto: ${formatoMoneda(totalBruto)}</p>
+            </div>
+          </div>
+          <div class="space-y-3.5 max-h-80 overflow-y-auto pr-1">
+            ${htmlProyeccion}
+          </div>
+        </div>
+      </div>
+
+      <!-- Resumen de Cierres y Win-Rate -->
+      <div class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm space-y-4">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-gray-100 pb-3">
+          <div>
+            <h2 class="text-sm font-bold text-gray-900">Resumen de Cierres</h2>
+            <p class="text-[11px] text-gray-500">Comparativa de oportunidades ganadas, perdidas y descartadas</p>
+          </div>
+          <div class="flex items-center gap-3 rounded-lg bg-emerald-50 border border-emerald-200 px-3.5 py-2">
+            <span class="text-xs font-medium text-emerald-800">Win Rate (Tasa de Cierre):</span>
+            <span class="text-base font-bold text-emerald-700">${winRate}%</span>
+            <span class="text-[11px] text-emerald-600">(${ganadasCount}/${totalCerradas} cerradas)</span>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          ${htmlCierres}
+        </div>
+      </div>`;
   }
 
   // 9. Abrir Slide-over Drawer (Panel Lateral Derecho estilo Asana)
@@ -904,25 +1112,31 @@
   function bindEventos() {
     activarCamposMoneda();
 
-    // Alternar vistas Tablero / Lista
+    // Alternar vistas Tablero / Lista / Dashboard
     const btnTablero = document.getElementById("btn-vista-tablero");
     const btnLista = document.getElementById("btn-vista-lista");
+    const btnDashboard = document.getElementById("btn-vista-dashboard");
 
-    btnTablero?.addEventListener("click", () => {
-      vistaActual = "tablero";
-      localStorage.setItem("pctronic_crm_vista", "tablero");
-      btnTablero.className = "flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold bg-primary text-white transition-colors";
-      btnLista.className = "flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold text-gray-600 hover:text-gray-900 transition-colors";
-      render();
-    });
+    const claseActiva = "flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold bg-primary text-white transition-colors";
+    const claseInactiva = "flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold text-gray-600 hover:text-gray-900 transition-colors";
 
-    btnLista?.addEventListener("click", () => {
-      vistaActual = "lista";
-      localStorage.setItem("pctronic_crm_vista", "lista");
-      btnLista.className = "flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold bg-primary text-white transition-colors";
-      btnTablero.className = "flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold text-gray-600 hover:text-gray-900 transition-colors";
+    function actualizarBotonesVista() {
+      if (btnTablero) btnTablero.className = vistaActual === "tablero" ? claseActiva : claseInactiva;
+      if (btnLista) btnLista.className = vistaActual === "lista" ? claseActiva : claseInactiva;
+      if (btnDashboard) btnDashboard.className = vistaActual === "dashboard" ? claseActiva : claseInactiva;
+    }
+
+    function cambiarVista(nuevaVista) {
+      vistaActual = nuevaVista;
+      localStorage.setItem("pctronic_crm_vista", nuevaVista);
+      actualizarBotonesVista();
       render();
-    });
+    }
+
+    actualizarBotonesVista();
+    btnTablero?.addEventListener("click", () => cambiarVista("tablero"));
+    btnLista?.addEventListener("click", () => cambiarVista("lista"));
+    btnDashboard?.addEventListener("click", () => cambiarVista("dashboard"));
 
     // Filtros
     document.getElementById("filtro-busqueda")?.addEventListener("input", render);

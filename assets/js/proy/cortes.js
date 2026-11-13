@@ -189,57 +189,95 @@
     if (!window.jspdf?.jsPDF) return mostrarAviso("No se pudo cargar el generador de PDF (revisa tu conexión).", "error");
     const doc = new window.jspdf.jsPDF({ unit: "pt", format: "letter", orientation: "landscape" });
     const ancho = doc.internal.pageSize.getWidth();
+    const alto = doc.internal.pageSize.getHeight();
     const M = 36;
-    let y = 36;
+    let y = 32;
+
+    // Franja superior ejecutiva
+    doc.setFillColor(0, 112, 192);
+    doc.rect(0, 0, ancho, 6, "F");
 
     const emp = p.empresas || {};
     if (emp.logo_url && typeof imagenABase64 === "function") {
       const logo = await imagenABase64(emp.logo_url);
       if (logo) {
         try {
-          doc.addImage(logo, M, y - 6, 90, 40, undefined, "FAST");
+          doc.addImage(logo, M, y - 4, 92, 40, undefined, "FAST");
         } catch (e) {
           /* logo en formato no soportado: se omite */
         }
       }
     }
+    doc.setTextColor(15, 23, 42);
     doc.setFont(undefined, "bold");
-    doc.setFontSize(14);
-    doc.text(emp.nombre || window.PCTRONIC_CONFIG?.NOMBRE_EMPRESA || "Pctronic Seguridad Electrónica", ancho - M, y, { align: "right" });
+    doc.setFontSize(13.5);
+    doc.text(emp.nombre || window.PCTRONIC_CONFIG?.NOMBRE_EMPRESA || "Pctronic Seguridad Electrónica", ancho - M, y + 4, { align: "right" });
     doc.setFont(undefined, "normal");
     doc.setFontSize(8);
+    doc.setTextColor(71, 85, 105);
     const datosEmp = [emp.nit ? `NIT ${emp.nit}` : "", emp.direccion || "", [emp.telefono, emp.email].filter(Boolean).join(" · ")].filter(Boolean);
-    datosEmp.forEach((t, i) => doc.text(t, ancho - M, y + 12 + i * 10, { align: "right" }));
-    y += 52;
+    datosEmp.forEach((t, i) => doc.text(t, ancho - M, y + 16 + i * 10, { align: "right" }));
+    y += 48;
 
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.75);
+    doc.line(M, y, ancho - M, y);
+    y += 16;
+
+    doc.setTextColor(15, 23, 42);
     doc.setFont(undefined, "bold");
     doc.setFontSize(13);
     doc.text(titulo, M, y);
-    doc.setFont(undefined, "normal");
-    doc.setFontSize(9);
-    if (subtitulo) doc.text(subtitulo, M, y + 14);
-    y += 22;
+    if (subtitulo) {
+      doc.setFont(undefined, "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(71, 85, 105);
+      doc.text(subtitulo, M, y + 13);
+      y += 22;
+    } else {
+      y += 12;
+    }
 
     doc.autoTable({
       startY: y,
-      margin: { left: M, right: M },
-      theme: "plain",
-      styles: { fontSize: 8, cellPadding: 1.5 },
+      margin: { left: M, right: M, bottom: 42 },
+      theme: "grid",
+      styles: {
+        fontSize: 8,
+        cellPadding: { top: 3.5, right: 6, bottom: 3.5, left: 6 },
+        lineColor: [226, 232, 240],
+        lineWidth: 0.4,
+        fillColor: [248, 250, 252],
+        textColor: [15, 23, 42],
+      },
       body: [
-        ["Proyecto", p.nombre || "", "Corte N°", String(corte.numero)],
-        ["Cliente", p.clientes?.nombre || "", "Fecha del corte", corte.fecha ? formatoFecha(corte.fecha) : ""],
-        ["Contrato", p.numero_contrato || "", "Cotización", p.numero_cotizacion || ""],
+        ["Proyecto", p.nombre || "—", "Corte N°", String(corte.numero)],
+        ["Cliente", p.clientes?.nombre || "—", "Fecha del corte", corte.fecha ? formatoFecha(corte.fecha) : "—"],
+        ["Contrato", p.numero_contrato || "—", "Cotización", p.numero_cotizacion || "—"],
         ...(corte.extra || []),
       ],
-      columnStyles: { 0: { fontStyle: "bold", cellWidth: 70 }, 2: { fontStyle: "bold", cellWidth: 90 } },
+      columnStyles: {
+        0: { fontStyle: "bold", cellWidth: 85, textColor: [71, 85, 105], fillColor: [241, 245, 249] },
+        1: { cellWidth: "auto" },
+        2: { fontStyle: "bold", cellWidth: 95, textColor: [71, 85, 105], fillColor: [241, 245, 249] },
+        3: { cellWidth: 165 },
+      },
     });
-    y = doc.lastAutoTable.finalY + 8;
+    y = doc.lastAutoTable.finalY + 10;
 
     const n = (v) => PCT.fmtCant(v);
     doc.autoTable({
       startY: y,
-      margin: { left: M, right: M },
-      styles: { fontSize: 7.5, cellPadding: 2.5, valign: "middle" },
+      margin: { left: M, right: M, bottom: 42 },
+      styles: {
+        fontSize: 7.5,
+        cellPadding: { top: 3.5, right: 4, bottom: 3.5, left: 4 },
+        valign: "middle",
+        lineColor: [226, 232, 240],
+        lineWidth: 0.35,
+        textColor: [15, 23, 42],
+      },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
       headStyles: { fillColor: [0, 112, 192], textColor: 255, fontStyle: "bold", halign: "center" },
       head: [["#", "Descripción", "Und", "Cant. contrato", encabezadoPrecio, "Cortado anterior", "Este corte", "Acumulado", "Valor este corte"]],
       body: filas.map((f) => [
@@ -248,48 +286,112 @@
       columnStyles: {
         0: { cellWidth: 38 }, 1: { cellWidth: "auto" }, 2: { cellWidth: 34, halign: "center" },
         3: { halign: "right", cellWidth: 58 }, 4: { halign: "right", cellWidth: 70 }, 5: { halign: "right", cellWidth: 58 },
-        6: { halign: "right", cellWidth: 52 }, 7: { halign: "right", cellWidth: 56 }, 8: { halign: "right", cellWidth: 80 },
+        6: { halign: "right", cellWidth: 52 }, 7: { halign: "right", cellWidth: 56 }, 8: { halign: "right", cellWidth: 82, fontStyle: "bold" },
       },
     });
-    y = doc.lastAutoTable.finalY + 10;
+    y = doc.lastAutoTable.finalY + 12;
 
-    if (y > doc.internal.pageSize.getHeight() - 200) {
+    const alturaResumenEst = 24 + (resumen?.length || 0) * 18;
+    if (y + alturaResumenEst > alto - 52) {
       doc.addPage();
       y = 40;
     }
+
+    const anchoCaja = 290;
     doc.autoTable({
       startY: y,
-      margin: { left: ancho - M - 280, right: M },
-      theme: "plain",
-      styles: { fontSize: 9, cellPadding: 2 },
+      margin: { left: ancho - M - anchoCaja, right: M, bottom: 42 },
+      theme: "grid",
+      styles: {
+        fontSize: 8.5,
+        cellPadding: { top: 4.5, right: 8, bottom: 4.5, left: 8 },
+        lineColor: [203, 213, 225],
+        lineWidth: 0.45,
+        textColor: [30, 41, 59],
+      },
+      headStyles: {
+        fillColor: [241, 245, 249],
+        textColor: [51, 65, 85],
+        fontStyle: "bold",
+        fontSize: 8,
+      },
+      head: [["Resumen financiero", "Valor"]],
       body: resumen.map(([t, v]) => [t, formatoMoneda(v)]),
-      columnStyles: { 0: { cellWidth: 190 }, 1: { halign: "right", cellWidth: 90 } },
+      columnStyles: { 0: { cellWidth: 190 }, 1: { halign: "right", cellWidth: 100 } },
       didParseCell: (d) => {
-        if (resumen[d.row.index]?.[2] === "fuerte") {
+        if (d.section === "head" && d.column.index === 1) {
+          d.cell.styles.halign = "right";
+        }
+        if (d.section === "body" && resumen[d.row.index]?.[2] === "fuerte") {
           d.cell.styles.fontStyle = "bold";
+          d.cell.styles.fontSize = 9.5;
           d.cell.styles.fillColor = [235, 242, 252];
+          d.cell.styles.textColor = [0, 82, 155];
         }
       },
     });
-    y = doc.lastAutoTable.finalY + 50;
+    y = doc.lastAutoTable.finalY + 46;
 
-    if (y > doc.internal.pageSize.getHeight() - 60) {
+    if (y > alto - 84) {
       doc.addPage();
-      y = 80;
+      y = 76;
     }
-    doc.setFontSize(9);
-    doc.line(M, y, M + 220, y);
-    doc.line(ancho - M - 220, y, ancho - M, y);
-    doc.text(firmas[0], M, y + 12);
-    doc.text(firmas[1], ancho - M - 220, y + 12);
+
+    const dibujarFirma = (firma, xFirma) => {
+      doc.setDrawColor(100, 116, 139);
+      doc.setLineWidth(0.75);
+      doc.line(xFirma, y, xFirma + 230, y);
+      if (firma && typeof firma === "object") {
+        doc.setTextColor(15, 23, 42);
+        doc.setFont(undefined, "bold");
+        doc.setFontSize(8.5);
+        doc.text(firma.titulo || "", xFirma, y + 12);
+        doc.setFont(undefined, "normal");
+        doc.setFontSize(8.5);
+        doc.text(firma.nombre || "", xFirma, y + 23);
+        if (firma.detalle) {
+          doc.setFontSize(7.5);
+          doc.setTextColor(100, 116, 139);
+          doc.text(firma.detalle, xFirma, y + 33);
+        }
+      } else {
+        doc.setTextColor(15, 23, 42);
+        doc.setFont(undefined, "normal");
+        doc.setFontSize(8.5);
+        doc.text(String(firma || ""), xFirma, y + 12);
+      }
+    };
+
+    dibujarFirma(firmas?.[0], M);
+    dibujarFirma(firmas?.[1], ancho - M - 230);
 
     if (adjuntos.length) {
-      y += 34;
+      y += 44;
+      if (y > alto - 60) {
+        doc.addPage();
+        y = 44;
+      }
+      doc.setTextColor(15, 23, 42);
       doc.setFont(undefined, "bold");
+      doc.setFontSize(8.5);
       doc.text("Soportes adjuntos", M, y);
       doc.setFont(undefined, "normal");
       doc.setFontSize(8);
+      doc.setTextColor(0, 112, 192);
       adjuntos.forEach((a, i) => doc.textWithLink(`• ${a.nombre_archivo}`, M, y + 12 + i * 11, { url: a.url }));
+    }
+
+    const totalPaginas = doc.getNumberOfPages();
+    for (let i = 1; i <= totalPaginas; i++) {
+      doc.setPage(i);
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.5);
+      doc.line(M, alto - 30, ancho - M, alto - 30);
+      doc.setFont(undefined, "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`${titulo}${p.nombre ? " · " + p.nombre : ""}`, M, alto - 18);
+      doc.text(`Página ${i} de ${totalPaginas}`, ancho - M, alto - 18, { align: "right" });
     }
 
     doc.save(nombreArchivo);
