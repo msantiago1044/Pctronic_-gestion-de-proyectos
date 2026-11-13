@@ -44,6 +44,10 @@
 
   <main class="p-6 space-y-6">
     <div class="flex flex-wrap items-center justify-end gap-2">
+      <select id="filtro-empresa-dashboard" aria-label="Filtrar por empresa"
+        class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 shadow-sm focus:border-primary focus:ring-primary">
+        <option value="">Todas las empresas</option>
+      </select>
       <button id="btn-personalizar" class="flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
         <span class="material-symbols-outlined text-[16px]">tune</span> Personalizar tarjetas
       </button>
@@ -76,6 +80,50 @@
         <div class="h-20 rounded-lg bg-gray-50 skeleton"></div>
         <div class="h-20 rounded-lg bg-gray-50 skeleton"></div>
         <div class="h-20 rounded-lg bg-gray-50 skeleton"></div>
+      </div>
+    </section>
+
+    <!-- Gráficas Ejecutivas -->
+    <section id="seccion-graficas" class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <!-- Card 1: Facturación vs. Costos/Gastos (Últimos 6 meses) -->
+      <div class="rounded-xl border border-gray-200 bg-white p-5 flex flex-col justify-between">
+        <div class="mb-4 flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 class="text-sm font-bold text-gray-900 flex items-center gap-2">
+              <span class="material-symbols-outlined text-[18px] text-primary">bar_chart</span>
+              Facturación vs. Costos / Gastos
+            </h2>
+            <p class="text-xs text-gray-500">Comparativo mensual · Últimos 6 meses</p>
+          </div>
+          <div class="flex items-center gap-3 text-[11px] font-medium text-gray-600">
+            <span class="inline-flex items-center gap-1.5">
+              <span class="h-2.5 w-2.5 rounded-sm bg-primary"></span> Facturación
+            </span>
+            <span class="inline-flex items-center gap-1.5">
+              <span class="h-2.5 w-2.5 rounded-sm bg-amber-500"></span> Costos / Gastos
+            </span>
+          </div>
+        </div>
+        <div id="grafica-facturacion-gastos" class="w-full">
+          <div class="h-56 rounded-lg bg-gray-50 skeleton"></div>
+        </div>
+      </div>
+
+      <!-- Card 2: Proyección Comercial & Salud de Proyectos -->
+      <div class="rounded-xl border border-gray-200 bg-white p-5 flex flex-col justify-between">
+        <div class="mb-4 flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 class="text-sm font-bold text-gray-900 flex items-center gap-2">
+              <span class="material-symbols-outlined text-[18px] text-emerald-600">trending_up</span>
+              Proyección Comercial &amp; Salud de Proyectos
+            </h2>
+            <p class="text-xs text-gray-500">Pipeline CRM, Pre-venta y distribución de proyectos</p>
+          </div>
+          <a href="crm.html" class="text-xs font-semibold text-primary hover:underline">Ir al CRM →</a>
+        </div>
+        <div id="grafica-comercial-salud" class="space-y-4">
+          <div class="h-56 rounded-lg bg-gray-50 skeleton"></div>
+        </div>
       </div>
     </section>
 
