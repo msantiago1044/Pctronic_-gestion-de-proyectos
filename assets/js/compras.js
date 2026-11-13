@@ -55,7 +55,7 @@
         .order("created_at", { ascending: false }),
       window.sb
         .from("compras_ordenes")
-        .select("*, empresas(nombre, nit, direccion, telefono, email, logo_url), proveedores(nombre, nit, aplica_retencion, porcentaje_retencion, porcentaje_ica, monto_minimo_retencion), compras_solicitudes(numero, titulo)")
+        .select("*, compras_solicitudes(numero, titulo)")
         .order("created_at", { ascending: false }),
       window.sb
         .from("compras_solicitud_items")
@@ -67,7 +67,11 @@
     if (oRes.error) return manejarError(oRes.error, "No se pudo cargar las órdenes");
 
     solicitudes = sRes.data || [];
-    ordenes = oRes.data || [];
+    ordenes = (oRes.data || []).map((o) => ({
+      ...o,
+      empresas: empresas.find((e) => e.id === o.empresa_id) || null,
+      proveedores: proveedores.find((p) => p.id === o.proveedor_id) || null,
+    }));
     itemsPrevios = itRes.data || [];
 
     actualizarKPIs();

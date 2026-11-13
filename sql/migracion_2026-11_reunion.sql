@@ -200,8 +200,8 @@ create table if not exists public.compras_solicitud_items (
 create table if not exists public.compras_ordenes (
   id uuid primary key default gen_random_uuid(),
   solicitud_id uuid not null references public.compras_solicitudes(id) on delete cascade,
-  empresa_id uuid,
-  proveedor_id uuid,
+  empresa_id uuid references public.empresas(id) on delete set null,
+  proveedor_id uuid references public.proveedores(id) on delete set null,
   numero_orden text,
   tipo text not null default 'orden_compra' check (tipo in ('pre_orden', 'orden_compra')),
   subtotal numeric default 0,
