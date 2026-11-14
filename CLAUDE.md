@@ -6,15 +6,15 @@ siempre qué debe hacer él después (subir a GitHub, correr SQL en Supabase, et
 
 ## Stack y despliegue
 
-- Frontend: HTML + CSS + JavaScript planos. **Sin frameworks complejos.** Tailwind por CDN.
-- Librerías por CDN: supabase-js v2, SheetJS (xlsx), jsPDF + jspdf-autotable. ExcelJS 4.4.0 + JSZip 3.10.1
+- Frontend: HTML + CSS + JavaScript planos. **Sin frameworks complejos.** Tailwind CSS compilado localmente (`npm run build:css`, desde `assets/css/tailwind.input.css` hacia `assets/css/tailwind.min.css`).
+- Librerías por CDN (con `Content-Security-Policy` estricta en las vistas HTML y Subresource Integrity `integrity=` / SRI): supabase-js v2, SheetJS (xlsx), jsPDF + jspdf-autotable. ExcelJS 4.4.0 + JSZip 3.10.1
   se cargan **solo al exportar** (`PCT.cargarExcelJS`), porque SheetJS gratis no conserva formato ni logo.
 - Backend: Supabase (Postgres + Auth + Storage + RLS). No hay servidor propio.
 - Despliegue: push a GitHub (rama `main`) → Vercel publica automáticamente.
-  - En Vercel: Configurar las variables `SUPABASE_URL` y `SUPABASE_ANON_KEY` en **Project Settings → Environment Variables**. Durante el build (`npm run build`), `scripts/build.js` genera `assets/js/config.js` de forma segura (y falla con código 1 en `VERCEL`/`CI` si faltan).
-  - Comandos locales / CI: `npm run lint` (chequeo de sintaxis JS), `npm test` (`node --test tests/*.test.mjs`), `npm run build` y servidor HTTP local (`npx serve .`).
-  - Supabase se actualiza con `sql/schema.sql` (montaje inicial) o `sql/migracion_*.sql` en orden cronológico en el SQL Editor:
-    `migracion_2026-10_cotizacion.sql` → `migracion_2026-10_fase2.sql` → `migracion_2026-10_crm.sql` → `migracion_2026-10_seguridad_rls.sql` → `migracion_2026-10_seguridad_crm_completa.sql` → `migracion_2026-11_reunion.sql` → `migracion_2026-11_seguridad_indices.sql`.
+  - En Vercel: Configurar las variables `SUPABASE_URL` y `SUPABASE_ANON_KEY` en **Project Settings → Environment Variables**. Durante el build (`npm run build`), `scripts/build.js` genera `assets/js/config.js` de forma segura (y falla con código 1 en `VERCEL`/`CI` si faltan) y `npm run build:css` genera `assets/css/tailwind.min.css`.
+  - Comandos locales / CI: `npm run lint` (chequeo de sintaxis JS), `npm test` (`node --test tests/*.test.mjs`, pruebas unitarias), `npm run build:css`, `npm run build` y servidor HTTP local (`npx serve .`).
+  - Supabase se actualiza con `sql/schema.sql` (montaje inicial seguro) o `sql/migracion_*.sql` en orden cronológico en el SQL Editor:
+    `migracion_2026-10_cotizacion.sql` → `migracion_2026-10_fase2.sql` → `migracion_2026-10_crm.sql` → `migracion_2026-10_seguridad_rls.sql` → `migracion_2026-10_seguridad_crm_completa.sql` → `migracion_2026-11_reunion.sql` → `migracion_2026-11_seguridad_indices.sql` → `migracion_2026-11_rpc_consecutivos_vistas.sql`.
 - Seguridad de credenciales: El repositorio no almacena llaves privadas ni URLs hardcodeadas en texto plano para proteger el repositorio público de GitHub. La llave `service_role` jamás va en el repo ni en el frontend.
 
 ## Estructura
@@ -37,9 +37,9 @@ siempre qué debe hacer él después (subir a GitHub, correr SQL en Supabase, et
 - **Nombres**: en pantalla se dice **Cotización** (precios al cliente) y **Presupuesto de costos** (costos
   internos). Nunca "Presupuesto" a secas para lo que paga el cliente. En la BD sigue siendo una sola tabla
   `presupuesto_items` (no se renombró para no romper nada).
-- `sql/schema.sql` esquema completo. **Hace DROP + CREATE de todo** (solo para montar una base desde cero).
-  Los cambios nuevos van además en `sql/migracion_*.sql` que no borran nada (`add column if not exists`);
-  a Jose se le pide correr solo la migración.
+- `sql/schema.sql` esquema completo para montaje inicial sin `DROP TABLE ... CASCADE` destructivos (`CREATE TABLE IF NOT EXISTS` en tablas base y `CHECK` actualizado de `profiles.rol` con los 5 roles vigentes + legacy).
+  Los cambios nuevos van además en `sql/migracion_*.sql` que no borran nada (`add column if not exists`, RPCs idempotentes, etc.);
+  a Jose se le pide correr solo la migración (por ejemplo `sql/migracion_2026-11_rpc_consecutivos_vistas.sql` para secuencias atómicas y RPCs transaccionales/agregadas).
 - `docs/PCT_Plantilla_Proyecto_v7.xlsx` plantilla de Excel que es la **especificación funcional** de Proyectos
   (hoja GUÍA APP = tablas y reglas de negocio). Léela antes de construir una fase nueva. Su hoja PRESUPUESTO
   equivale en la app a Cotización + Presupuesto de costos.
