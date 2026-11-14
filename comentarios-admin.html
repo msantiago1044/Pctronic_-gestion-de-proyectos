@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/svg+xml" href="assets/img/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32x32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/img/apple-touch-icon.png" />
+  <!-- Open Graph / Compartir en Redes Sociales (WhatsApp, LinkedIn, Facebook) -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Pctronic · Sistema de Gestión y CRM" />
+  <meta property="og:description" content="Plataforma de gestión de proyectos, cotizaciones, CRM comercial y avance de obra para Pctronic Seguridad Electrónica." />
+  <meta property="og:image" content="https://pctronic-gestion-de-proyectos.vercel.app/assets/img/og-preview.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:url" content="https://pctronic-gestion-de-proyectos.vercel.app" />
+  <!-- Twitter Cards -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Pctronic · Sistema de Gestión y CRM" />
+  <meta name="twitter:description" content="Plataforma de proyectos, cotizaciones y CRM comercial para Pctronic Seguridad Electrónica." />
+  <meta name="twitter:image" content="https://pctronic-gestion-de-proyectos.vercel.app/assets/img/og-preview.png" />
+
+<title>Anotaciones de Plataforma · Pctronic</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
+<link rel="stylesheet" href="assets/css/tailwind.min.css?v=2.3" />
+<link rel="stylesheet" href="assets/css/styles.css" />
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/dist/umd/supabase.min.js" integrity="sha384-YieCqqg9gQufX7+5HcFvCEg/n3KUEdl8/Jb+A6J0npf1mB740VayvwKjTrtCeUoy" crossorigin="anonymous"></script>
+<script defer src="assets/js/config.js"></script>
+<script defer src="assets/js/supabaseClient.js"></script>
+<script defer src="assets/js/util.js?v=2.3"></script>
+</head>
+<body data-page="comentarios-admin" data-title="Anotaciones de Plataforma" class="font-display bg-gray-50 text-gray-900 antialiased">
+
+<div id="app-sidebar"></div>
+<div class="lg:pl-64">
+  <div id="app-topbar"></div>
+
+  <main class="p-6 space-y-5">
+    <div class="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between">
+      <div class="flex items-start gap-3">
+        <span class="material-symbols-outlined text-amber-700 shrink-0 mt-0.5" aria-hidden="true">lock</span>
+        <div>
+          <p class="font-semibold">Módulo privado de Super Usuario</p>
+          <p class="mt-0.5 text-xs text-amber-900">
+            Esta vista está oculta del menú lateral y solo es accesible mediante enlace directo para usuarios con rol <strong>Super Usuario</strong>.
+          </p>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-2 shrink-0">
+        <button type="button" id="btn-copiar-enlace"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100">
+          <span class="material-symbols-outlined text-[16px]" aria-hidden="true">link</span>
+          <span>Copiar enlace</span>
+        </button>
+        <button type="button" id="btn-actualizar-feedback"
+          class="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700">
+          <span class="material-symbols-outlined text-[16px]" aria-hidden="true">refresh</span>
+          <span>Actualizar</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div class="rounded-xl border border-gray-200 bg-white p-4">
+        <p class="text-xs font-medium text-gray-500">Total</p>
+        <p id="kpi-total" class="mt-1 text-2xl font-bold text-gray-900">0</p>
+      </div>
+      <div class="rounded-xl border border-gray-200 bg-white p-4">
+        <p class="text-xs font-medium text-gray-500">Nuevos</p>
+        <p id="kpi-nuevos" class="mt-1 text-2xl font-bold text-blue-600">0</p>
+      </div>
+      <div class="rounded-xl border border-gray-200 bg-white p-4">
+        <p class="text-xs font-medium text-gray-500">En revisión</p>
+        <p id="kpi-revision" class="mt-1 text-2xl font-bold text-amber-600">0</p>
+      </div>
+      <div class="rounded-xl border border-gray-200 bg-white p-4">
+        <p class="text-xs font-medium text-gray-500">Resueltos</p>
+        <p id="kpi-resueltos" class="mt-1 text-2xl font-bold text-green-600">0</p>
+      </div>
+    </div>
+
+    <div class="grid gap-3 rounded-xl border border-gray-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div>
+        <label for="filtro-busqueda" class="block text-xs font-semibold text-gray-600 mb-1">Buscar</label>
+        <input type="search" id="filtro-busqueda" placeholder="Título, mensaje, autor o página…"
+          class="w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary" />
+      </div>
+      <div>
+        <label for="filtro-estado" class="block text-xs font-semibold text-gray-600 mb-1">Estado</label>
+        <select id="filtro-estado" class="w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary">
+          <option value="">Todos</option>
+          <option value="nuevo">Nuevo</option>
+          <option value="en_revision">En revisión</option>
+          <option value="resuelto">Resuelto</option>
+          <option value="descartado">Descartado</option>
+        </select>
+      </div>
+      <div>
+        <label for="filtro-tipo" class="block text-xs font-semibold text-gray-600 mb-1">Tipo</label>
+        <select id="filtro-tipo" class="w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary">
+          <option value="">Todos</option>
+          <option value="mejora">Mejora / Sugerencia</option>
+          <option value="comentario">Comentario general</option>
+          <option value="error">Error / Problema</option>
+        </select>
+      </div>
+      <div>
+        <label for="filtro-prioridad" class="block text-xs font-semibold text-gray-600 mb-1">Prioridad</label>
+        <select id="filtro-prioridad" class="w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary">
+          <option value="">Todas</option>
+          <option value="alta">Alta</option>
+          <option value="media">Media</option>
+          <option value="baja">Baja</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="lista-feedback" class="space-y-3" aria-live="polite">
+      <div class="rounded-xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-400">
+        Cargando anotaciones…
+      </div>
+    </div>
+  </main>
+</div>
+
+<script defer src="assets/js/layout.js?v=2.3"></script>
+<script defer src="assets/js/pages/comentarios-admin-page.js?v=2.3"></script>
+</body>
+</html>

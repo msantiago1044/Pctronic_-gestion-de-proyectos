@@ -28,7 +28,7 @@ const NAV_ITEMS_ADMIN = [
 const ROLES_CONFIG = {
   super_usuario: {
     label: "Super Usuario",
-    pages: ["dashboard", "crm", "ofertas", "proyectos", "compras", "facturacion", "terceros", "empresas", "usuarios"],
+    pages: ["dashboard", "crm", "ofertas", "proyectos", "compras", "facturacion", "terceros", "empresas", "usuarios", "comentarios-admin"],
     admin: true,
   },
   directivo: {
@@ -372,7 +372,199 @@ async function inicializarApp() {
     });
   }
 
+  if (session && page !== "login" && page !== "index") {
+    montarBurbujaFeedback({ session, profile, page, title: titulo, rolNorm });
+  }
+
   return { session, profile };
+}
+
+function montarBurbujaFeedback({ session, profile, page, title, rolNorm }) {
+  if (!session || document.getElementById("feedback-bubble-btn") || document.getElementById("feedback-drawer")) {
+    return;
+  }
+
+  const moduloActual = title || page || "Plataforma";
+
+  const bubbleBtn = document.createElement("button");
+  bubbleBtn.type = "button";
+  bubbleBtn.id = "feedback-bubble-btn";
+  bubbleBtn.setAttribute("aria-label", "Enviar comentario o mejora de la plataforma");
+  bubbleBtn.title = "Enviar mejora o comentario";
+  bubbleBtn.className =
+    "fixed right-0 top-1/2 -translate-y-1/2 z-40 rounded-l-2xl bg-primary text-white shadow-lg hover:bg-blue-700 transition-all px-2.5 py-3 flex flex-col items-center gap-1";
+  bubbleBtn.innerHTML = `
+    <span class="material-symbols-outlined text-[20px]" aria-hidden="true">rate_review</span>
+    <span class="text-[11px] font-semibold tracking-tight">Mejoras</span>
+  `;
+
+  const drawer = document.createElement("div");
+  drawer.id = "feedback-drawer";
+  drawer.className = "fixed inset-0 z-50 hidden";
+  drawer.setAttribute("role", "dialog");
+  drawer.setAttribute("aria-modal", "true");
+  drawer.setAttribute("aria-labelledby", "feedback-drawer-title");
+  drawer.innerHTML = `
+    <div id="feedback-backdrop" class="fixed inset-0 bg-gray-900/40 backdrop-blur-[1px]"></div>
+    <div class="fixed inset-y-0 right-0 flex max-w-full pl-10">
+      <div class="w-screen max-w-md bg-white shadow-2xl border-l border-gray-200 flex flex-col">
+        <div class="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="material-symbols-outlined text-primary text-[22px]" aria-hidden="true">rate_review</span>
+            <div class="min-w-0">
+              <h2 id="feedback-drawer-title" class="text-base font-bold text-gray-900 truncate">Comentarios y Mejoras</h2>
+              <p class="text-xs text-gray-500 truncate">Envía sugerencias o reporta un detalle</p>
+            </div>
+          </div>
+          <button type="button" id="feedback-close-btn" aria-label="Cerrar panel"
+            class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors">
+            <span class="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        </div>
+
+        <form id="feedback-form" class="flex-1 overflow-y-auto p-5 space-y-4">
+          <div class="flex items-center justify-between rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-900">
+            <span class="font-medium">Módulo actual:</span>
+            <span class="rounded-full bg-white px-2.5 py-0.5 font-semibold text-primary border border-blue-200 truncate max-w-[220px]">
+              ${escapeHtml(moduloActual)}
+            </span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label for="feedback-tipo" class="block text-xs font-semibold text-gray-700 mb-1">Tipo</label>
+              <select id="feedback-tipo" name="tipo"
+                class="w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary">
+                <option value="mejora">Mejora / Sugerencia</option>
+                <option value="comentario">Comentario general</option>
+                <option value="error">Reportar problema</option>
+              </select>
+            </div>
+            <div>
+              <label for="feedback-prioridad" class="block text-xs font-semibold text-gray-700 mb-1">Prioridad</label>
+              <select id="feedback-prioridad" name="prioridad"
+                class="w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary">
+                <option value="media" selected>Media</option>
+                <option value="baja">Baja</option>
+                <option value="alta">Alta</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label for="feedback-titulo" class="block text-xs font-semibold text-gray-700 mb-1">Título (opcional)</label>
+            <input type="text" id="feedback-titulo" name="titulo" maxlength="140"
+              placeholder="Ej. Filtro por fecha en cotizaciones"
+              class="w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary" />
+          </div>
+
+          <div>
+            <label for="feedback-mensaje" class="block text-xs font-semibold text-gray-700 mb-1">
+              Detalle <span class="text-red-500">*</span>
+            </label>
+            <textarea id="feedback-mensaje" name="mensaje" rows="5" required maxlength="2000"
+              placeholder="Describe tu sugerencia, comentario o el problema que encontraste…"
+              class="w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary"></textarea>
+            <p class="mt-1 text-[11px] text-gray-400">Máximo 2000 caracteres. Solo visible para el administrador.</p>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+            <button type="button" id="feedback-cancel-btn"
+              class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+              Cancelar
+            </button>
+            <button type="submit" id="feedback-submit-btn"
+              class="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
+              <span class="material-symbols-outlined text-[18px]" aria-hidden="true">send</span>
+              <span>Enviar</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(bubbleBtn);
+  document.body.appendChild(drawer);
+
+  const form = document.getElementById("feedback-form");
+  const backdrop = document.getElementById("feedback-backdrop");
+  const closeBtn = document.getElementById("feedback-close-btn");
+  const cancelBtn = document.getElementById("feedback-cancel-btn");
+  const submitBtn = document.getElementById("feedback-submit-btn");
+  const tituloInput = document.getElementById("feedback-titulo");
+  const mensajeInput = document.getElementById("feedback-mensaje");
+
+  const abrirDrawer = () => {
+    drawer.classList.remove("hidden");
+    setTimeout(() => {
+      if (tituloInput) tituloInput.focus();
+    }, 30);
+  };
+
+  const cerrarDrawer = () => {
+    drawer.classList.add("hidden");
+  };
+
+  bubbleBtn.addEventListener("click", abrirDrawer);
+  if (closeBtn) closeBtn.addEventListener("click", cerrarDrawer);
+  if (cancelBtn) cancelBtn.addEventListener("click", cerrarDrawer);
+  if (backdrop) backdrop.addEventListener("click", cerrarDrawer);
+
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && !drawer.classList.contains("hidden")) {
+      cerrarDrawer();
+    }
+  });
+
+  if (form) {
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const tipo = document.getElementById("feedback-tipo")?.value || "mejora";
+      const prioridad = document.getElementById("feedback-prioridad")?.value || "media";
+      const tituloVal = (tituloInput?.value || "").trim();
+      const mensajeVal = (mensajeInput?.value || "").trim();
+
+      if (!mensajeVal) {
+        if (typeof mostrarAviso === "function") {
+          mostrarAviso("Por favor escribe el detalle de tu comentario.", "error");
+        }
+        return;
+      }
+
+      if (submitBtn) submitBtn.disabled = true;
+      try {
+        const { error } = await window.sb.from("feedback_plataforma").insert({
+          usuario_id: session.user.id,
+          usuario_nombre: profile?.nombre_completo || session.user.email || "",
+          usuario_email: session.user.email || "",
+          usuario_rol: rolNorm || "",
+          pagina: page || "",
+          url: `${window.location.pathname}${window.location.search}`,
+          tipo,
+          prioridad,
+          titulo: tituloVal,
+          mensaje: mensajeVal,
+        });
+        if (error) {
+          if (typeof manejarError === "function") {
+            manejarError(error, "No se pudo enviar tu comentario");
+          } else if (typeof mostrarAviso === "function") {
+            mostrarAviso("No se pudo enviar tu comentario.", "error");
+          }
+          return;
+        }
+
+        if (typeof mostrarAviso === "function") {
+          mostrarAviso("¡Gracias! Tu comentario fue enviado al administrador.", "exito");
+        }
+        form.reset();
+        cerrarDrawer();
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    });
+  }
 }
 
 // Otras páginas hacen: const { session, profile } = await window.pctronicReady;

@@ -78,8 +78,8 @@ const htmlFiles = fs
   .filter((f) => f.endsWith(".html"))
   .sort();
 
-test("smoke: existen las 21 páginas HTML en la raíz del repositorio", () => {
-  assert.equal(htmlFiles.length, 21, `Se esperaban 21 archivos HTML y se encontraron ${htmlFiles.length}`);
+test("smoke: existen las 22 páginas HTML en la raíz del repositorio", () => {
+  assert.equal(htmlFiles.length, 22, `Se esperaban 22 archivos HTML y se encontraron ${htmlFiles.length}`);
 });
 
 for (const file of htmlFiles) {
