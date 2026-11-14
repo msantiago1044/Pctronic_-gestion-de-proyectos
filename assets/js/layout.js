@@ -240,6 +240,18 @@ async function inicializarApp() {
     puedeEliminar: rolNorm === "super_usuario",
   };
 
+  // Guardia de ruta por rol
+  const paginasLibres = new Set(["perfil", "index", "login", ""]);
+  const archivoActual = (window.location.pathname.split("/").pop() || "").toLowerCase();
+  const esArchivoLibre = ["perfil.html", "index.html", "login.html", ""].includes(archivoActual);
+  if (!paginasLibres.has(page) && !esArchivoLibre && !rolCfg.pages.includes(page)) {
+    if (typeof mostrarAviso === "function") {
+      mostrarAviso("No tienes permisos para acceder a esta sección.", "error");
+    }
+    window.location.href = "dashboard.html";
+    return { session, profile };
+  }
+
   const navLinksEl = document.getElementById("nav-links");
   if (navLinksEl) {
     navLinksEl.innerHTML = `${renderNavLinksHtml(page, rolCfg.pages)}<div id="nav-admin-slot"></div>`;
@@ -254,11 +266,14 @@ async function inicializarApp() {
   if (nombreEl) nombreEl.textContent = nombre;
   if (rolEl) rolEl.textContent = rol;
   if (avatarEl) {
-    const avatarUrl = profile?.avatar_url;
-    const esUrlSegura = typeof avatarUrl === "string" && /^(https?:\/\/|data:image\/)/i.test(avatarUrl);
-    if (esUrlSegura) {
+    const avatarUrl = typeof profile?.avatar_url === "string" ? profile.avatar_url.trim() : "";
+    const esDataImg = /^data:image\/(png|jpeg|jpg|webp|gif);base64,[a-z0-9+/=]+$/i.test(avatarUrl);
+    const urlHttps = typeof urlSegura === "function" ? urlSegura(avatarUrl) : "";
+    const esHttps = /^https:\/\//i.test(urlHttps);
+    const urlFinal = esDataImg ? avatarUrl : esHttps ? urlHttps : "";
+    if (urlFinal) {
       avatarEl.textContent = "";
-      avatarEl.style.backgroundImage = `url('${avatarUrl.replace(/'/g, "\\'")}')`;
+      avatarEl.style.backgroundImage = `url('${urlFinal.replace(/['"\\()\r\n]/g, "\\$&")}')`;
     } else {
       avatarEl.style.backgroundImage = "";
       avatarEl.textContent = (nombre || "?").trim().charAt(0).toUpperCase();

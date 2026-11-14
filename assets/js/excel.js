@@ -5,7 +5,8 @@
 
 // Descarga un archivo .xlsx con una fila de encabezados y, opcionalmente,
 // filas de ejemplo. `columnas` es un arreglo de encabezados de texto.
-function descargarPlantillaExcel(nombreArchivo, columnas, filasEjemplo = []) {
+async function descargarPlantillaExcel(nombreArchivo, columnas, filasEjemplo = []) {
+  if (typeof asegurarXLSX === "function") await asegurarXLSX();
   const datos = [columnas, ...filasEjemplo];
   const hoja = XLSX.utils.aoa_to_sheet(datos);
   const libro = XLSX.utils.book_new();
@@ -15,7 +16,8 @@ function descargarPlantillaExcel(nombreArchivo, columnas, filasEjemplo = []) {
 
 // Lee un archivo .xlsx/.xls (desde un <input type="file">) y devuelve un
 // arreglo de objetos, usando la primera fila como llaves de cada columna.
-function leerArchivoExcel(file) {
+async function leerArchivoExcel(file) {
+  if (typeof asegurarXLSX === "function") await asegurarXLSX();
   return new Promise((resolve, reject) => {
     const lector = new FileReader();
     lector.onerror = () => reject(new Error("No se pudo leer el archivo"));

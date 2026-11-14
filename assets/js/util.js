@@ -28,6 +28,68 @@ function escapeHtml(str) {
   }[c]));
 }
 
+function urlSegura(url) {
+  const s = String(url ?? "").trim();
+  if (!s) return "";
+  if ((s.startsWith("/") && !s.startsWith("//")) || s.startsWith("./")) {
+    return s;
+  }
+  try {
+    const u = new URL(s);
+    if (u.protocol === "http:" || u.protocol === "https:") return s;
+  } catch (e) {
+    return "";
+  }
+  return "";
+}
+
+function fechaLocalISO(date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+const _scriptsCargados = new Map();
+
+function cargarScript(url, integrity) {
+  if (_scriptsCargados.has(url)) return _scriptsCargados.get(url);
+  const promesa = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = url;
+    if (integrity) {
+      s.integrity = integrity;
+      s.crossOrigin = "anonymous";
+    }
+    s.onload = () => resolve();
+    s.onerror = () => {
+      _scriptsCargados.delete(url);
+      reject(new Error(`No se pudo cargar el script: ${url}`));
+    };
+    document.head.appendChild(s);
+  });
+  _scriptsCargados.set(url, promesa);
+  return promesa;
+}
+
+async function asegurarXLSX() {
+  if (typeof window !== "undefined" && typeof window.XLSX !== "undefined") return;
+  await cargarScript("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js");
+}
+
+async function asegurarJsPDF() {
+  if (typeof window !== "undefined") {
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+      await cargarScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js");
+    }
+    const tieneAutoTable =
+      typeof window.jspdf?.jsPDF?.API?.autoTable === "function" ||
+      typeof window.jspdf?.autoTable === "function";
+    if (!tieneAutoTable) {
+      await cargarScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js");
+    }
+  }
+}
+
 const ESTADOS_PROYECTO = {
   sin_iniciar: { label: "Sin Iniciar", clase: "bg-amber-100 text-amber-800" },
   en_curso: { label: "En Curso", clase: "bg-blue-100 text-blue-800" },
@@ -43,14 +105,14 @@ const ESTADOS_FACTURA = {
 };
 
 const ESTADOS_CORTE = {
-  borrador: { label: "Borrador", clase: "bg-gray-200 text-gray-700" },
-  en_tramite: { label: "En Trámite", clase: "bg-amber-100 text-amber-800" },
+  pendiente: { label: "Pendiente", clase: "bg-amber-100 text-amber-800" },
+  facturado: { label: "Facturado", clase: "bg-blue-100 text-blue-800" },
   pagado: { label: "Pagado", clase: "bg-green-100 text-green-800" },
 };
 
 function badgeHtml(mapa, valor) {
-  const info = mapa[valor] || { label: valor || "—", clase: "bg-gray-200 text-gray-700" };
-  return `<span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${info.clase}">${info.label}</span>`;
+  const info = (mapa && mapa[valor]) || { label: valor || "—", clase: "bg-gray-200 text-gray-700" };
+  return `<span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${info.clase}">${escapeHtml(info.label)}</span>`;
 }
 
 // Barra de notificaciones simple (éxito / error) en la esquina de la pantalla.
@@ -134,4 +196,23 @@ function activarCamposMoneda(selector = ".input-moneda", contenedor = document) 
       input.value = formatearWhileTyping(input.value);
     });
   });
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    formatoMoneda,
+    formatoFecha,
+    escapeHtml,
+    urlSegura,
+    fechaLocalISO,
+    cargarScript,
+    asegurarXLSX,
+    asegurarJsPDF,
+    ESTADOS_PROYECTO,
+    ESTADOS_FACTURA,
+    ESTADOS_CORTE,
+    badgeHtml,
+    formatearMiles,
+    formatearWhileTyping,
+  };
 }

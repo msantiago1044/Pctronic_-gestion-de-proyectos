@@ -186,8 +186,8 @@
           ? Promise.resolve({ data: proveedores, error: null })
           : window.sb.from("proveedores").select("id, nombre").order("nombre"),
       ]);
-      if (resG.error) return manejarError(resG.error, "No se pudieron cargar los gastos");
-      if (resP.error) return manejarError(resP.error, "No se pudieron cargar los proveedores");
+      if (resG.error) throw resG.error;
+      if (resP.error) throw resP.error;
       gastos = resG.data || [];
       proveedores = resP.data || [];
       pintar();
@@ -270,12 +270,16 @@
               const documento = modalEl.querySelector("#g-doc").value.trim() || null;
               const presupuesto_item_id = modalEl.querySelector("#g-item-id").value || null;
               const descripcion = modalEl.querySelector("#g-desc").value.trim();
-              const cantidad = PCT.num(modalEl.querySelector("#g-cant").value) || 1;
+              const cantidad = PCT.num(modalEl.querySelector("#g-cant").value);
               const valor_unitario = valorMoneda(modalEl.querySelector("#g-vunit"));
               const observaciones = modalEl.querySelector("#g-obs").value.trim() || null;
 
               if (!descripcion) {
                 mostrarAviso("Escribe una descripción del gasto", "error");
+                return false;
+              }
+              if (cantidad <= 0) {
+                mostrarAviso("La cantidad debe ser mayor a 0", "error");
                 return false;
               }
               if (valor_unitario <= 0) {
@@ -318,9 +322,10 @@
       filtroTipo = btn.dataset.tipo;
       pintar();
     });
+    const pintarDebounced = PCT.debounce(pintar, 200);
     root.querySelector("#gastos-busqueda").addEventListener("input", (e) => {
       busqueda = e.target.value;
-      pintar();
+      pintarDebounced();
     });
     root.querySelector("#gastos-tabla").addEventListener("click", async (e) => {
       const btn = e.target.closest("[data-borrar-gasto]");
@@ -331,10 +336,18 @@
       const { error } = await window.sb.from("gastos").delete().eq("id", id);
       if (error) return manejarError(error, "No se pudo eliminar el gasto");
       mostrarAviso("Gasto eliminado.", "info");
-      await Promise.all([cargar(), PCT.recargarFinanzas()]);
-      PCT.emit("ejec");
+      try {
+        await Promise.all([cargar(), PCT.recargarFinanzas()]);
+        PCT.emit("ejec");
+      } catch (err) {
+        manejarError(err, "No se pudieron recargar los gastos");
+      }
     });
 
-    await cargar();
+    try {
+      await cargar();
+    } catch (err) {
+      manejarError(err, "No se pudieron cargar los gastos");
+    }
   };
 })(window.PCT);

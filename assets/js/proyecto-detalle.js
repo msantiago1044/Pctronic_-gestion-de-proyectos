@@ -4,9 +4,9 @@
 // se abre, así siempre muestra los datos más recientes.
 // ============================================================================
 (async () => {
-  const { session, profile } = await window.pctronicReady;
+  const { session } = await window.pctronicReady;
   PCT.usuarioId = session?.user?.id || null;
-  PCT.esAdmin = profile?.rol === "admin";
+  PCT.esAdmin = !!window.PCT_ROL_INFO?.esSuperUsuario;
 
   const proyectoId = qs("id");
   if (!proyectoId) {
@@ -22,21 +22,24 @@
   }
 
   // --------------------------------------------------------------------
-  // Pestañas. `listo:false` = fase siguiente (se muestra, pero aún sin contenido)
+  // Pestañas
   // --------------------------------------------------------------------
   const TABS = [
-    { id: "resumen", label: "Resumen", listo: true },
-    { id: "inicio", label: "Inicio", listo: true },
-    { id: "cotizacion", label: "Cotización", listo: true },
-    { id: "costos", label: "Presupuesto de costos", listo: true },
-    { id: "avance", label: "Avance diario", listo: true },
-    { id: "cronograma", label: "Cronograma", listo: true },
-    { id: "cortes", label: "Cortes cliente", listo: true },
-    { id: "mano_obra", label: "Mano de obra", listo: true },
-    { id: "gastos", label: "Gastos", listo: true },
-    { id: "documentos", label: "Documentos", listo: true },
+    { id: "resumen", label: "Resumen" },
+    { id: "inicio", label: "Inicio" },
+    { id: "cotizacion", label: "Cotización" },
+    { id: "costos", label: "Presupuesto de costos" },
+    { id: "avance", label: "Avance diario" },
+    { id: "cronograma", label: "Cronograma" },
+    { id: "cortes", label: "Cortes cliente" },
+    { id: "mano_obra", label: "Mano de obra" },
+    { id: "gastos", label: "Gastos" },
+    { id: "documentos", label: "Documentos" },
   ];
   let tabActiva = null;
+  let ultimaCargaMs = Date.now();
+  let dirty = false;
+  const TTL_RECARGA_MS = 15000;
 
   // --------------------------------------------------------------------
   // Encabezado
@@ -125,15 +128,6 @@
       </div>`;
   };
 
-  const renderProximamente = (root, tab) => {
-    root.innerHTML = `
-      <div class="mx-auto max-w-md rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center">
-        <span class="material-symbols-outlined text-[40px] text-gray-300">construction</span>
-        <h3 class="mt-2 text-base font-bold text-gray-900">${escapeHtml(tab.label)}</h3>
-        <p class="mt-1 text-sm text-gray-500">Esta pestaña se construye en la <b>${tab.fase}</b> del rediseño de Proyectos. Mientras tanto, la Cotización y el Avance diario ya quedan listos para alimentarla.</p>
-      </div>`;
-  };
-
   // --------------------------------------------------------------------
   // Navegación entre pestañas
   // --------------------------------------------------------------------
@@ -141,7 +135,7 @@
     document.getElementById("tabs-nav").innerHTML = TABS.map(
       (t) => `<button data-tab="${t.id}" class="whitespace-nowrap border-b-2 px-1 py-3 ${
         t.id === tabActiva ? "border-primary text-primary" : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-800"
-      } ${t.listo ? "" : "opacity-60"}">${t.label}${t.listo ? "" : ` <span class="ml-1 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500">${t.fase}</span>`}</button>`
+      }">${t.label}</button>`
     ).join("");
   };
 
@@ -155,13 +149,18 @@
     pintarTabs();
     pintarEncabezado();
     const root = document.getElementById("panel-tab");
-    root.innerHTML = `<div class="skeleton h-40 rounded-xl"></div>`;
+    const necesitaRecarga = dirty || Date.now() - ultimaCargaMs > TTL_RECARGA_MS;
+    if (necesitaRecarga) {
+      root.innerHTML = `<div class="skeleton h-40 rounded-xl"></div>`;
+    }
     try {
-      // siempre con datos frescos (otras personas pueden estar registrando avance)
-      await Promise.all([PCT.recargarProyecto(), PCT.recargarItems(), PCT.recargarEjec(), PCT.recargarFinanzas()]);
-      pintarEncabezado();
+      if (necesitaRecarga) {
+        await Promise.all([PCT.recargarProyecto(), PCT.recargarItems(), PCT.recargarEjec(), PCT.recargarFinanzas()]);
+        ultimaCargaMs = Date.now();
+        dirty = false;
+        pintarEncabezado();
+      }
       root.innerHTML = "";
-      if (!tab.listo) return renderProximamente(root, tab);
       if (tab.id === "resumen") return renderResumen(root);
       if (tab.id === "inicio") return PCT.renderInicio(root);
       if (tab.id === "cotizacion") return PCT.renderCotizacion(root);
@@ -183,8 +182,12 @@
   });
 
   // El encabezado refleja de inmediato cualquier cambio en el proyecto
-  PCT.on("proyecto", pintarEncabezado);
-  PCT.on("ejec", pintarEncabezado);
+  const alMutar = () => {
+    dirty = true;
+    pintarEncabezado();
+  };
+  PCT.on("proyecto", alMutar);
+  PCT.on("ejec", alMutar);
 
   document.title = `${PCT.estado.proyecto.nombre} · Pctronic`;
   activarTab(qs("tab") || "resumen");

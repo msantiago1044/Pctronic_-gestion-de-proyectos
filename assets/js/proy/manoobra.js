@@ -249,6 +249,7 @@
           }
           const cuenta = el.querySelector("#ec-cuenta").value.trim() || null;
           let corteId = corte?.id;
+          let esNuevo = false;
           if (corte) {
             const { error } = await window.sb.from("cortes_mo").update({ fecha, numero_cuenta_cobro: cuenta }).eq("id", corte.id);
             if (error) throw error;
@@ -260,30 +261,42 @@
               .single();
             if (error) throw error;
             corteId = data.id;
+            esNuevo = true;
           }
-          const existentes = new Map(lineasDe(corteId).map((l) => [l.presupuesto_item_id, l]));
-          const upserts = [];
-          const borrar = [];
-          cantidades.forEach((v, itemId) => {
-            const ex = existentes.get(itemId);
-            if (!v) {
-              if (ex) borrar.push(ex.id);
-              return;
-            }
-            upserts.push({
-              corte_id: corteId,
-              presupuesto_item_id: itemId,
-              cantidad: v,
-              pu_contratista_snapshot: ex ? ex.pu_contratista_snapshot : PCT.num(itemPorId(itemId)?.pu_contratista),
+          try {
+            const existentes = new Map(lineasDe(corteId).map((l) => [l.presupuesto_item_id, l]));
+            const upserts = [];
+            const borrar = [];
+            cantidades.forEach((v, itemId) => {
+              const ex = existentes.get(itemId);
+              if (!v) {
+                if (ex) borrar.push(ex.id);
+                return;
+              }
+              upserts.push({
+                corte_id: corteId,
+                presupuesto_item_id: itemId,
+                cantidad: v,
+                pu_contratista_snapshot: ex ? ex.pu_contratista_snapshot : PCT.num(itemPorId(itemId)?.pu_contratista),
+              });
             });
-          });
-          if (borrar.length) {
-            const { error } = await window.sb.from("cortes_mo_items").delete().in("id", borrar);
-            if (error) throw error;
-          }
-          if (upserts.length) {
-            const { error } = await window.sb.from("cortes_mo_items").upsert(upserts, { onConflict: "corte_id,presupuesto_item_id" });
-            if (error) throw error;
+            if (borrar.length) {
+              const { error } = await window.sb.from("cortes_mo_items").delete().in("id", borrar);
+              if (error) throw error;
+            }
+            if (upserts.length) {
+              const { error } = await window.sb.from("cortes_mo_items").upsert(upserts, { onConflict: "corte_id,presupuesto_item_id" });
+              if (error) throw error;
+            }
+          } catch (err) {
+            if (esNuevo && corteId) {
+              try {
+                await window.sb.from("cortes_mo").delete().eq("id", corteId);
+              } catch (errRollback) {
+                console.error("Error al revertir corte de mano de obra:", errRollback);
+              }
+            }
+            throw err;
           }
         },
       });
@@ -320,11 +333,12 @@
       let k = contratista();
       const cid = corte.contratista_id || k?.id;
       if (cid && (k?.identificacion === undefined || k?.tipo_persona === undefined || k?.especialidad === undefined)) {
-        const { data: kFull } = await window.sb
+        const { data: kFull, error: errK } = await window.sb
           .from("contratistas")
           .select("id, nombre, identificacion, especialidad, tipo_persona, es_declarante_renta, porcentaje_retencion")
           .eq("id", cid)
           .maybeSingle();
+        if (errK) return manejarError(errK, "No se pudo consultar el contratista");
         if (kFull) k = { ...(k || {}), ...kFull };
       }
       const retPct = PCT.num(corte.retencion_porcentaje);

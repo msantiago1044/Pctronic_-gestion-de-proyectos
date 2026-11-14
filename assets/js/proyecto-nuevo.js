@@ -3,12 +3,12 @@
 // con opción de cargar todo desde el Excel de la cotización (o la plantilla v7).
 // ============================================================================
 (async () => {
-  const { session, profile } = await window.pctronicReady;
+  const { session } = await window.pctronicReady;
 
-  // Crear proyectos es exclusivo del administrador. La base de datos también lo
+  // Crear proyectos es exclusivo del super usuario. La base de datos también lo
   // exige (política RLS); aquí validamos primero para no mostrar un formulario
   // que no podría guardar.
-  if (profile?.rol !== "admin") {
+  if (!window.PCT_ROL_INFO?.esSuperUsuario) {
     mostrarAviso("Solo un administrador puede crear proyectos nuevos.", "error");
     window.location.href = "proyectos.html";
     return;
@@ -170,7 +170,13 @@
     } catch (err) {
       // Si falló después de crear el proyecto, se borra para no dejar copias
       // incompletas (sus tarifas e ítems se borran con él).
-      if (proyecto) await window.sb.from("proyectos").delete().eq("id", proyecto.id);
+      if (proyecto) {
+        try {
+          await window.sb.from("proyectos").delete().eq("id", proyecto.id);
+        } catch (errRollback) {
+          console.error("Error al revertir proyecto incompleto:", errRollback);
+        }
+      }
       manejarError(err, "No se pudo crear el proyecto");
       btn.disabled = false;
       btn.textContent = "Crear proyecto";

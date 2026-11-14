@@ -4,7 +4,8 @@
 // Avance diario...) viva en su propio archivo sin necesidad de compilar nada.
 // Las fórmulas replican las reglas de negocio de la plantilla de Excel v7.
 // ============================================================================
-window.PCT = window.PCT || {};
+const _globalRoot = typeof window !== "undefined" ? window : globalThis;
+_globalRoot.PCT = _globalRoot.PCT || {};
 
 (function (PCT) {
   // --------------------------------------------------------------------
@@ -364,4 +365,15 @@ window.PCT = window.PCT || {};
         ],
       });
     });
-})(window.PCT);
+})(_globalRoot.PCT);
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    calcItem: _globalRoot.PCT.calcItem,
+    resumenPresupuesto: _globalRoot.PCT.resumenPresupuesto,
+    contrato: _globalRoot.PCT.contrato,
+    margenActual: _globalRoot.PCT.margenActual,
+    avanceFisico: _globalRoot.PCT.avanceFisico,
+    PCT: _globalRoot.PCT,
+  };
+}

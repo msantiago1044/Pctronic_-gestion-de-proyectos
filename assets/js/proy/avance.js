@@ -188,7 +188,7 @@
           <h3 class="mb-3 text-base font-bold text-gray-900">Bitácora</h3>
           <div class="mb-3 flex flex-wrap items-center gap-2">
             <button id="av-ayer" class="rounded-lg border border-gray-300 p-1.5 text-gray-600 hover:bg-gray-50" title="Día anterior"><span class="material-symbols-outlined text-[18px]">chevron_left</span></button>
-            <input id="av-fecha" type="date" value="${fecha}" class="rounded-lg border-gray-300 text-sm" />
+            <input id="av-fecha" type="date" value="${escapeHtml(fecha)}" class="rounded-lg border-gray-300 text-sm" />
             <button id="av-manana" class="rounded-lg border border-gray-300 p-1.5 text-gray-600 hover:bg-gray-50" title="Día siguiente"><span class="material-symbols-outlined text-[18px]">chevron_right</span></button>
             <button id="av-hoy" class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">Hoy</button>
             <p class="ml-auto text-sm font-semibold capitalize text-gray-700">${fechaLarga(fecha)}</p>
@@ -249,6 +249,10 @@
       const propia = lineas.find((a) => a.ejecutor === ejecutorElegido);
       const otras = lineas.filter((a) => a !== propia).reduce((s, a) => s + PCT.num(a.cantidad), 0);
       const nueva = redondear(nuevoTotalDia - otras);
+      if (nueva < 0) {
+        mostrarAviso("La cantidad ejecutada no puede ser negativa.", "error");
+        return pintarTablaAvance();
+      }
       let res;
       if (propia) {
         res = nueva === 0
@@ -294,28 +298,37 @@
         aplicarFiltro();
       });
 
-      // mover el avance de un ítem
-      q("#av-tabla").addEventListener("change", async (e) => {
+      // mover el avance de un ítem (serializado en cola para evitar carreras al tabular rápido)
+      let colaMutaciones = Promise.resolve();
+      q("#av-tabla").addEventListener("change", (e) => {
         const inp = e.target;
         const tr = inp.closest("tr[data-id]");
         if (!tr || !inp.dataset.campo) return;
-        const item = itemPorId(tr.dataset.id);
-        if (!item) return;
-        // para devolver el foco a donde iba el usuario tras redibujar
-        const sig = document.activeElement?.closest?.("tr[data-id]") ? { id: document.activeElement.closest("tr[data-id]").dataset.id, campo: document.activeElement.dataset.campo } : null;
+        const itemId = tr.dataset.id;
+        const campo = inp.dataset.campo;
         const valor = PCT.num(inp.value);
-        const acum = PCT.num(PCT.ejecItem(item.id).cant_ejecutada);
-        const dia = delDia(item.id);
-        let nuevoDia;
-        if (inp.dataset.campo === "dia") nuevoDia = valor;
-        else if (inp.dataset.campo === "acum") nuevoDia = dia + (valor - acum);
-        else nuevoDia = dia + ((valor / 100) * PCT.num(item.cantidad) - acum);
-        try {
-          await fijarDelDia(item, nuevoDia);
-        } catch (err) {
-          manejarError(err, "No se pudo registrar el avance");
-        }
-        if (sig?.campo) root.querySelector(`#av-tabla tr[data-id="${sig.id}"] [data-campo="${sig.campo}"]`)?.focus();
+        const sig = document.activeElement?.closest?.("tr[data-id]")
+          ? { id: document.activeElement.closest("tr[data-id]").dataset.id, campo: document.activeElement.dataset.campo }
+          : null;
+
+        colaMutaciones = colaMutaciones
+          .catch(() => {})
+          .then(async () => {
+            const item = itemPorId(itemId);
+            if (!item) return;
+            const acum = PCT.num(PCT.ejecItem(item.id).cant_ejecutada);
+            const dia = delDia(item.id);
+            let nuevoDia;
+            if (campo === "dia") nuevoDia = valor;
+            else if (campo === "acum") nuevoDia = dia + (valor - acum);
+            else nuevoDia = dia + ((valor / 100) * PCT.num(item.cantidad) - acum);
+            try {
+              await fijarDelDia(item, nuevoDia);
+            } catch (err) {
+              manejarError(err, "No se pudo registrar el avance");
+            }
+            if (sig?.campo) root.querySelector(`#av-tabla tr[data-id="${sig.id}"] [data-campo="${sig.campo}"]`)?.focus();
+          });
       });
 
       q("#av-nuevo-adicional").addEventListener("click", abrirModalAdicional);
@@ -463,7 +476,7 @@
       const filasHist = hist.length
         ? hist
             .map(
-              (r) => `<tr data-fecha="${r.fecha}" class="cursor-pointer border-t border-gray-100 hover:bg-gray-50 ${r.fecha === fecha ? "bg-blue-50" : ""}">
+              (r) => `<tr data-fecha="${escapeHtml(r.fecha)}" class="cursor-pointer border-t border-gray-100 hover:bg-gray-50 ${r.fecha === fecha ? "bg-blue-50" : ""}">
                 <td class="py-1.5 pr-2 text-xs font-medium text-gray-800">${formatoFecha(r.fecha)}</td>
                 <td class="py-1.5 pr-2 text-xs text-gray-500"><span class="line-clamp-1" title="${escapeHtml([r.observaciones, r.novedades].filter(Boolean).join(" · "))}">${escapeHtml([r.observaciones, r.novedades].filter(Boolean).join(" · ") || "—")}</span></td>
                 <td class="py-1.5 text-right text-xs tabular-nums text-gray-700">${formatoMoneda(valorPorRegistro.get(r.id) || 0)}</td>

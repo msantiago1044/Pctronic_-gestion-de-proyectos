@@ -1,9 +1,9 @@
 (async () => {
-  const { profile } = await window.pctronicReady;
+  await window.pctronicReady;
 
-  // Crear proyectos es una acción exclusiva del administrador (el enlace
+  // Crear proyectos es una acción exclusiva del super usuario (el enlace
   // viene oculto por defecto en el HTML; aquí solo se muestra si aplica).
-  if (profile?.rol === "admin") {
+  if (window.PCT_ROL_INFO?.esSuperUsuario) {
     document.getElementById("link-nuevo-proyecto")?.classList.remove("hidden");
     document.getElementById("link-nuevo-proyecto")?.classList.add("flex");
   }
@@ -74,7 +74,13 @@
     );
   }
 
-  document.getElementById("filtro-busqueda").addEventListener("input", render);
+  let debounceTimer;
+  const renderDebounced = () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(render, 200);
+  };
+
+  document.getElementById("filtro-busqueda").addEventListener("input", renderDebounced);
   document.getElementById("filtro-estado").addEventListener("change", render);
 
   cargar();

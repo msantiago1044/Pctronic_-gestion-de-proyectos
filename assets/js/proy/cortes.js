@@ -11,11 +11,14 @@
   const CLASE_INPUT = "block w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary";
   const BTN_SEC = "rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50";
 
-  PCT.ESTADOS_CORTE = {
-    pendiente: { label: "Pendiente", clase: "bg-amber-100 text-amber-800" },
-    facturado: { label: "Facturado", clase: "bg-blue-100 text-blue-800" },
-    pagado: { label: "Pagado", clase: "bg-green-100 text-green-800" },
-  };
+  PCT.ESTADOS_CORTE =
+    typeof ESTADOS_CORTE !== "undefined"
+      ? ESTADOS_CORTE
+      : {
+          pendiente: { label: "Pendiente", clase: "bg-amber-100 text-amber-800" },
+          facturado: { label: "Facturado", clase: "bg-blue-100 text-blue-800" },
+          pagado: { label: "Pagado", clase: "bg-green-100 text-green-800" },
+        };
 
   // Tarjeta de indicador (misma apariencia en Cortes y Mano de obra)
   PCT.tarjetaKpi = (titulo, valor, sub = "", claseValor = "text-gray-900") => `
@@ -108,8 +111,13 @@
                 mostrarAviso("Pon la fecha del corte.", "error");
                 return false;
               }
-              if (![...cant.values()].some((v) => v !== 0)) {
-                mostrarAviso("El corte no tiene cantidades.", "error");
+              const vals = [...cant.values()];
+              if (vals.some((v) => v < 0)) {
+                mostrarAviso("Las cantidades no pueden ser negativas.", "error");
+                return false;
+              }
+              if (!vals.some((v) => v > 0)) {
+                mostrarAviso("El corte debe tener al menos una cantidad mayor a 0.", "error");
                 return false;
               }
               try {
@@ -147,7 +155,7 @@
                   <td class="px-2 py-1 text-right tabular-nums">${PCT.fmtCant(f.ejecutado)}</td>
                   <td class="px-2 py-1 text-right tabular-nums">${PCT.fmtCant(f.cortadoOtros)}</td>
                   <td class="px-2 py-1 text-right tabular-nums ${pend < 0 ? "text-amber-700" : ""}">${PCT.fmtCant(pend)}</td>
-                  <td class="w-24 px-1 py-1"><input data-cant type="number" step="0.01" value="${c || ""}" placeholder="0" class="w-full rounded border border-gray-200 px-1.5 py-1 text-right text-xs tabular-nums focus:border-primary focus:ring-1 focus:ring-primary ${c > pend + 0.0001 ? "text-amber-700" : ""}" /></td>
+                  <td class="w-24 px-1 py-1"><input data-cant type="number" step="0.01" min="0" value="${c || ""}" placeholder="0" class="w-full rounded border border-gray-200 px-1.5 py-1 text-right text-xs tabular-nums focus:border-primary focus:ring-1 focus:ring-primary ${c > pend + 0.0001 ? "text-amber-700" : ""}" /></td>
                   <td class="px-2 py-1 text-right tabular-nums text-gray-700" data-valor>${formatoMoneda(c * PCT.num(f.precio))}</td>
                 </tr>`;
               })
@@ -160,7 +168,9 @@
         if (!e.target.matches("[data-cant]")) return;
         const tr = e.target.closest("tr[data-id]");
         const f = filas.find((x) => x.item.id === tr.dataset.id);
-        const v = Math.round(PCT.num(e.target.value) * 100) / 100;
+        const raw = Math.round(PCT.num(e.target.value) * 100) / 100;
+        const v = Math.max(0, raw);
+        if (raw < 0) e.target.value = "0";
         cant.set(f.item.id, v);
         tr.querySelector("[data-valor]").textContent = formatoMoneda(v * PCT.num(f.precio));
         e.target.classList.toggle("text-amber-700", v > pendiente(f) + 0.0001);
@@ -186,6 +196,13 @@
   // --------------------------------------------------------------------
   // filas: [{ codigo, descripcion, unidad, contratado, precio, anterior, actual }]
   PCT.pdfActa = async ({ titulo, subtitulo, proyecto: p, corte, filas, encabezadoPrecio = "PU", resumen, firmas, adjuntos = [], nombreArchivo }) => {
+    if (typeof asegurarJsPDF === "function") {
+      try {
+        await asegurarJsPDF();
+      } catch (e) {
+        return mostrarAviso("No se pudo cargar el generador de PDF (revisa tu conexión).", "error");
+      }
+    }
     if (!window.jspdf?.jsPDF) return mostrarAviso("No se pudo cargar el generador de PDF (revisa tu conexión).", "error");
     const doc = new window.jspdf.jsPDF({ unit: "pt", format: "letter", orientation: "landscape" });
     const ancho = doc.internal.pageSize.getWidth();
@@ -526,6 +543,7 @@
         resumen: (cd) => PCT.htmlResumen(PCT.filasActa(cd, p())),
         onGuardar: async ({ fecha, cantidades }) => {
           let corteId = corte?.id;
+          let esNuevo = false;
           if (corte) {
             const { error } = await window.sb.from("cortes_cliente").update({ fecha }).eq("id", corte.id);
             if (error) throw error;
@@ -533,31 +551,43 @@
             const { data, error } = await window.sb.from("cortes_cliente").insert({ proyecto_id: pid, numero, fecha }).select().single();
             if (error) throw error;
             corteId = data.id;
+            esNuevo = true;
           }
-          const existentes = new Map(lineasDe(corteId).map((l) => [l.presupuesto_item_id, l]));
-          const upserts = [];
-          const borrar = [];
-          cantidades.forEach((v, itemId) => {
-            const ex = existentes.get(itemId);
-            if (!v) {
-              if (ex) borrar.push(ex.id);
-              return;
-            }
-            upserts.push({
-              corte_id: corteId,
-              presupuesto_item_id: itemId,
-              cantidad: v,
-              // el precio queda congelado en el corte
-              pu_venta_snapshot: ex ? ex.pu_venta_snapshot : PCT.num(itemPorId(itemId)?.pu_venta),
+          try {
+            const existentes = new Map(lineasDe(corteId).map((l) => [l.presupuesto_item_id, l]));
+            const upserts = [];
+            const borrar = [];
+            cantidades.forEach((v, itemId) => {
+              const ex = existentes.get(itemId);
+              if (!v) {
+                if (ex) borrar.push(ex.id);
+                return;
+              }
+              upserts.push({
+                corte_id: corteId,
+                presupuesto_item_id: itemId,
+                cantidad: v,
+                // el precio queda congelado en el corte
+                pu_venta_snapshot: ex ? ex.pu_venta_snapshot : PCT.num(itemPorId(itemId)?.pu_venta),
+              });
             });
-          });
-          if (borrar.length) {
-            const { error } = await window.sb.from("cortes_cliente_items").delete().in("id", borrar);
-            if (error) throw error;
-          }
-          if (upserts.length) {
-            const { error } = await window.sb.from("cortes_cliente_items").upsert(upserts, { onConflict: "corte_id,presupuesto_item_id" });
-            if (error) throw error;
+            if (borrar.length) {
+              const { error } = await window.sb.from("cortes_cliente_items").delete().in("id", borrar);
+              if (error) throw error;
+            }
+            if (upserts.length) {
+              const { error } = await window.sb.from("cortes_cliente_items").upsert(upserts, { onConflict: "corte_id,presupuesto_item_id" });
+              if (error) throw error;
+            }
+          } catch (err) {
+            if (esNuevo && corteId) {
+              try {
+                await window.sb.from("cortes_cliente").delete().eq("id", corteId);
+              } catch (errRollback) {
+                console.error("Error al revertir corte cliente:", errRollback);
+              }
+            }
+            throw err;
           }
         },
       });
@@ -624,7 +654,16 @@
             </div>
             <ul class="divide-y divide-gray-100 rounded-lg border border-gray-100 text-sm">${
               adj.length
-                ? adj.map((d) => `<li class="flex items-center justify-between px-3 py-2"><a href="${escapeHtml(d.url)}" target="_blank" rel="noopener" class="truncate text-primary hover:underline">${escapeHtml(d.nombre_archivo)}</a><button data-borrar-doc="${d.id}" class="text-gray-400 hover:text-red-600" title="Quitar"><span class="material-symbols-outlined text-[18px]">delete</span></button></li>`).join("")
+                ? adj
+                    .map((d) => {
+                      const href = typeof urlSegura === "function" ? urlSegura(d.url) : d.url;
+                      return `<li class="flex items-center justify-between px-3 py-2">${
+                        href
+                          ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener" class="truncate text-primary hover:underline">${escapeHtml(d.nombre_archivo)}</a>`
+                          : `<span class="truncate text-gray-500">${escapeHtml(d.nombre_archivo)}</span>`
+                      }<button data-borrar-doc="${d.id}" class="text-gray-400 hover:text-red-600" title="Quitar"><span class="material-symbols-outlined text-[18px]">delete</span></button></li>`;
+                    })
+                    .join("")
                 : `<li class="px-3 py-3 text-xs text-gray-400">Sin archivos. Sube la factura o los soportes del corte; salen listados en el acta.</li>`
             }</ul>
           </div>`,

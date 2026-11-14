@@ -362,6 +362,12 @@
                 mostrarAviso("Escribe el título de la actividad", "error");
                 return false;
               }
+              const fecha_inicio = el.querySelector("#cr-ini").value || null;
+              const fecha_fin = el.querySelector("#cr-fin").value || null;
+              if (fecha_inicio && fecha_fin && fecha_fin < fecha_inicio) {
+                mostrarAviso("La fecha de fin no puede ser anterior a la fecha de inicio.", "error");
+                return false;
+              }
               const orden = tareas.length ? Math.max(...tareas.map((t) => PCT.num(t.orden))) + 1 : 1;
               const { error } = await window.sb.from("proyecto_cronograma").insert({
                 proyecto_id: pid,
@@ -369,8 +375,8 @@
                 fase: el.querySelector("#cr-fase").value,
                 titulo,
                 responsable: el.querySelector("#cr-resp").value.trim() || null,
-                fecha_inicio: el.querySelector("#cr-ini").value || null,
-                fecha_fin: el.querySelector("#cr-fin").value || null,
+                fecha_inicio,
+                fecha_fin,
                 notas: el.querySelector("#cr-notas").value.trim() || null,
                 progreso: 0,
                 estado: "pendiente",
@@ -387,12 +393,19 @@
       });
     };
 
-    const exportarPDF = () => {
-      if (!window.jspdf?.jsPDF) {
-        return mostrarAviso("Librería PDF no disponible en esta página", "error");
-      }
+    const exportarPDF = async () => {
       if (!tareas.length) {
         return mostrarAviso("No hay actividades para exportar", "info");
+      }
+      if (typeof asegurarJsPDF === "function") {
+        try {
+          await asegurarJsPDF();
+        } catch (err) {
+          return manejarError(err, "No se pudo cargar la librería PDF");
+        }
+      }
+      if (!window.jspdf?.jsPDF) {
+        return mostrarAviso("Librería PDF no disponible en esta página", "error");
       }
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "letter" });
@@ -450,6 +463,7 @@
       if (!tr) return;
       const id = tr.dataset.tareaId;
       const campo = input.dataset.campo;
+      const t = tareas.find((x) => x.id === id);
       let valor = input.value;
       if (campo === "progreso") {
         valor = Math.max(0, Math.min(100, PCT.num(valor)));
@@ -458,17 +472,27 @@
         valor = null;
       }
 
+      if (campo === "fecha_inicio" || campo === "fecha_fin") {
+        const ini = campo === "fecha_inicio" ? valor : t?.fecha_inicio;
+        const fin = campo === "fecha_fin" ? valor : t?.fecha_fin;
+        if (ini && fin && fin < ini) {
+          input.value = (t && t[campo]) || "";
+          return mostrarAviso("La fecha de fin no puede ser anterior a la fecha de inicio.", "error");
+        }
+      }
+
       const patch = { [campo]: valor };
       if (campo === "estado" && valor === "completada") {
         patch.progreso = 100;
       } else if (campo === "progreso" && valor === 100) {
         patch.estado = "completada";
+      } else if (campo === "progreso" && valor < 100 && t?.estado === "completada") {
+        patch.estado = "en_curso";
       }
 
       const { error } = await window.sb.from("proyecto_cronograma").update(patch).eq("id", id);
       if (error) return manejarError(error, "No se pudo actualizar la actividad");
 
-      const t = tareas.find((x) => x.id === id);
       if (t) Object.assign(t, patch);
       pintarResumen();
       if (patch.progreso !== undefined || patch.estado !== undefined) {

@@ -27,7 +27,7 @@
     pu_venta: { l: "Precio unitario", f: "pu_venta", t: "money", w: "w-28" },
     total_venta: { l: "Subtotal", calc: (c) => c.totalVenta, fmt: "money" },
     observaciones: { l: "Observaciones", f: "observaciones", t: "text", w: "min-w-[160px]" },
-    cu_material: { l: "C.U. material (sin IVA)", f: "cu_material", t: "money", w: "w-28" },
+    cu_material: { l: "C.U. material (sin IVA)", f: "cu_material", t: "money", w: "w-28", nullable: true },
     cu_mat_iva: { l: "C.U. material (con IVA)", calc: (c) => c.cuMatIva, fmt: "money" },
     costo_total: { l: "Costo total", calc: (c) => c.costoTotal, fmt: "money" },
     margen: { l: "Margen $", calc: (c) => c.margen, fmt: "money" },
@@ -543,7 +543,7 @@
         }
         const ok = await PCT.confirmar(
           "Eliminar fila",
-          `¿Eliminar «${escapeHtml(item.descripcion)}»?${item.tipo !== "item" ? " Los ítems de este grupo NO se borran: quedan bajo el grupo anterior." : ""}`,
+          `¿Eliminar «${item.descripcion}»?${item.tipo !== "item" ? " Los ítems de este grupo NO se borran: quedan bajo el grupo anterior." : ""}`,
           "Eliminar",
           true
         );
@@ -777,9 +777,14 @@
           );
         }
         try {
-          for (const c of cambios) {
-            const { error } = await window.sb.from("presupuesto_items").update(c.datos).eq("id", c.id);
-            if (error) throw error;
+          const CHUNK = 25;
+          for (let i = 0; i < cambios.length; i += CHUNK) {
+            const lote = cambios.slice(i, i + CHUNK);
+            const resultados = await Promise.all(
+              lote.map((c) => window.sb.from("presupuesto_items").update(c.datos).eq("id", c.id))
+            );
+            const falla = resultados.find((r) => r.error);
+            if (falla) throw falla.error;
           }
           await PCT.recargarItems();
           pintarTabla();

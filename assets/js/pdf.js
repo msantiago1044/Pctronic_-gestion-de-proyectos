@@ -42,6 +42,13 @@ function _acumuladoHastaPdf(itemId, itemTipo, corte, todosLosCortes) {
 async function generarActaCortePDF(options) {
   const { proyecto, corte, todosLosCortes, items, itemTipo, valorContratoTotal, variante, contratistaId, contratistasCache, documentosAdjuntos } = options;
 
+  if (typeof asegurarJsPDF === "function") {
+    try {
+      await asegurarJsPDF();
+    } catch (e) {
+      return mostrarAviso("No se pudo cargar el generador de PDF (revisa tu conexión)", "error");
+    }
+  }
   if (!window.jspdf || !window.jspdf.jsPDF) {
     return mostrarAviso("No se pudo cargar el generador de PDF (revisa tu conexión)", "error");
   }
@@ -276,7 +283,14 @@ async function generarActaCortePDF(options) {
 // Genera un PDF genérico de una tabla de datos (usado en los listados
 // globales de Facturación / Compras y en el resumen anual de Cortes).
 // { titulo, subtitulo, columnas, filas, nombreArchivo }
-function generarPdfTabla({ titulo, subtitulo, columnas, filas, nombreArchivo }) {
+async function generarPdfTabla({ titulo, subtitulo, columnas, filas, nombreArchivo }) {
+  if (typeof asegurarJsPDF === "function") {
+    try {
+      await asegurarJsPDF();
+    } catch (e) {
+      return mostrarAviso("No se pudo cargar el generador de PDF (revisa tu conexión)", "error");
+    }
+  }
   if (!window.jspdf || !window.jspdf.jsPDF) {
     return mostrarAviso("No se pudo cargar el generador de PDF (revisa tu conexión)", "error");
   }

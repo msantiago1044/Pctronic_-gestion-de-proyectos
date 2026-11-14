@@ -43,8 +43,12 @@
       </div>`;
 
     const abrirDocumento = async (d) => {
+      const urlOriginal = typeof urlSegura === "function" ? urlSegura(d.url) : d.url;
+      if (!urlOriginal) {
+        return mostrarAviso("URL de documento no válida.", "error");
+      }
       try {
-        let ruta = d.url || "";
+        let ruta = urlOriginal;
         // Si es un enlace externo (Google Drive u otro) que no apunta al bucket de Supabase Storage, abrir directo
         if ((ruta.startsWith("http://") || ruta.startsWith("https://")) && !ruta.includes("/documentos/")) {
           window.open(ruta, "_blank", "noopener");
@@ -66,15 +70,16 @@
           .from("documentos")
           .createSignedUrl(decodeURIComponent(ruta), 3600);
 
-        if (!error && data?.signedUrl) {
-          window.open(data.signedUrl, "_blank", "noopener");
+        const signed = data?.signedUrl && (typeof urlSegura === "function" ? urlSegura(data.signedUrl) : data.signedUrl);
+        if (!error && signed) {
+          window.open(signed, "_blank", "noopener");
         } else {
           console.warn("Fallo al crear URL firmada, haciendo fallback a URL directa:", error);
-          window.open(d.url, "_blank", "noopener");
+          window.open(urlOriginal, "_blank", "noopener");
         }
       } catch (err) {
         console.error("Error al abrir documento:", err);
-        window.open(d.url, "_blank", "noopener");
+        window.open(urlOriginal, "_blank", "noopener");
       }
     };
 
@@ -100,7 +105,7 @@
                     ${escapeHtml(d.nombre_archivo)}
                   </button>
                 </td>
-                <td class="px-4 py-2.5"><span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold">${CATEGORIAS[d.categoria] || d.categoria}</span></td>
+                <td class="px-4 py-2.5"><span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold">${escapeHtml(CATEGORIAS[d.categoria] || d.categoria || "—")}</span></td>
                 <td class="px-4 py-2.5 text-xs text-gray-500">${formatoFecha(d.created_at)}</td>
                 <td class="px-4 py-2.5 text-right"><button data-borrar class="text-gray-400 hover:text-red-600" title="Eliminar"><span class="material-symbols-outlined text-[18px]">delete</span></button></td>
               </tr>`
@@ -199,10 +204,24 @@
       });
     });
 
+    const MAX_BYTES = 20 * 1024 * 1024;
+    const EXT_PERMITIDAS = new Set([
+      "pdf", "doc", "docx", "xls", "xlsx", "csv", "ppt", "pptx",
+      "png", "jpg", "jpeg", "webp", "gif", "svg",
+      "dwg", "dxf", "zip", "rar", "7z", "txt",
+    ]);
+
     root.querySelector("#doc-input").addEventListener("change", (e) => {
       const file = e.target.files[0];
       e.target.value = "";
       if (!file) return;
+      if (file.size > MAX_BYTES) {
+        return mostrarAviso("El archivo supera el tamaño máximo permitido (20 MB).", "error");
+      }
+      const ext = (file.name.split(".").pop() || "").toLowerCase();
+      if (!ext || !EXT_PERMITIDAS.has(ext)) {
+        return mostrarAviso("Tipo de archivo no permitido.", "error");
+      }
       PCT.modal({
         titulo: "Subir documento",
         ancho: "max-w-sm",

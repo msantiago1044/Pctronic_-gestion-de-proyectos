@@ -11,12 +11,78 @@
 // Los encabezados se buscan por NOMBRE (no por posición), así que si agregas o
 // mueves una columna en el Excel la importación no se descuadra.
 // ============================================================================
+const _rootImportar = typeof window !== "undefined" ? window : globalThis;
+_rootImportar.PCT = _rootImportar.PCT || {};
+
+function evaluarAritmeticaSegura(expr) {
+  const s = String(expr ?? "").trim();
+  if (!s || !/^[\d.+\-*/()\seE]+$/.test(s)) return undefined;
+  let i = 0;
+  const saltarEspacios = () => {
+    while (i < s.length && /\s/.test(s[i])) i++;
+  };
+  const parseExpr = () => {
+    let left = parseTerm();
+    if (left === undefined) return undefined;
+    while (true) {
+      saltarEspacios();
+      const op = s[i];
+      if (op !== "+" && op !== "-") break;
+      i++;
+      const right = parseTerm();
+      if (right === undefined) return undefined;
+      left = op === "+" ? left + right : left - right;
+    }
+    return left;
+  };
+  const parseTerm = () => {
+    let left = parseFactor();
+    if (left === undefined) return undefined;
+    while (true) {
+      saltarEspacios();
+      const op = s[i];
+      if (op !== "*" && op !== "/") break;
+      i++;
+      const right = parseFactor();
+      if (right === undefined) return undefined;
+      left = op === "*" ? left * right : left / right;
+    }
+    return left;
+  };
+  const parseFactor = () => {
+    saltarEspacios();
+    if (s[i] === "+" || s[i] === "-") {
+      const signo = s[i++] === "-" ? -1 : 1;
+      const val = parseFactor();
+      return val === undefined ? undefined : signo * val;
+    }
+    if (s[i] === "(") {
+      i++;
+      const val = parseExpr();
+      saltarEspacios();
+      if (val === undefined || s[i] !== ")") return undefined;
+      i++;
+      return val;
+    }
+    const m = s.slice(i).match(/^(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/);
+    if (!m) return undefined;
+    i += m[0].length;
+    const n = Number(m[0]);
+    return Number.isFinite(n) ? n : undefined;
+  };
+  const res = parseExpr();
+  saltarEspacios();
+  if (res === undefined || i !== s.length || !Number.isFinite(res)) return undefined;
+  return res;
+}
+
 (function (PCT) {
   // --------------------------------------------------------------------
   // Lectura del archivo
   // --------------------------------------------------------------------
-  PCT.leerLibroExcel = (file) =>
-    new Promise((resolve, reject) => {
+  PCT.leerLibroExcel = async (file) => {
+    if (typeof asegurarXLSX === "function") await asegurarXLSX();
+    return new Promise((resolve, reject) => {
       const lector = new FileReader();
       lector.onerror = () => reject(new Error("No se pudo leer el archivo."));
       lector.onload = (e) => {
@@ -28,6 +94,7 @@
       };
       lector.readAsArrayBuffer(file);
     });
+  };
 
   const filasDeHoja = (libro, nombre) => {
     const ws = libro.Sheets[nombre];
@@ -405,6 +472,7 @@
       cargas[src] = new Promise((ok, mal) => {
         const s = document.createElement("script");
         s.src = src;
+        s.crossOrigin = "anonymous";
         s.onload = ok;
         s.onerror = () => {
           delete cargas[src];
@@ -723,13 +791,7 @@
       });
       f = f.replace(/(\d+(?:\.\d+)?)%/g, (_, n) => `(${n}/100)`);
       f = f.replace(/\b([A-Z]{1,3}\d+)\b/g, (_, a) => `(${numero(a)})`);
-      if (!/^[\d.+\-*/()\seE]+$/.test(f)) return undefined;
-      try {
-        const x = Function(`"use strict";return (${f});`)();
-        return Number.isFinite(x) ? x : undefined;
-      } catch (e) {
-        return undefined;
-      }
+      return evaluarAritmeticaSegura(f);
     };
     const recalcular = (desde, hasta) => {
       for (let r = desde; r <= hasta; r++) {
@@ -865,4 +927,8 @@
     }
     return filas.length;
   };
-})(window.PCT);
+})(_rootImportar.PCT);
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { evaluarAritmeticaSegura };
+}
