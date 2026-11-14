@@ -213,6 +213,14 @@ create table if not exists public.compras_ordenes (
   created_at timestamptz default now()
 );
 
+alter table public.compras_solicitudes add column if not exists trm numeric default 0;
+alter table public.compras_solicitud_items add column if not exists referencia text;
+alter table public.compras_solicitud_items add column if not exists descuento_pct numeric default 0;
+alter table public.compras_ordenes add column if not exists reteiva numeric default 0;
+alter table public.compras_ordenes add column if not exists centro_costo text;
+alter table public.compras_ordenes add column if not exists ciudad text default 'Barranquilla';
+alter table public.compras_ordenes add column if not exists observaciones_oc text;
+
 alter table public.compras_solicitudes enable row level security;
 alter table public.compras_solicitud_items enable row level security;
 alter table public.compras_ordenes enable row level security;
@@ -261,6 +269,8 @@ create table if not exists public.proyecto_cronograma (
   notas text,
   created_at timestamptz default now()
 );
+
+alter table public.proyecto_cronograma add column if not exists edt text;
 
 alter table public.proyecto_cronograma enable row level security;
 drop policy if exists "cronograma_select" on public.proyecto_cronograma;

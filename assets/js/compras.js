@@ -357,6 +357,19 @@
     );
   }
 
+  function actualizarHeaderTrm(trmVal) {
+    const badge = document.getElementById("cmp-trm-badge");
+    if (!badge) return;
+    const trmNum = Number(trmVal || 0);
+    if (trmNum > 0) {
+      badge.textContent = `TRM: ${formatoMoneda(trmNum)}`;
+      badge.classList.remove("hidden");
+    } else {
+      badge.textContent = "";
+      badge.classList.add("hidden");
+    }
+  }
+
   function calcularItemComparativo(it) {
     const p1 = it.proveedor_1_id && it.precio_1 !== null && it.precio_1 !== "" ? Number(it.precio_1) : null;
     const p2 = it.proveedor_2_id && it.precio_2 !== null && it.precio_2 !== "" ? Number(it.precio_2) : null;
@@ -375,12 +388,29 @@
     const ganadorId = it.proveedor_ganador_id || mejor?.id || null;
     const ganadorCand = candidatos.find((c) => c.id === ganadorId) || mejor;
     const precioGanador = it.precio_ganador ? Number(it.precio_ganador) : ganadorCand?.precio || 0;
+    const descuentoPct = Math.min(100, Math.max(0, Number(it.descuento_pct || 0)));
+    const precioNetoUnit = precioGanador * (1 - descuentoPct / 100);
     const presup = Number(it.costo_presupuestado_unit || 0);
     const cant = Number(it.cantidad_solicitada || 1);
-    const diffTotal = presup > 0 && precioGanador > 0 ? (presup - precioGanador) * cant : 0;
-    const sobrecosto = presup > 0 && precioGanador > presup;
+    const subtotalBruto = precioGanador * cant;
+    const descuentoMonto = subtotalBruto * (descuentoPct / 100);
+    const subtotalNeto = subtotalBruto - descuentoMonto;
+    const diffTotal = presup > 0 && precioNetoUnit > 0 ? (presup - precioNetoUnit) * cant : 0;
+    const sobrecosto = presup > 0 && precioNetoUnit > presup;
 
-    return { mejor, ganadorId, precioGanador, diffTotal, sobrecosto, candidatos };
+    return {
+      mejor,
+      ganadorId,
+      precioGanador,
+      descuentoPct,
+      precioNetoUnit,
+      subtotalBruto,
+      descuentoMonto,
+      subtotalNeto,
+      diffTotal,
+      sobrecosto,
+      candidatos,
+    };
   }
 
   function actualizarResumenComparativo() {
@@ -411,7 +441,7 @@
       if (it.precio_3) totP3 += Number(it.precio_3) * cant;
 
       const calc = calcularItemComparativo(it);
-      totGanador += calc.precioGanador * cant;
+      totGanador += calc.subtotalNeto;
       if (calc.sobrecosto) haySobrecosto = true;
     });
 
@@ -484,6 +514,10 @@
         return `
         <tr class="border-t border-gray-100 ${calc.sobrecosto ? "bg-red-50/40" : ""}">
           <td class="px-2 py-2">
+            <input type="text" data-cmp-idx="${idx}" data-cmp-text="referencia" value="${escapeHtml(it.referencia || it.codigo || "")}" placeholder="Ref."
+              class="w-24 rounded border-gray-300 px-2 py-1 text-xs" />
+          </td>
+          <td class="px-2 py-2">
             <div class="font-medium text-gray-900">${escapeHtml(it.descripcion)}</div>
             <div class="text-[10px] text-gray-400">${escapeHtml(it.codigo || "")} · ${escapeHtml(it.unidad || "Und")}</div>
           </td>
@@ -506,6 +540,10 @@
               <option value="">Auto (mejor)</option>
               ${opcGanador.map((g) => `<option value="${g.id}" ${calc.ganadorId === g.id ? "selected" : ""}>${escapeHtml(g.label)}</option>`).join("")}
             </select>
+          </td>
+          <td class="px-2 py-2">
+            <input type="number" min="0" max="100" step="0.1" data-cmp-idx="${idx}" data-cmp-f="descuento_pct" value="${it.descuento_pct ?? 0}"
+              class="w-16 rounded border-gray-300 px-2 py-1 text-right text-xs" />
           </td>
           <td class="px-2 py-2 text-right font-semibold tabular-nums ${calc.diffTotal >= 0 ? "text-emerald-600" : "text-red-600"}">
             ${calc.precioGanador > 0 && it.costo_presupuestado_unit > 0 ? formatoMoneda(calc.diffTotal) : "—"}
@@ -551,6 +589,17 @@
     document.getElementById("cmp-prov-2").innerHTML = opcionesProveedores(first.proveedor_2_id);
     document.getElementById("cmp-prov-3").innerHTML = opcionesProveedores(first.proveedor_3_id);
 
+    const trmEl = document.getElementById("cmp-trm");
+    if (trmEl) trmEl.value = solicitudActual.trm ? String(solicitudActual.trm) : "";
+    actualizarHeaderTrm(solicitudActual.trm);
+
+    const ccEl = document.getElementById("cmp-centro-costo");
+    if (ccEl) ccEl.value = solicitudActual.proyectos?.nombre || "";
+    const ciudadEl = document.getElementById("cmp-ciudad");
+    if (ciudadEl) ciudadEl.value = "Barranquilla";
+    const obsOcEl = document.getElementById("cmp-observaciones-oc");
+    if (obsOcEl) obsOcEl.value = "";
+
     actualizarResumenComparativo();
     renderTablaComparativo();
     modalCmp.classList.remove("hidden");
@@ -570,20 +619,35 @@
     });
   });
 
+  document.getElementById("cmp-trm")?.addEventListener("input", (e) => {
+    if (!solicitudActual) return;
+    const val = Number(e.target.value || 0);
+    solicitudActual.trm = Number.isFinite(val) && val >= 0 ? val : 0;
+    actualizarHeaderTrm(solicitudActual.trm);
+  });
+
   document.getElementById("cmp-tbody").addEventListener("input", (e) => {
     const idx = e.target.dataset.cmpIdx;
+    if (idx === undefined) return;
+    if (e.target.dataset.cmpText === "referencia") {
+      itemsActuales[Number(idx)].referencia = e.target.value;
+      return;
+    }
     const f = e.target.dataset.cmpF;
-    if (idx === undefined || !f) return;
+    if (!f) return;
     if (e.target.value === "") {
-      itemsActuales[Number(idx)][f] = null;
+      itemsActuales[Number(idx)][f] = f === "descuento_pct" ? 0 : null;
     } else {
-      const val = Number(e.target.value);
+      let val = Number(e.target.value);
       if (!Number.isFinite(val) || val < 0) {
+        val = 0;
         e.target.value = "0";
-        itemsActuales[Number(idx)][f] = 0;
-      } else {
-        itemsActuales[Number(idx)][f] = val;
       }
+      if (f === "descuento_pct" && val > 100) {
+        val = 100;
+        e.target.value = "100";
+      }
+      itemsActuales[Number(idx)][f] = val;
     }
     const calc = calcularItemComparativo(itemsActuales[Number(idx)]);
     itemsActuales[Number(idx)].proveedor_ganador_id = calc.ganadorId;
@@ -618,16 +682,29 @@
         const invalido = [it.precio_1, it.precio_2, it.precio_3, it.cantidad_solicitada].some(
           (v) => v !== null && v !== undefined && v !== "" && (!Number.isFinite(Number(v)) || Number(v) < 0)
         );
-        if (invalido) {
-          return mostrarAviso("Los precios y cantidades deben ser mayores o iguales a 0", "error");
+        const descInvalido =
+          it.descuento_pct !== null &&
+          it.descuento_pct !== undefined &&
+          it.descuento_pct !== "" &&
+          (!Number.isFinite(Number(it.descuento_pct)) || Number(it.descuento_pct) < 0 || Number(it.descuento_pct) > 100);
+        if (invalido || descInvalido) {
+          return mostrarAviso("Los precios, cantidades y descuentos (0-100%) deben ser válidos", "error");
         }
       }
+      const trmInput = document.getElementById("cmp-trm");
+      const trmVal = trmInput && trmInput.value !== "" ? Number(trmInput.value) : 0;
+      if (!Number.isFinite(trmVal) || trmVal < 0) {
+        return mostrarAviso("La TRM debe ser mayor o igual a 0", "error");
+      }
+
       const updates = itemsActuales.map((it) => {
         const calc = calcularItemComparativo(it);
         return {
           id: it.id,
           solicitud_id: it.solicitud_id || solicitudActual.id,
           descripcion: it.descripcion,
+          referencia: it.referencia ? String(it.referencia).trim() : null,
+          descuento_pct: calc.descuentoPct,
           cantidad_solicitada: Math.max(0, Number(it.cantidad_solicitada || 0)),
           proveedor_1_id: it.proveedor_1_id || null,
           precio_1: it.precio_1 ?? null,
@@ -644,11 +721,13 @@
         if (error) throw error;
       }
       const estadoFinal = nuevoEstado || (solicitudActual.estado === "pendiente" ? "en_comparativo" : solicitudActual.estado);
-      if (estadoFinal !== solicitudActual.estado) {
-        const { error } = await window.sb.from("compras_solicitudes").update({ estado: estadoFinal }).eq("id", solicitudActual.id);
-        if (error) throw error;
-        solicitudActual.estado = estadoFinal;
-      }
+      const solUpdates = { trm: trmVal };
+      if (estadoFinal !== solicitudActual.estado) solUpdates.estado = estadoFinal;
+      const { error: errSolUpd } = await window.sb.from("compras_solicitudes").update(solUpdates).eq("id", solicitudActual.id);
+      if (errSolUpd) throw errSolUpd;
+      solicitudActual.estado = estadoFinal;
+      solicitudActual.trm = trmVal;
+      actualizarHeaderTrm(trmVal);
       document.getElementById("cmp-estado-badge").innerHTML = badgeHtml(ESTADOS_SOL, solicitudActual.estado);
       mostrarAviso("Comparativo guardado", "exito");
       await cargarDatos();
@@ -788,65 +867,200 @@
     }
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: "pt", format: "letter" });
-    const m = 40;
-    let y = 40;
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const m = 36;
+    const contentW = pageW - m * 2;
+    let y = 36;
 
     const esPreOrden = orden.tipo === "pre_orden";
-    doc.setFontSize(14);
-    doc.setFont(undefined, "bold");
-    doc.text(empresa?.nombre || "Empresa", m, y);
-    doc.setFontSize(9);
-    doc.setFont(undefined, "normal");
-    doc.text(`NIT: ${empresa?.nit || "—"} · ${empresa?.direccion || ""} · ${empresa?.telefono || ""}`, m, y + 14);
+    const empresaNombre = (empresa?.nombre || "GRUPO INTEGRA SAS").toUpperCase();
+    const empresaNit = empresa?.nit || "902.007.699";
+    const numOrden = orden.numero_orden || "OC-001-2026";
+    const fechaEmision = formatoFecha(orden.created_at ? String(orden.created_at).slice(0, 10) : hoyLocal());
+    const ciudadOc = orden.ciudad || "Barranquilla";
 
-    y += 38;
+    // Encabezado principal
+    doc.setFillColor(19, 91, 236);
+    doc.rect(m, y, contentW, 46, "F");
+    doc.setTextColor(255, 255, 255);
     doc.setFontSize(13);
     doc.setFont(undefined, "bold");
-    doc.text(esPreOrden ? `PRE-ORDEN DE COMPRA N° ${orden.numero_orden}` : `ORDEN DE COMPRA N° ${orden.numero_orden}`, m, y);
-    if (esPreOrden) {
-      doc.setFontSize(9);
-      doc.setTextColor(180, 83, 9);
-      doc.text("Documento interno para transcripción en Siigo (Pctronic)", m, y + 14);
-      doc.setTextColor(0);
-    }
-
-    y += 30;
+    doc.text(empresaNombre, m + 12, y + 19);
     doc.setFontSize(9);
     doc.setFont(undefined, "normal");
-    doc.text(`Proveedor: ${proveedor?.nombre || "—"} (NIT: ${proveedor?.nit || "—"})`, m, y);
-    doc.text(`Fecha de emisión: ${formatoFecha(hoyLocal())}`, m, y + 14);
+    doc.text(`NIT: ${empresaNit}`, m + 12, y + 34);
 
-    y += 28;
+    doc.setFontSize(13);
+    doc.setFont(undefined, "bold");
+    doc.text(esPreOrden ? "PRE-ORDEN DE COMPRA" : "ORDEN DE COMPRA", pageW - m - 12, y + 19, { align: "right" });
+    doc.setFontSize(10);
+    doc.text(`No. ${numOrden}`, pageW - m - 12, y + 34, { align: "right" });
+    doc.setTextColor(0, 0, 0);
+
+    y += 54;
+    if (esPreOrden) {
+      doc.setFontSize(8.5);
+      doc.setTextColor(180, 83, 9);
+      doc.text("Documento interno para transcripción en Siigo (Pctronic)", m, y + 4);
+      doc.setTextColor(0, 0, 0);
+      y += 14;
+    }
+
+    // Cajas EMISOR (izquierda) y PROVEEDOR (derecha)
+    const boxGap = 12;
+    const boxW = (contentW - boxGap) / 2;
+    const boxH = 74;
+
+    doc.setDrawColor(203, 213, 225);
+    doc.setFillColor(248, 250, 252);
+    doc.rect(m, y, boxW, boxH, "FD");
+    doc.rect(m + boxW + boxGap, y, boxW, boxH, "FD");
+
+    // EMISOR
+    doc.setFontSize(8.5);
+    doc.setFont(undefined, "bold");
+    doc.text("EMISOR:", m + 8, y + 14);
+    doc.setFont(undefined, "normal");
+    doc.text(empresa?.nombre || "GRUPO INTEGRA SAS", m + 8, y + 27, { maxWidth: boxW - 16 });
+    doc.text(`NIT: ${empresaNit}`, m + 8, y + 40);
+    doc.text(`Dirección: ${empresa?.direccion || "—"}`, m + 8, y + 53, { maxWidth: boxW - 16 });
+    doc.text(`Teléfono: ${empresa?.telefono || "—"}`, m + 8, y + 66);
+
+    // PROVEEDOR
+    const rx = m + boxW + boxGap + 8;
+    doc.setFont(undefined, "bold");
+    doc.text("PROVEEDOR:", rx, y + 14);
+    doc.setFont(undefined, "normal");
+    doc.text(proveedor?.nombre || "—", rx, y + 27, { maxWidth: boxW - 16 });
+    doc.text(`NIT: ${proveedor?.nit || proveedor?.identificacion || "—"}`, rx, y + 40);
+    doc.text(`Fecha: ${fechaEmision}`, rx, y + 53);
+    doc.text(`Ciudad: ${ciudadOc}`, rx, y + 66);
+
+    y += boxH + 14;
+
+    // Tabla de ítems
+    let descuentoCalc = 0;
+    const bodyRows = itemsOrden.map((it, idx) => {
+      const cant = Number(it.cantidad_solicitada || 0);
+      const unit = Number(it.precio_ganador || 0);
+      const descPct = Math.min(100, Math.max(0, Number(it.descuento_pct || 0)));
+      const bruto = cant * unit;
+      const descMonto = bruto * (descPct / 100);
+      const neto = bruto - descMonto;
+      descuentoCalc += descMonto;
+      return [
+        String(idx + 1),
+        it.referencia || it.codigo || "—",
+        it.descripcion || "—",
+        `${cant} ${it.unidad || "Und"}`,
+        formatoMoneda(unit),
+        descPct > 0 ? `${descPct}% (${formatoMoneda(descMonto)})` : formatoMoneda(0),
+        formatoMoneda(neto),
+      ];
+    });
+
     doc.autoTable({
       startY: y,
       margin: { left: m, right: m },
-      head: [["Código", "Descripción", "Und", "Cant.", "Valor Unit.", "Subtotal"]],
-      body: itemsOrden.map((it) => [
-        it.codigo || "—",
-        it.descripcion,
-        it.unidad || "Und",
-        String(it.cantidad_solicitada),
-        formatoMoneda(it.precio_ganador),
-        formatoMoneda(Number(it.cantidad_solicitada) * Number(it.precio_ganador)),
-      ]),
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [19, 91, 236] },
+      head: [["Item", "Referencia", "Descripción", "Cantidad / Días", "Vr. Unitario", "Descuento", "Vr. Total"]],
+      body: bodyRows,
+      styles: { fontSize: 8, cellPadding: 4 },
+      headStyles: { fillColor: [19, 91, 236], textColor: 255, fontStyle: "bold" },
+      columnStyles: {
+        0: { halign: "center", cellWidth: 28 },
+        1: { cellWidth: 68 },
+        3: { halign: "right", cellWidth: 66 },
+        4: { halign: "right", cellWidth: 68 },
+        5: { halign: "right", cellWidth: 68 },
+        6: { halign: "right", cellWidth: 72 },
+      },
     });
 
-    const finalY = doc.lastAutoTable.finalY + 18;
+    let bottomY = doc.lastAutoTable.finalY + 14;
+    if (bottomY + 150 > pageH - 24) {
+      doc.addPage();
+      bottomY = 40;
+    }
+
+    const descuentoTotal = Number(orden.descuento_total ?? descuentoCalc ?? 0);
+    const subtotalVal = Number(orden.subtotal || 0);
+    const baseGravable = Math.max(0, subtotalVal - descuentoTotal);
+    const ivaVal = Number(orden.iva || 0);
     const ivaPctLabel =
       orden.iva_porcentaje ??
-      (Number(orden.subtotal || 0) > 0
-        ? Math.round((Number(orden.iva || 0) / Number(orden.subtotal)) * 1000) / 10
-        : 19);
-    doc.setFontSize(10);
-    doc.text(`Subtotal: ${formatoMoneda(orden.subtotal)}`, 380, finalY);
-    doc.text(`IVA (${ivaPctLabel}%): ${formatoMoneda(orden.iva)}`, 380, finalY + 15);
-    doc.text(`Retenciones: -${formatoMoneda(orden.retenciones)}`, 380, finalY + 30);
-    doc.setFont(undefined, "bold");
-    doc.text(`TOTAL A PAGAR: ${formatoMoneda(orden.total)}`, 380, finalY + 48);
+      (baseGravable > 0 ? Math.round((ivaVal / baseGravable) * 1000) / 10 : 19);
 
-    doc.save(`${orden.numero_orden}.pdf`);
+    const reteivaVal = Number(orden.reteiva || 0);
+    const retefuenteVal =
+      orden.retefuente !== undefined
+        ? Number(orden.retefuente)
+        : proveedor?.aplica_retencion && baseGravable >= Number(proveedor?.monto_minimo_retencion || 0)
+        ? baseGravable * (Number(proveedor?.porcentaje_retencion || 0) / 100)
+        : 0;
+    const reteicaVal =
+      orden.reteica !== undefined
+        ? Number(orden.reteica)
+        : proveedor?.aplica_retencion && baseGravable >= Number(proveedor?.monto_minimo_retencion || 0)
+        ? baseGravable * (Number(proveedor?.porcentaje_ica || 0) / 100)
+        : 0;
+
+    // Caja inferior izquierda: OBSERVACIONES
+    const obsW = contentW * 0.58;
+    const totW = contentW - obsW - 12;
+    const bottomBoxH = 136;
+
+    doc.setDrawColor(203, 213, 225);
+    doc.setFillColor(248, 250, 252);
+    doc.rect(m, bottomY, obsW, bottomBoxH, "FD");
+
+    doc.setFontSize(8.5);
+    doc.setFont(undefined, "bold");
+    doc.text("OBSERVACIONES:", m + 8, bottomY + 14);
+    doc.setFont(undefined, "normal");
+    doc.setFontSize(7.5);
+    const obsLines = [
+      `Dirección de entrega: ${empresa?.direccion || "Barranquilla, Atlántico"}`,
+      `Recibe: Compras / Almacén · Teléfono: ${empresa?.telefono || "—"}`,
+      `Horario de recepción: L-V 9:00am - 12:30pm y 2:00pm - 4:30pm`,
+      `Centro de costo: ${orden.centro_costo || "General"}`,
+      `• En la factura debe estar relacionado el número de la orden (${numOrden}).`,
+      `• Se recibe factura hasta el 25 de cada mes; después de esta fecha se radica el mes siguiente.`,
+      `• Enviar factura electrónica al correo: infogrupointegrasas@gmail.com`,
+    ];
+    if (orden.observaciones_oc) obsLines.push(`Nota: ${orden.observaciones_oc}`);
+    doc.text(obsLines, m + 8, bottomY + 27, { maxWidth: obsW - 16, lineHeightFactor: 1.25 });
+
+    // Caja inferior derecha: TOTALES
+    const tx = m + obsW + 12;
+    doc.setFillColor(255, 255, 255);
+    doc.rect(tx, bottomY, totW, bottomBoxH, "FD");
+
+    const rowsTot = [
+      ["Subtotal", formatoMoneda(subtotalVal)],
+      [`IVA (${ivaPctLabel}%)`, formatoMoneda(ivaVal)],
+      ["Descuento", `-${formatoMoneda(descuentoTotal)}`],
+      ["Retefuente", `-${formatoMoneda(retefuenteVal)}`],
+      ["ReteICA", `-${formatoMoneda(reteicaVal)}`],
+      ["ReteIVA", `-${formatoMoneda(reteivaVal)}`],
+    ];
+    let ty = bottomY + 16;
+    doc.setFontSize(8.5);
+    rowsTot.forEach(([lbl, val]) => {
+      doc.setFont(undefined, "normal");
+      doc.text(lbl, tx + 8, ty);
+      doc.text(val, tx + totW - 8, ty, { align: "right" });
+      ty += 16;
+    });
+
+    doc.setDrawColor(203, 213, 225);
+    doc.line(tx + 6, ty - 6, tx + totW - 6, ty - 6);
+    doc.setFontSize(9.5);
+    doc.setFont(undefined, "bold");
+    doc.text("Total a Pagar", tx + 8, ty + 8);
+    doc.text(formatoMoneda(orden.total || 0), tx + totW - 8, ty + 8, { align: "right" });
+
+    doc.save(`${numOrden}.pdf`);
   }
 
   document.getElementById("cmp-btn-orden").addEventListener("click", async () => {
@@ -873,19 +1087,34 @@
     const ivaPct = ivaRaw;
 
     try {
+      const centroCosto = document.getElementById("cmp-centro-costo")?.value?.trim() || solicitudActual.proyectos?.nombre || null;
+      const ciudad = document.getElementById("cmp-ciudad")?.value?.trim() || "Barranquilla";
+      const observacionesOc = document.getElementById("cmp-observaciones-oc")?.value?.trim() || null;
+
       let indiceOrden = ordenes.length;
       for (const [provId, itemsProv] of porProveedor.entries()) {
         const prov = proveedores.find((p) => p.id === provId) || {};
-        const subtotal = itemsProv.reduce((a, it) => a + Number(it.cantidad_solicitada) * Number(it.precio_ganador), 0);
-        const iva = subtotal * (ivaPct / 100);
-        let retenciones = 0;
-        if (prov.aplica_retencion && subtotal >= Number(prov.monto_minimo_retencion || 0)) {
-          const pctTotal = (Number(prov.porcentaje_retencion || 0) + Number(prov.porcentaje_ica || 0)) / 100;
-          retenciones = subtotal * pctTotal;
+        const subtotalBruto = itemsProv.reduce((a, it) => a + Number(it.cantidad_solicitada) * Number(it.precio_ganador), 0);
+        const descuentoTotal = itemsProv.reduce(
+          (a, it) => a + Number(it.cantidad_solicitada) * Number(it.precio_ganador) * (Math.min(100, Math.max(0, Number(it.descuento_pct || 0))) / 100),
+          0
+        );
+        const baseGravable = Math.max(0, subtotalBruto - descuentoTotal);
+        const iva = baseGravable * (ivaPct / 100);
+        let retefuente = 0;
+        let reteica = 0;
+        let reteiva = 0;
+        if (prov.aplica_retencion && baseGravable >= Number(prov.monto_minimo_retencion || 0)) {
+          retefuente = baseGravable * (Number(prov.porcentaje_retencion || 0) / 100);
+          reteica = baseGravable * (Number(prov.porcentaje_ica || 0) / 100);
+          if (iva > 0 && Number(prov.porcentaje_reteiva || 0) > 0) {
+            reteiva = iva * (Number(prov.porcentaje_reteiva || 0) / 100);
+          }
         }
-        const total = subtotal + iva - retenciones;
+        const retenciones = retefuente + reteica + reteiva;
+        const total = baseGravable + iva - retenciones;
         indiceOrden += 1;
-        const numeroOrden = `${esPctronic ? "PRE" : "OC"}-${new Date().getFullYear()}-${String(indiceOrden).padStart(4, "0")}`;
+        const numeroOrden = `${esPctronic ? "PRE" : "OC"}-${String(indiceOrden).padStart(3, "0")}-${new Date().getFullYear()}`;
 
         const { data: ord, error } = await window.sb
           .from("compras_ordenes")
@@ -895,10 +1124,14 @@
             proveedor_id: provId,
             numero_orden: numeroOrden,
             tipo: tipoOrden,
-            subtotal,
+            subtotal: subtotalBruto,
             iva,
             retenciones,
+            reteiva,
             total,
+            centro_costo: centroCosto,
+            ciudad,
+            observaciones_oc: observacionesOc,
           })
           .select()
           .single();
@@ -906,23 +1139,32 @@
 
         // Si la solicitud viene de un proyecto, registrar en `gastos`
         if (solicitudActual.proyecto_id) {
-          const gastosRows = itemsProv.map((it) => ({
-            proyecto_id: solicitudActual.proyecto_id,
-            fecha: hoyLocal(),
-            tipo: "Material",
-            proveedor_id: provId,
-            documento: numeroOrden,
-            presupuesto_item_id: it.presupuesto_item_id || null,
-            descripcion: it.descripcion,
-            cantidad: Number(it.cantidad_solicitada),
-            valor_unitario: Number(it.precio_ganador),
-            observaciones: `Generado desde ${numeroOrden} (${solicitudActual.numero})`,
-          }));
+          const gastosRows = itemsProv.map((it) => {
+            const descPct = Math.min(100, Math.max(0, Number(it.descuento_pct || 0)));
+            const valorNeto = Number(it.precio_ganador) * (1 - descPct / 100);
+            return {
+              proyecto_id: solicitudActual.proyecto_id,
+              fecha: hoyLocal(),
+              tipo: "Material",
+              proveedor_id: provId,
+              documento: numeroOrden,
+              presupuesto_item_id: it.presupuesto_item_id || null,
+              descripcion: it.descripcion,
+              cantidad: Number(it.cantidad_solicitada),
+              valor_unitario: valorNeto,
+              observaciones: `Generado desde ${numeroOrden} (${solicitudActual.numero})`,
+            };
+          });
           const { error: errG } = await window.sb.from("gastos").insert(gastosRows);
           if (errG) throw errG;
         }
 
-        await generarPdfOrdenCompra({ ...ord, iva_porcentaje: ivaPct }, emp, prov, itemsProv);
+        await generarPdfOrdenCompra(
+          { ...ord, iva_porcentaje: ivaPct, descuento_total: descuentoTotal, retefuente, reteica, reteiva },
+          emp,
+          prov,
+          itemsProv
+        );
       }
 
       const { error: errSol } = await window.sb.from("compras_solicitudes").update({ estado: "ordenada" }).eq("id", solicitudActual.id);
