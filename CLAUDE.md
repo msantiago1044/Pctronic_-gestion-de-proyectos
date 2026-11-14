@@ -11,14 +11,16 @@ siempre qué debe hacer él después (subir a GitHub, correr SQL en Supabase, et
   se cargan **solo al exportar** (`PCT.cargarExcelJS`), porque SheetJS gratis no conserva formato ni logo.
 - Backend: Supabase (Postgres + Auth + Storage + RLS). No hay servidor propio.
 - Despliegue: push a GitHub (rama `main`) → Vercel publica automáticamente.
-  - En Vercel: Configurar las variables `SUPABASE_URL` y `SUPABASE_ANON_KEY` en **Project Settings → Environment Variables**. Durante el build (`npm run build`), `scripts/build.js` genera `assets/js/config.js` de forma segura.
-  - Supabase se actualiza con `sql/schema.sql` (montaje inicial) o `sql/migracion_*.sql` en el SQL Editor.
+  - En Vercel: Configurar las variables `SUPABASE_URL` y `SUPABASE_ANON_KEY` en **Project Settings → Environment Variables**. Durante el build (`npm run build`), `scripts/build.js` genera `assets/js/config.js` de forma segura (y falla con código 1 en `VERCEL`/`CI` si faltan).
+  - Comandos locales / CI: `npm run lint` (chequeo de sintaxis JS), `npm test` (`node --test tests/*.test.mjs`), `npm run build` y servidor HTTP local (`npx serve .`).
+  - Supabase se actualiza con `sql/schema.sql` (montaje inicial) o `sql/migracion_*.sql` en orden cronológico en el SQL Editor:
+    `migracion_2026-10_cotizacion.sql` → `migracion_2026-10_fase2.sql` → `migracion_2026-10_crm.sql` → `migracion_2026-10_seguridad_rls.sql` → `migracion_2026-10_seguridad_crm_completa.sql` → `migracion_2026-11_reunion.sql` → `migracion_2026-11_seguridad_indices.sql`.
 - Seguridad de credenciales: El repositorio no almacena llaves privadas ni URLs hardcodeadas en texto plano para proteger el repositorio público de GitHub. La llave `service_role` jamás va en el repo ni en el frontend.
 
 ## Estructura
 
-- `*.html` una página por vista; `assets/js/<pagina>.js` su lógica; `assets/js/layout.js` barra lateral,
-  login obligatorio y `window.pctronicReady` (→ `{session, profile}`, `profile.rol` = `admin|miembro`).
+- `*.html` una página por vista (incluyendo `perfil.html` para perfil, avatar y contraseña); `assets/js/<pagina>.js` su lógica; `assets/js/layout.js` barra lateral,
+  login obligatorio y `window.pctronicReady` (→ `{session, profile}`, `profile.rol` con 5 roles: `super_usuario | directivo | comercial | proyectos | compras`, más compatibilidad legacy `admin | miembro`).
 - `assets/js/util.js` formato de moneda/fechas, `mostrarAviso`, `manejarError`, campos de moneda.
 - **CRM Comercial** (`crm.html` y `assets/js/crm.js`): ubicado en el menú entre Proyectos y Facturación.
   Inspirado en Asana: vista dual (Tablero Kanban + Lista agrupada con subtotales), panel lateral derecho deslizante

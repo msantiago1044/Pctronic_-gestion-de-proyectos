@@ -67,6 +67,13 @@ window.PCTRONIC_CONFIG = {
   fs.writeFileSync(configPath, fileContent, "utf8");
   console.log("[Build] assets/js/config.js generado exitosamente desde variables de entorno.");
 } else {
+  if (process.env.VERCEL || process.env.CI) {
+    console.error(
+      "[Build] ERROR: Faltan SUPABASE_URL o SUPABASE_ANON_KEY en el entorno de CI/Vercel."
+    );
+    process.exit(1);
+  }
+
   console.warn(
     "[Build] ATENCIÓN: SUPABASE_URL o SUPABASE_ANON_KEY no están definidas en el entorno.\n" +
     "         Recuerda agregarlas en Vercel: Project Settings -> Environment Variables."

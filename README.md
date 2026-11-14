@@ -31,21 +31,26 @@ Aplicación web para gestión integral de proyectos de seguridad electrónica (C
    cp .env.example .env
    ```
 3. Edita `.env` con la URL y la llave `anon` de tu Supabase.
-4. Genera la configuración local:
+4. Genera la configuración local y valida sintaxis/pruebas:
    ```bash
    npm run build
+   npm run lint
+   npm test
    # o: node scripts/build.js
    ```
-5. Abre `index.html` o usa un servidor local (por ejemplo `npx serve .` o Live Server en VS Code).
+5. Levanta un servidor HTTP local (recomendado en lugar de abrir archivos `file://` directamente):
+   ```bash
+   npx serve .
+   ```
 
 ---
 
 ## 🔒 Seguridad y Buenas Prácticas
 
-- **Cero secretos en GitHub**: Las credenciales de Supabase no quedan registradas en el repositorio público; se inyectan en tiempo de construcción en Vercel o mediante `.env` local (ignorado por `.gitignore`).
-- **Control de Acceso y RLS**: Todas las tablas tienen Row Level Security activado. Solo los administradores pueden cambiar roles de usuario o autorizar nuevos proyectos.
-- **Documentos Protegidos**: El almacenamiento de planos, contratos y pólizas (`storage.buckets/documentos`) es privado y requiere sesión autenticada.
-- **Cabeceras HTTP de Seguridad**: El archivo `vercel.json` implementa protección contra clickjacking (`X-Frame-Options`), inyección MIME (`X-Content-Type-Options: nosniff`), y control de permisos.
+- **Cero secretos en GitHub**: Las credenciales de Supabase no quedan registradas en el repositorio público; se inyectan en tiempo de construcción en Vercel o mediante `.env` local (ignorado por `.gitignore`). En entornos `VERCEL` o `CI`, `npm run build` falla si faltan `SUPABASE_URL` o `SUPABASE_ANON_KEY`.
+- **Control de Acceso, Roles y RLS**: Todas las tablas tienen Row Level Security activado. Existen 5 roles operativos (`super_usuario`, `directivo`, `comercial`, `proyectos`, `compras`, manteniendo compatibilidad con `admin`/`miembro`). Solo `super_usuario` puede administrar roles en `usuarios.html` o ejecutar eliminaciones (`DELETE`) sobre registros críticos.
+- **Documentos Protegidos**: El almacenamiento de planos, contratos y pólizas (`storage.buckets/documentos`) es privado y requiere sesión autenticada; `avatars` restringe escritura/borrado al propietario y `logos` a `super_usuario`.
+- **Cabeceras HTTP de Seguridad**: El archivo `vercel.json` implementa `Strict-Transport-Security`, protección contra clickjacking (`X-Frame-Options`), inyección MIME (`X-Content-Type-Options: nosniff`), `Referrer-Policy` y `Permissions-Policy`.
 
 ---
 
@@ -54,19 +59,20 @@ Aplicación web para gestión integral de proyectos de seguridad electrónica (C
 ```
 ├── index.html              → Redirige a login o dashboard según el estado de la sesión
 ├── login.html              → Pantalla de autenticación
+├── perfil.html             → Perfil de usuario, foto de avatar y cambio de contraseña
 ├── dashboard.html          → Panel de control y KPIs de gerencia
 ├── proyectos.html          → Listado general de proyectos
 ├── crm.html                → CRM Comercial (embudo comercial estilo Asana con conversión a Proyectos)
-├── proyecto-nuevo.html      → Asistente para crear proyecto (importa cotizaciones Excel)
-├── proyecto-detalle.html    → Vista integral: Cotización, Costos, Avance, Cortes, Mano de Obra, Documentos
-├── facturacion.html         → Control de facturas emitidas y pendientes
-├── compras.html             → Compras, materiales y costos de proyectos
-├── suministros.html         → Catálogo de ventas de suministros
-├── clientes.html            → Directorio de clientes
-├── contratistas.html        → Directorio de contratistas y cuadrillas
-├── proveedores.html         → Directorio de proveedores
-├── empresas.html            → Gestión de empresas ejecutoras
-├── usuarios.html            → Control de usuarios y asignación de roles (admin)
+├── proyecto-nuevo.html     → Asistente para crear proyecto (importa cotizaciones Excel)
+├── proyecto-detalle.html   → Vista integral: Cotización, Costos, Avance, Cortes, Mano de Obra, Documentos
+├── facturacion.html        → Control de facturas emitidas y pendientes
+├── compras.html            → Compras, materiales y costos de proyectos
+├── suministros.html        → Catálogo de ventas de suministros
+├── clientes.html           → Directorio de clientes
+├── contratistas.html       → Directorio de contratistas y cuadrillas
+├── proveedores.html        → Directorio de proveedores
+├── empresas.html           → Gestión de empresas ejecutoras
+├── usuarios.html           → Control de usuarios y asignación de roles (super_usuario)
 ├── assets/
 │   ├── js/config.js        → Configuración cliente (generada en build o local)
 │   ├── js/supabaseClient.js → Inicialización segura del cliente Supabase
@@ -75,8 +81,10 @@ Aplicación web para gestión integral de proyectos de seguridad electrónica (C
 ├── sql/
 │   ├── schema.sql          → Esquema completo de la base de datos con políticas RLS
 │   └── migracion_*.sql     → Scripts de actualización incremental
+├── .github/workflows/
+│   └── ci.yml              → Integración continua (lint, test, build)
 ├── vercel.json             → Configuración de despliegue, cleanUrls y cabeceras de seguridad
-├── package.json            → Definición de scripts de build
+├── package.json            → Scripts de build, lint y test
 └── .env.example            → Plantilla para variables de entorno
 ```
 
@@ -86,7 +94,13 @@ Aplicación web para gestión integral de proyectos de seguridad electrónica (C
 
 Si configuras una base de datos nueva:
 1. Abre tu proyecto en Supabase → **SQL Editor**.
-2. Ejecuta el script `sql/schema.sql`.
+2. Ejecuta `sql/schema.sql`.
 
-Si ya tienes una base de datos existente:
-- Ejecuta los scripts de migración correspondientes en la carpeta `sql/` (ej. `sql/migracion_2026-10_seguridad_rls.sql`).
+Si ya tienes una base de datos existente (o tras montar `schema.sql`), ejecuta las migraciones en este orden recomendado:
+1. `sql/migracion_2026-10_cotizacion.sql`
+2. `sql/migracion_2026-10_fase2.sql`
+3. `sql/migracion_2026-10_crm.sql`
+4. `sql/migracion_2026-10_seguridad_rls.sql`
+5. `sql/migracion_2026-10_seguridad_crm_completa.sql`
+6. `sql/migracion_2026-11_reunion.sql`
+7. `sql/migracion_2026-11_seguridad_indices.sql`
