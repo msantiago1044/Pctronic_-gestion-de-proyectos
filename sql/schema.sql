@@ -6,10 +6,10 @@
 -- 1. Entra a tu proyecto de Supabase (https://supabase.com/dashboard)
 -- 2. En el menú izquierdo entra a "SQL Editor"
 -- 3. Pega TODO este archivo y dale click a "Run"
--- Este script BORRA y vuelve a crear todas las tablas de la app (ver sección 0).
--- Como solo tienes datos de prueba, esto es seguro. Si más adelante ya tienes
--- información real y necesitas otro cambio, avísame para preparar una
--- migración que no borre nada.
+-- Este script es seguro para montaje inicial (usa CREATE TABLE IF NOT EXISTS y
+-- NO ejecuta DROP TABLE destructivos). Para cambios posteriores sobre una base
+-- ya creada, ejecuta los scripts incrementales en `sql/migracion_*.sql`.
+-- Si alguna vez necesitas limpiar datos de prueba, usa `sql/limpiar_datos_prueba.sql`.
 --
 -- Mapa plantilla Excel → tablas:
 --   INICIO ............ proyectos (+ parámetros) · tarifas_tecnicos
@@ -26,55 +26,22 @@
 create extension if not exists "pgcrypto";
 
 -- ----------------------------------------------------------------------------
--- 0. LIMPIEZA PREVIA
+-- 0. MODO SEGURO (SIN DROP DESTRUCTIVOS)
 -- ----------------------------------------------------------------------------
-drop table if exists public.crm_actividades cascade;
-drop table if exists public.crm_oportunidades cascade;
-drop table if exists public.cronograma_actividades cascade;
-drop table if exists public.registro_mo_propia cascade;
-drop table if exists public.tarifas_tecnicos cascade;
-drop table if exists public.cortes_mo_items cascade;
-drop table if exists public.cortes_mo cascade;
-drop table if exists public.cortes_cliente_items cascade;
-drop table if exists public.cortes_cliente cascade;
-drop table if exists public.avance_items cascade;
-drop table if exists public.avance_registros cascade;
-drop table if exists public.gastos cascade;
-drop table if exists public.suministros cascade;
-drop table if exists public.tareas cascade;
-drop table if exists public.documentos cascade;
-drop table if exists public.ejecucion_generaciones cascade;
-drop table if exists public.ejecucion_items cascade;
-drop table if exists public.ejecucion_cortes cascade;
-drop table if exists public.cortes_pago cascade;
-drop table if exists public.proyecto_contratistas cascade;
-drop table if exists public.compras cascade;
-drop table if exists public.facturas cascade;
-drop table if exists public.presupuesto_items cascade;
-drop table if exists public.cotizacion_items cascade;
-drop table if exists public.proyectos cascade;
-drop table if exists public.clientes_contactos cascade;
-drop table if exists public.proveedores_contactos cascade;
-drop table if exists public.contratistas cascade;
-drop table if exists public.proveedores cascade;
-drop table if exists public.clientes cascade;
-drop table if exists public.empresas cascade;
-drop table if exists public.profiles cascade;
-drop function if exists public.recalcular_avance_proyecto() cascade;
-drop function if exists public.recalcular_proyecto(uuid) cascade;
-drop function if exists public.trg_presupuesto_recalcular() cascade;
-drop function if exists public.trg_avance_recalcular() cascade;
+-- Nota: se eliminaron los DROP TABLE ... CASCADE y DROP FUNCTION ... CASCADE
+-- destructivos para evitar pérdida accidental de datos en entornos existentes.
+-- La creación de tablas base utiliza CREATE TABLE IF NOT EXISTS.
 
 -- ----------------------------------------------------------------------------
 -- 1. PERFILES DE USUARIO
 -- ----------------------------------------------------------------------------
-create table public.profiles (
+create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   nombre_completo text,
   cargo text,
   telefono text,
   avatar_url text,
-  rol text not null default 'miembro' check (rol in ('admin','miembro')),
+  rol text not null default 'miembro' check (rol in ('super_usuario','directivo','comercial','proyectos','compras','admin','miembro')),
   created_at timestamptz not null default now()
 );
 
@@ -116,7 +83,7 @@ where not exists (select 1 from public.profiles p where p.id = u.id);
 -- ----------------------------------------------------------------------------
 -- 2. EMPRESAS PROPIAS (las empresas de Jose, no clientes)
 -- ----------------------------------------------------------------------------
-create table public.empresas (
+create table if not exists public.empresas (
   id uuid primary key default gen_random_uuid(),
   nombre text not null,
   nit text,

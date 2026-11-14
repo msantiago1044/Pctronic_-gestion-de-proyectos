@@ -28,12 +28,12 @@
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
   <link rel="stylesheet" href="assets/css/tailwind.min.css?v=2.3" />
 <link rel="stylesheet" href="assets/css/styles.css" />
-<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/dist/umd/supabase.min.js" integrity="sha384-YieCqqg9gQufX7+5HcFvCEg/n3KUEdl8/Jb+A6J0npf1mB740VayvwKjTrtCeUoy" crossorigin="anonymous"></script>
 <script defer src="assets/js/config.js"></script>
 <script defer src="assets/js/supabaseClient.js"></script>
 <script defer src="assets/js/util.js?v=2.3"></script>
 </head>
-<body data-page="proveedores" data-title="Detalle de Proveedor" class="font-display bg-gray-50 text-gray-900 antialiased">
+<body data-page="proveedores" data-title="Detalle de Proveedor" data-detalle="proveedores" class="font-display bg-gray-50 text-gray-900 antialiased">
 
 <div id="app-sidebar"></div>
 <div class="lg:pl-64">
@@ -143,24 +143,7 @@
 </div>
 
 <script defer src="assets/js/layout.js?v=2.3"></script>
-<script>
-  window.DETALLE_CONFIG = {
-    tablaPadre: "proveedores",
-    tablaHija: "proveedores_contactos",
-    fk: "proveedor_id",
-    titulo: "Proveedor",
-    volverHref: "proveedores.html",
-    campoExtra: { key: "categoria", label: "Categoría" },
-    tiposContacto: [
-      { value: "contabilidad", label: "Contabilidad" },
-      { value: "comercial", label: "Comercial" },
-      { value: "despacho_logistica", label: "Despacho / Logística" },
-      { value: "cartera", label: "Cartera" },
-      { value: "garantias", label: "Garantías" },
-      { value: "otro", label: "Otro" },
-    ],
-  };
-</script>
+<script defer src="assets/js/pages/catalogos-config.js?v=2.3"></script>
 <script defer src="assets/js/detalle-contactos.js"></script>
 </body>
 </html>

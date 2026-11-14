@@ -127,3 +127,4 @@ values
   ('aaaaaaaa-0000-4000-8000-000000000702', 'aaaaaaaa-0000-4000-8000-000000000603', '[PRUEBA] Circuito Cerrado Perimetral Fase 2', 'aaaaaaaa-0000-4000-8000-000000000011', 'aaaaaaaa-0000-4000-8000-000000000002', 'finalizado', 'alta', 42000000, current_date + 1, 'Oferta económica lista para enviar al cliente', 'Informe fotográfico de postes perimetrales', '[{"texto":"Revisar margen AIU","hecha":true}]'::jsonb, '[]'::jsonb),
   ('aaaaaaaa-0000-4000-8000-000000000703', null, '[PRUEBA] Levantamiento Alarma Bodega Sur', 'aaaaaaaa-0000-4000-8000-000000000012', 'aaaaaaaa-0000-4000-8000-000000000001', 'levantamiento', 'media', 9500000, current_date + 5, 'Pendiente visita de campo para conteo de sensores', '', '[]'::jsonb, '[]'::jsonb)
 on conflict (id) do nothing;
+

@@ -28,13 +28,13 @@
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
   <link rel="stylesheet" href="assets/css/tailwind.min.css?v=2.3" />
 <link rel="stylesheet" href="assets/css/styles.css" />
-<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/dist/umd/supabase.min.js" integrity="sha384-YieCqqg9gQufX7+5HcFvCEg/n3KUEdl8/Jb+A6J0npf1mB740VayvwKjTrtCeUoy" crossorigin="anonymous"></script>
 <script defer src="assets/js/config.js"></script>
 <script defer src="assets/js/supabaseClient.js"></script>
 <script defer src="assets/js/util.js?v=2.3"></script>
 <script defer src="assets/js/excel.js"></script>
 </head>
-<body data-page="contratistas" data-title="Contratistas" class="font-display bg-gray-50 text-gray-900 antialiased">
+<body data-page="contratistas" data-title="Contratistas" data-catalogo="contratistas" class="font-display bg-gray-50 text-gray-900 antialiased">
 
 <div id="app-sidebar"></div>
 <div class="lg:pl-64">
@@ -82,37 +82,7 @@
 </div>
 
 <script defer src="assets/js/layout.js?v=2.3"></script>
-<script>
-  window.CATALOGO_CONFIG = {
-    tabla: "contratistas",
-    titulo: "Contratistas",
-    campos: [
-      { key: "nombre", label: "Nombre / Cuadrilla", tipo: "text", requerido: true },
-      {
-        key: "tipo_persona",
-        label: "Tipo",
-        tipo: "select",
-        requerido: true,
-        opciones: [
-          { value: "empresa", label: "Empresa" },
-          { value: "persona_natural", label: "Persona Natural" },
-        ],
-      },
-      {
-        key: "es_declarante_renta",
-        label: "¿Declarante de renta?",
-        tipo: "boolean",
-        showIf: { key: "tipo_persona", value: "persona_natural" },
-        enTabla: false,
-      },
-      { key: "porcentaje_retencion", label: "Retención", tipo: "porcentaje", calculado: true },
-      { key: "identificacion", label: "Identificación / NIT", tipo: "text", enTabla: false },
-      { key: "especialidad", label: "Especialidad", tipo: "text" },
-      { key: "telefono", label: "Teléfono", tipo: "tel" },
-      { key: "email", label: "Correo", tipo: "email", enTabla: false },
-    ],
-  };
-</script>
+<script defer src="assets/js/pages/catalogos-config.js?v=2.3"></script>
 <script defer src="assets/js/catalogo.js"></script>
 </body>
 </html>

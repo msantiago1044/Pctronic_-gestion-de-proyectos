@@ -16,7 +16,8 @@
     const { data, error } = await window.sb
       .from("facturas")
       .select("*, proyectos(id, nombre, empresa_id, empresas(nombre))")
-      .order("fecha_emision", { ascending: false });
+      .order("fecha_emision", { ascending: false })
+      .limit(1000);
     if (error) return manejarError(error, "No se pudo cargar la facturación");
     cache = data || [];
     render();

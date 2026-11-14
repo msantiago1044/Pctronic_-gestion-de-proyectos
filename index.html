@@ -22,16 +22,11 @@
 
 <title>Pctronic</title>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/dist/umd/supabase.min.js" integrity="sha384-YieCqqg9gQufX7+5HcFvCEg/n3KUEdl8/Jb+A6J0npf1mB740VayvwKjTrtCeUoy" crossorigin="anonymous"></script>
 <script defer src="assets/js/config.js"></script>
 <script defer src="assets/js/supabaseClient.js"></script>
 </head>
 <body>
-<script>
-  document.addEventListener("DOMContentLoaded", async () => {
-    const { data: { session } } = await window.sb.auth.getSession();
-    window.location.replace(session ? "dashboard.html" : "login.html");
-  });
-</script>
+<script defer src="assets/js/pages/index-redirect.js?v=2.3"></script>
 </body>
 </html>

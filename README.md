@@ -31,13 +31,16 @@ Aplicación web para gestión integral de proyectos de seguridad electrónica (C
    cp .env.example .env
    ```
 3. Edita `.env` con la URL y la llave `anon` de tu Supabase.
-4. Genera la configuración local y valida sintaxis/pruebas:
+4. Genera la configuración local, compila los estilos y valida sintaxis/pruebas:
    ```bash
+   npm run build:css
    npm run build
    npm run lint
    npm test
    # o: node scripts/build.js
    ```
+   - `npm run build:css` compila Tailwind CSS (`assets/css/tailwind.input.css` → `assets/css/tailwind.min.css`), paso también incluido en `npm run build`.
+   - `npm test` ejecuta la suite de pruebas unitarias (`node --test tests/*.test.mjs`).
 5. Levanta un servidor HTTP local (recomendado en lugar de abrir archivos `file://` directamente):
    ```bash
    npx serve .
@@ -50,7 +53,7 @@ Aplicación web para gestión integral de proyectos de seguridad electrónica (C
 - **Cero secretos en GitHub**: Las credenciales de Supabase no quedan registradas en el repositorio público; se inyectan en tiempo de construcción en Vercel o mediante `.env` local (ignorado por `.gitignore`). En entornos `VERCEL` o `CI`, `npm run build` falla si faltan `SUPABASE_URL` o `SUPABASE_ANON_KEY`.
 - **Control de Acceso, Roles y RLS**: Todas las tablas tienen Row Level Security activado. Existen 5 roles operativos (`super_usuario`, `directivo`, `comercial`, `proyectos`, `compras`, manteniendo compatibilidad con `admin`/`miembro`). Solo `super_usuario` puede administrar roles en `usuarios.html` o ejecutar eliminaciones (`DELETE`) sobre registros críticos.
 - **Documentos Protegidos**: El almacenamiento de planos, contratos y pólizas (`storage.buckets/documentos`) es privado y requiere sesión autenticada; `avatars` restringe escritura/borrado al propietario y `logos` a `super_usuario`.
-- **Cabeceras HTTP de Seguridad**: El archivo `vercel.json` implementa `Strict-Transport-Security`, protección contra clickjacking (`X-Frame-Options`), inyección MIME (`X-Content-Type-Options: nosniff`), `Referrer-Policy` y `Permissions-Policy`.
+- **Cabeceras HTTP de Seguridad, CSP estricta y SRI**: El archivo `vercel.json` implementa `Strict-Transport-Security`, protección contra clickjacking (`X-Frame-Options`), inyección MIME (`X-Content-Type-Options: nosniff`), `Referrer-Policy` y `Permissions-Policy`. Las páginas HTML aplican una política `Content-Security-Policy` (CSP) estricta y validación Subresource Integrity (`integrity=`) en las librerías externas cargadas por CDN, junto con Tailwind CSS compilado localmente (`assets/css/tailwind.min.css`).
 
 ---
 
@@ -104,3 +107,4 @@ Si ya tienes una base de datos existente (o tras montar `schema.sql`), ejecuta l
 5. `sql/migracion_2026-10_seguridad_crm_completa.sql`
 6. `sql/migracion_2026-11_reunion.sql`
 7. `sql/migracion_2026-11_seguridad_indices.sql`
+8. `sql/migracion_2026-11_rpc_consecutivos_vistas.sql` *(secuencias atómicas `seq_compras_solicitud` / `seq_compras_orden`, RPCs transaccionales `rpc_siguiente_consecutivo`, `rpc_proyecto_finanzas`, `rpc_dashboard_resumen`, `rpc_convertir_oportunidad_a_proyecto` y hardening `SECURITY DEFINER` de `recalcular_proyecto`)*

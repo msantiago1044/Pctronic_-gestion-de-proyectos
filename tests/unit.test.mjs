@@ -218,3 +218,53 @@ test("reglas de negocio: validación de porcentajes y evaluación aritmética se
   assert.equal(fnEval("10 + 5 * 2"), 20);
   assert.equal(fnEval("process.exit(1)"), undefined);
 });
+
+test("proy/core.js: alertasProyecto detecta tareas vencidas, margen negativo, sobrecosto y diferencia Curva S cuando está disponible", (t) => {
+  if (typeof PCT.alertasProyecto !== "function") {
+    t.skip("alertasProyecto aún no está definida en core.js");
+    return;
+  }
+
+  const proyecto = {
+    tipo_contrato: "iva_pleno",
+    iva_porcentaje: 19,
+    iva_materiales: false,
+  };
+  const items = [
+    { id: "i1", tipo: "item", cantidad: 10, cu_material: 100, pu_venta: 200, es_adicional: false },
+  ];
+  // cdCortado = 1000 => facturado = 1000; gastado = 1500 => margen negativo (-500) y sobrecosto (1500 > 1000)
+  const finanzas = { cdCortado: 1000, gastado: 1500 };
+  const tareas = [
+    { id: "t1", nombre: "Instalación", fecha_fin: "2020-01-01", estado: "en_progreso", porcentaje: 50 },
+  ];
+
+  const alertas = PCT.alertasProyecto({
+    proyecto,
+    items,
+    finanzas,
+    tareas,
+    avanceProgramado: 0.8,
+    avanceReal: 0.2,
+  });
+
+  assert.ok(Array.isArray(alertas), "alertasProyecto debe devolver un arreglo");
+  assert.ok(alertas.length >= 4, "Debe detectar al menos las 4 alertas esperadas");
+
+  const texto = alertas.map((a) => `${a.tipo || ""} ${a.titulo || ""} ${a.mensaje || a.detalle || ""}`.toLowerCase()).join(" | ");
+  assert.match(texto, /vencid|atras|tarea/);
+  assert.match(texto, /margen/);
+  assert.match(texto, /sobrecosto|presupuest/);
+  assert.match(texto, /curva|avance|programad/);
+
+  const sinAlertas = PCT.alertasProyecto({
+    proyecto,
+    items,
+    finanzas: { cdCortado: 1000, gastado: 500 },
+    tareas: [{ id: "t2", nombre: "Cierre", fecha_fin: "2099-12-31", estado: "completada", porcentaje: 100 }],
+    avanceProgramado: 0.5,
+    avanceReal: 0.5,
+  });
+  assert.ok(Array.isArray(sinAlertas));
+  assert.equal(sinAlertas.length, 0);
+});

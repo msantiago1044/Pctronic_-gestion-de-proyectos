@@ -24,3 +24,4 @@ delete from public.contratistas where id::text like 'aaaaaaaa-0000-4000-8000-%';
 delete from public.proveedores where id::text like 'aaaaaaaa-0000-4000-8000-%';
 delete from public.clientes where id::text like 'aaaaaaaa-0000-4000-8000-%';
 delete from public.empresas where id::text like 'aaaaaaaa-0000-4000-8000-%';
+

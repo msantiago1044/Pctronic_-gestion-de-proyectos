@@ -38,7 +38,8 @@
     const { data, error } = await window.sb
       .from("suministros")
       .select("*, clientes(nombre), empresas(nombre)")
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(1000);
     if (error) return manejarError(error, "No se pudo cargar los suministros");
     cache = data || [];
     render();

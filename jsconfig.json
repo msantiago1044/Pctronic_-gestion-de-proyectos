@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "checkJs": false
+  },
+  "include": [
+    "assets/js/**/*.js",
+    "scripts/**/*.js",
+    "tests/**/*.mjs"
+  ]
+}
