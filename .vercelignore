@@ -9,5 +9,4 @@ node_modules/
 .gitignore
 README.md
 CLAUDE.md
-tailwind.config.js
-assets/css/tailwind.input.css
+
