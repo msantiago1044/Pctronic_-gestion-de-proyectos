@@ -22,6 +22,8 @@
 
 <title>CRM Comercial · Pctronic</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
 <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
@@ -31,10 +33,10 @@
   };
 </script>
 <link rel="stylesheet" href="assets/css/styles.css" />
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="assets/js/config.js"></script>
-<script src="assets/js/supabaseClient.js"></script>
-<script src="assets/js/util.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script defer src="assets/js/config.js"></script>
+<script defer src="assets/js/supabaseClient.js"></script>
+<script defer src="assets/js/util.js?v=2.3"></script>
 </head>
 <body data-page="crm" data-title="CRM Comercial" class="font-display bg-gray-50 text-gray-900 antialiased overflow-x-hidden">
 
@@ -52,15 +54,15 @@
           <div class="inline-flex rounded-lg border border-gray-200 bg-white p-1 shadow-sm">
             <button id="btn-vista-tablero" type="button"
               class="flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold bg-primary text-white transition-colors">
-              <span class="material-symbols-outlined text-[16px]">view_kanban</span> Tablero
+              <span class="material-symbols-outlined text-[16px]" aria-hidden="true">view_kanban</span> Tablero
             </button>
             <button id="btn-vista-lista" type="button"
               class="flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold text-gray-600 hover:text-gray-900 transition-colors">
-              <span class="material-symbols-outlined text-[16px]">format_list_bulleted</span> Lista
+              <span class="material-symbols-outlined text-[16px]" aria-hidden="true">format_list_bulleted</span> Lista
             </button>
             <button id="btn-vista-dashboard" type="button"
               class="flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold text-gray-600 hover:text-gray-900 transition-colors">
-              <span class="material-symbols-outlined text-[16px]">analytics</span> Proyección
+              <span class="material-symbols-outlined text-[16px]" aria-hidden="true">analytics</span> Proyección
             </button>
           </div>
         </div>
@@ -70,7 +72,7 @@
       <div class="flex items-center gap-3">
         <button id="btn-nueva-oportunidad" type="button"
           class="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors">
-          <span class="material-symbols-outlined text-[18px]">add</span> Nueva Oportunidad
+          <span class="material-symbols-outlined text-[18px]" aria-hidden="true">add</span> Nueva Oportunidad
         </button>
       </div>
     </div>
@@ -80,34 +82,34 @@
       <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <p class="text-xs font-medium text-gray-500">Pipeline Ponderado</p>
         <p id="kpi-pipeline" class="mt-1 text-xl font-bold text-gray-900">$ 0</p>
-        <p class="text-[11px] text-gray-400 mt-0.5">Valor ajustado por probabilidad</p>
+        <p class="text-[11px] text-gray-500 mt-0.5">Valor ajustado por probabilidad</p>
       </div>
       <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <p class="text-xs font-medium text-gray-500">Oportunidades Abiertas</p>
         <p id="kpi-activas" class="mt-1 text-xl font-bold text-gray-900">0</p>
-        <p class="text-[11px] text-gray-400 mt-0.5">En proceso de negociación</p>
+        <p class="text-[11px] text-gray-500 mt-0.5">En proceso de negociación</p>
       </div>
       <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <p class="text-xs font-medium text-gray-500">Tasa de Conversión</p>
         <p id="kpi-conversion" class="mt-1 text-xl font-bold text-emerald-600">0%</p>
-        <p class="text-[11px] text-gray-400 mt-0.5">Ganadas vs. total cerradas</p>
+        <p class="text-[11px] text-gray-500 mt-0.5">Ganadas vs. total cerradas</p>
       </div>
       <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <p class="text-xs font-medium text-gray-500">Ganadas este Mes</p>
         <p id="kpi-ganadas-mes" class="mt-1 text-xl font-bold text-emerald-600">$ 0</p>
-        <p class="text-[11px] text-gray-400 mt-0.5">Total cotizaciones cerradas</p>
+        <p class="text-[11px] text-gray-500 mt-0.5">Total cotizaciones cerradas</p>
       </div>
     </div>
 
     <!-- Barra de Filtros y Búsqueda -->
     <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
       <div class="flex flex-wrap items-center gap-3">
-        <div class="relative w-72">
-          <span class="material-symbols-outlined absolute left-3 top-2.5 text-gray-400 text-[18px]">search</span>
-          <input id="filtro-busqueda" type="search" placeholder="Buscar negocio, cliente o contacto..."
+        <div class="relative w-full sm:w-72">
+          <span class="material-symbols-outlined absolute left-3 top-2.5 text-gray-400 text-[18px]" aria-hidden="true">search</span>
+          <input id="filtro-busqueda" type="search" placeholder="Buscar negocio, cliente o contacto..." aria-label="Buscar negocio, cliente o contacto"
             class="w-full rounded-lg border-gray-200 pl-9 text-xs focus:border-primary focus:ring-primary shadow-sm" />
         </div>
-        <select id="filtro-servicio" class="rounded-lg border-gray-200 text-xs focus:border-primary focus:ring-primary shadow-sm">
+        <select id="filtro-servicio" aria-label="Filtrar por servicio" class="rounded-lg border-gray-200 text-xs focus:border-primary focus:ring-primary shadow-sm">
           <option value="">Servicio: Todos</option>
           <option value="cctv">CCTV y Cámaras</option>
           <option value="control_acceso">Control de Acceso</option>
@@ -117,12 +119,12 @@
           <option value="integral">Proyecto Integral</option>
           <option value="otro">Otro</option>
         </select>
-        <select id="filtro-responsable" class="rounded-lg border-gray-200 text-xs focus:border-primary focus:ring-primary shadow-sm">
+        <select id="filtro-responsable" aria-label="Filtrar por comercial" class="rounded-lg border-gray-200 text-xs focus:border-primary focus:ring-primary shadow-sm">
           <option value="">Comercial: Todos</option>
         </select>
       </div>
 
-      <div class="text-xs text-gray-500" id="contador-resultados">
+      <div class="text-xs text-gray-500" id="contador-resultados" aria-live="polite">
         Cargando oportunidades...
       </div>
     </div>
@@ -267,7 +269,7 @@
 <!-- ======================================================================== -->
 <div id="drawer-backdrop" class="fixed inset-0 bg-gray-900/30 backdrop-blur-sm z-40 hidden transition-opacity"></div>
 
-<div id="drawer-panel"
+<div id="drawer-panel" role="dialog" aria-modal="true" aria-label="Detalle de oportunidad"
   class="fixed inset-y-0 right-0 z-50 w-full max-w-xl bg-white shadow-2xl flex flex-col transform translate-x-full transition-transform duration-200 ease-in-out">
   
   <!-- Header del Drawer -->
@@ -275,17 +277,17 @@
     <div class="flex items-center gap-2">
       <button id="btn-drawer-ganada" type="button"
         class="flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors">
-        <span class="material-symbols-outlined text-[16px]">check_circle</span> Ganada
+        <span class="material-symbols-outlined text-[16px]" aria-hidden="true">check_circle</span> Ganada
       </button>
       <button id="btn-drawer-perdida" type="button"
         class="flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 transition-colors">
-        <span class="material-symbols-outlined text-[16px]">cancel</span> Perdida
+        <span class="material-symbols-outlined text-[16px]" aria-hidden="true">cancel</span> Perdida
       </button>
     </div>
 
     <div class="flex items-center gap-2">
-      <button id="btn-drawer-cerrar" type="button" class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-200 hover:text-gray-700" title="Cerrar panel">
-        <span class="material-symbols-outlined text-[20px]">close</span>
+      <button id="btn-drawer-cerrar" type="button" aria-label="Cerrar" class="rounded-lg p-1.5 text-gray-500 hover:bg-gray-200 hover:text-gray-700" title="Cerrar panel">
+        <span class="material-symbols-outlined text-[20px]" aria-hidden="true">close</span>
       </button>
     </div>
   </div>
@@ -294,7 +296,7 @@
   <div class="flex-1 overflow-y-auto p-6 space-y-6">
     <!-- Título de la Oportunidad -->
     <div>
-      <input id="drawer-titulo" type="text" placeholder="Nombre de la oportunidad..."
+      <input id="drawer-titulo" type="text" placeholder="Nombre de la oportunidad..." aria-label="Nombre de la oportunidad"
         class="w-full text-xl font-bold text-gray-900 border-0 border-b border-transparent focus:border-primary focus:ring-0 px-0 py-1" />
     </div>
 
@@ -303,7 +305,7 @@
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p class="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
-            <span class="material-symbols-outlined text-[17px]">assignment</span>
+            <span class="material-symbols-outlined text-[17px]" aria-hidden="true">assignment</span>
             Oferta Pre-venta
             <span id="drawer-oferta-estado-badge" class="hidden rounded-full px-2 py-0.5 text-[10px] font-bold"></span>
           </p>
@@ -314,7 +316,7 @@
         <div class="flex items-center gap-2">
           <button id="btn-enviar-preventa" type="button"
             class="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 shadow-sm transition-colors">
-            <span class="material-symbols-outlined text-[15px]">send</span> Enviar a Ofertas Pre-venta
+            <span class="material-symbols-outlined text-[15px]" aria-hidden="true">send</span> Enviar a Ofertas Pre-venta
           </button>
           <a id="link-ver-oferta" href="ofertas.html"
             class="hidden items-center gap-1 rounded-lg border border-indigo-300 bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 hover:bg-indigo-50 transition-colors">
@@ -329,7 +331,7 @@
       <div class="flex items-start justify-between gap-3">
         <div>
           <p class="text-xs font-bold text-emerald-900 flex items-center gap-1">
-            <span class="material-symbols-outlined text-[18px]">verified</span> ¡Oportunidad Ganada!
+            <span class="material-symbols-outlined text-[18px]" aria-hidden="true">verified</span> ¡Oportunidad Ganada!
           </p>
           <p class="text-xs text-emerald-700 mt-1" id="drawer-proyecto-info">
             Esta cotización ha sido adjudicada. Puedes pasarla a ejecución operativa en el módulo de Proyectos con un solo clic.
@@ -337,13 +339,13 @@
         </div>
         <button id="btn-convertir-proyecto" type="button"
           class="flex-shrink-0 flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 shadow-sm transition-colors">
-          <span class="material-symbols-outlined text-[16px]">rocket_launch</span> Convertir en Proyecto
+          <span class="material-symbols-outlined text-[16px]" aria-hidden="true">rocket_launch</span> Convertir en Proyecto
         </button>
       </div>
     </div>
 
     <!-- Cuadrícula de Campos (Estilo Asana) -->
-    <div class="grid grid-cols-2 gap-4 text-xs">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
       <div>
         <label class="block font-medium text-gray-500 mb-1">Etapa del Embudo</label>
         <select id="drawer-etapa" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
@@ -393,7 +395,7 @@
         <label class="block font-medium text-gray-500 mb-1">Costo Estimado Directo (COP)</label>
         <input id="drawer-costo" type="text" inputmode="decimal" placeholder="0"
           class="input-moneda w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary" />
-        <p class="text-[10px] text-gray-400 mt-0.5" id="drawer-margen-label">Margen proyectado: —</p>
+        <p class="text-[10px] text-gray-500 mt-0.5" id="drawer-margen-label">Margen proyectado: —</p>
       </div>
 
       <div>
@@ -452,14 +454,14 @@
     <!-- BITÁCORA Y FEED DE ACTIVIDADES (Estilo Asana) -->
     <div class="border-t border-gray-100 pt-5 space-y-4">
       <h3 class="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
-        <span class="material-symbols-outlined text-[16px] text-gray-400">forum</span> Seguimiento y Actividades
+        <span class="material-symbols-outlined text-[16px] text-gray-400" aria-hidden="true">forum</span> Seguimiento y Actividades
       </h3>
 
       <!-- Caja para publicar nueva actividad -->
       <div class="rounded-xl border border-gray-200 bg-gray-50 p-3 space-y-2">
         <div class="flex items-center justify-between gap-2">
           <div class="flex items-center gap-2 flex-1">
-            <select id="actividad-tipo" class="rounded-md border-gray-300 text-xs py-1 px-2 bg-white">
+            <select id="actividad-tipo" aria-label="Tipo de actividad" class="rounded-md border-gray-300 text-xs py-1 px-2 bg-white">
               <option value="nota">📝 Nota</option>
               <option value="llamada">📞 Llamada</option>
               <option value="visita">🏢 Visita Técnica</option>
@@ -488,7 +490,7 @@
 
       <!-- Feed cronológico -->
       <div id="drawer-actividades-feed" class="space-y-3">
-        <p class="text-xs text-gray-400 text-center py-2">Sin actividades registradas.</p>
+        <p class="text-xs text-gray-500 text-center py-2">Sin actividades registradas.</p>
       </div>
     </div>
   </div>
@@ -514,14 +516,14 @@
 <!-- ======================================================================== -->
 <!-- MODAL RÁPIDO: NUEVA OPORTUNIDAD                                          -->
 <!-- ======================================================================== -->
-<div id="modal-nuevo" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
+<div id="modal-nuevo" role="dialog" aria-modal="true" aria-labelledby="modal-nuevo-titulo" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
   <div class="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl space-y-4">
     <div class="flex items-center justify-between border-b border-gray-100 pb-3">
-      <h2 class="text-base font-bold text-gray-900 flex items-center gap-2">
-        <span class="material-symbols-outlined text-primary">add_circle</span> Nueva Oportunidad Comercial
+      <h2 id="modal-nuevo-titulo" class="text-base font-bold text-gray-900 flex items-center gap-2">
+        <span class="material-symbols-outlined text-primary" aria-hidden="true">add_circle</span> Nueva Oportunidad Comercial
       </h2>
-      <button id="btn-modal-nuevo-cerrar" type="button" class="text-gray-400 hover:text-gray-600">
-        <span class="material-symbols-outlined text-[20px]">close</span>
+      <button id="btn-modal-nuevo-cerrar" type="button" aria-label="Cerrar" class="text-gray-500 hover:text-gray-600">
+        <span class="material-symbols-outlined text-[20px]" aria-hidden="true">close</span>
       </button>
     </div>
 
@@ -532,7 +534,7 @@
           class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary" />
       </div>
 
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label class="block font-medium text-gray-700 mb-1">Cliente *</label>
           <select id="nuevo-cliente" required class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
@@ -551,7 +553,7 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label class="block font-medium text-gray-700 mb-1">Tipo de Servicio</label>
           <select id="nuevo-servicio" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
@@ -571,7 +573,7 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label class="block font-medium text-gray-700 mb-1">Contacto Directo</label>
           <input id="nuevo-contacto" type="text" placeholder="Ej. Arq. Carlos Mendoza"
@@ -584,7 +586,7 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label class="block font-medium text-gray-700 mb-1">Responsable</label>
           <select id="nuevo-responsable" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
@@ -612,7 +614,7 @@
   </div>
 </div>
 
-<script src="assets/js/layout.js?v=2.1"></script>
-<script src="assets/js/crm.js?v=2.2"></script>
+<script defer src="assets/js/layout.js?v=2.3"></script>
+<script defer src="assets/js/crm.js?v=2.2"></script>
 </body>
 </html>

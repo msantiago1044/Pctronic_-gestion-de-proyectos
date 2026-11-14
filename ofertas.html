@@ -15,6 +15,8 @@
 
 <title>Ofertas Pre-venta · Pctronic</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
 <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
@@ -24,10 +26,10 @@
   };
 </script>
 <link rel="stylesheet" href="assets/css/styles.css" />
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="assets/js/config.js"></script>
-<script src="assets/js/supabaseClient.js"></script>
-<script src="assets/js/util.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script defer src="assets/js/config.js"></script>
+<script defer src="assets/js/supabaseClient.js"></script>
+<script defer src="assets/js/util.js?v=2.3"></script>
 </head>
 <body data-page="ofertas" data-title="Ofertas Pre-venta" class="font-display bg-gray-50 text-gray-900 antialiased overflow-x-hidden">
 
@@ -44,11 +46,11 @@
           <div class="inline-flex rounded-lg border border-gray-200 bg-white p-1 shadow-sm">
             <button id="btn-vista-tablero" type="button"
               class="flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold bg-primary text-white transition-colors">
-              <span class="material-symbols-outlined text-[16px]">view_kanban</span> Tablero
+              <span class="material-symbols-outlined text-[16px]" aria-hidden="true">view_kanban</span> Tablero
             </button>
             <button id="btn-vista-lista" type="button"
               class="flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold text-gray-600 hover:text-gray-900 transition-colors">
-              <span class="material-symbols-outlined text-[16px]">format_list_bulleted</span> Lista
+              <span class="material-symbols-outlined text-[16px]" aria-hidden="true">format_list_bulleted</span> Lista
             </button>
           </div>
         </div>
@@ -57,7 +59,7 @@
 
       <button id="btn-nueva-oferta" type="button"
         class="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 transition-colors">
-        <span class="material-symbols-outlined text-[18px]">add</span> Nueva Oferta
+        <span class="material-symbols-outlined text-[18px]" aria-hidden="true">add</span> Nueva Oferta
       </button>
     </div>
 
@@ -66,45 +68,45 @@
       <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <p class="text-xs font-medium text-gray-500">Total Ofertas</p>
         <p id="kpi-total" class="mt-1 text-xl font-bold text-gray-900">0</p>
-        <p class="text-[11px] text-gray-400 mt-0.5">En seguimiento pre-venta</p>
+        <p class="text-[11px] text-gray-500 mt-0.5">En seguimiento pre-venta</p>
       </div>
       <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <p class="text-xs font-medium text-gray-500">Levantamiento / Proceso</p>
         <p id="kpi-activas" class="mt-1 text-xl font-bold text-primary">0</p>
-        <p class="text-[11px] text-gray-400 mt-0.5">En diseño técnico</p>
+        <p class="text-[11px] text-gray-500 mt-0.5">En diseño técnico</p>
       </div>
       <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <p class="text-xs font-medium text-gray-500">Finalizadas</p>
         <p id="kpi-finalizadas" class="mt-1 text-xl font-bold text-amber-600">0</p>
-        <p class="text-[11px] text-gray-400 mt-0.5">Listas para envío</p>
+        <p class="text-[11px] text-gray-500 mt-0.5">Listas para envío</p>
       </div>
       <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <p class="text-xs font-medium text-gray-500">Enviadas al Cliente</p>
         <p id="kpi-enviadas" class="mt-1 text-xl font-bold text-emerald-600">0</p>
-        <p id="kpi-enviadas-monto" class="text-[11px] text-gray-400 mt-0.5">$ 0</p>
+        <p id="kpi-enviadas-monto" class="text-[11px] text-gray-500 mt-0.5">$ 0</p>
       </div>
     </div>
 
     <!-- Filtros -->
     <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
       <div class="flex flex-wrap items-center gap-3">
-        <div class="relative w-72">
-          <span class="material-symbols-outlined absolute left-3 top-2.5 text-gray-400 text-[18px]">search</span>
-          <input id="filtro-busqueda" type="search" placeholder="Buscar oferta, cliente o empresa..."
+        <div class="relative w-full sm:w-72">
+          <span class="material-symbols-outlined absolute left-3 top-2.5 text-gray-400 text-[18px]" aria-hidden="true">search</span>
+          <input id="filtro-busqueda" type="search" placeholder="Buscar oferta, cliente o empresa..." aria-label="Buscar oferta, cliente o empresa"
             class="w-full rounded-lg border-gray-200 pl-9 text-xs focus:border-primary focus:ring-primary shadow-sm" />
         </div>
-        <select id="filtro-prioridad" class="rounded-lg border-gray-200 text-xs focus:border-primary focus:ring-primary shadow-sm">
+        <select id="filtro-prioridad" aria-label="Filtrar por prioridad" class="rounded-lg border-gray-200 text-xs focus:border-primary focus:ring-primary shadow-sm">
           <option value="">Prioridad: Todas</option>
           <option value="urgente">Urgente</option>
           <option value="alta">Alta</option>
           <option value="media">Media</option>
           <option value="baja">Baja</option>
         </select>
-        <select id="filtro-responsable" class="rounded-lg border-gray-200 text-xs focus:border-primary focus:ring-primary shadow-sm">
+        <select id="filtro-responsable" aria-label="Filtrar por responsable" class="rounded-lg border-gray-200 text-xs focus:border-primary focus:ring-primary shadow-sm">
           <option value="">Responsable: Todos</option>
         </select>
       </div>
-      <div class="text-xs text-gray-500" id="contador-resultados">Cargando ofertas...</div>
+      <div class="text-xs text-gray-500" id="contador-resultados" aria-live="polite">Cargando ofertas...</div>
     </div>
 
     <!-- VISTA 1: TABLERO KANBAN -->
@@ -185,28 +187,28 @@
 
 <!-- DRAWER LATERAL DE OFERTA -->
 <div id="drawer-backdrop" class="fixed inset-0 bg-gray-900/30 backdrop-blur-sm z-40 hidden transition-opacity"></div>
-<div id="drawer-panel"
+<div id="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="drawer-ofertas-titulo"
   class="fixed inset-y-0 right-0 z-50 w-full max-w-2xl bg-white shadow-2xl flex flex-col transform translate-x-full transition-transform duration-200 ease-in-out">
 
   <div class="flex items-center justify-between border-b border-gray-100 px-6 py-4 bg-gray-50/70">
     <div class="flex items-center gap-2">
-      <span class="text-xs font-bold uppercase tracking-wider text-gray-500">Detalle de Oferta Pre-venta</span>
+      <span id="drawer-ofertas-titulo" class="text-xs font-bold uppercase tracking-wider text-gray-500">Detalle de Oferta Pre-venta</span>
       <a id="drawer-link-crm" href="crm.html" class="hidden items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-[11px] font-semibold text-primary hover:bg-blue-100">
-        <span class="material-symbols-outlined text-[13px]">handshake</span> Ver en CRM
+        <span class="material-symbols-outlined text-[13px]" aria-hidden="true">handshake</span> Ver en CRM
       </a>
     </div>
-    <button id="btn-drawer-cerrar" type="button" class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-200 hover:text-gray-700">
-      <span class="material-symbols-outlined text-[20px]">close</span>
+    <button id="btn-drawer-cerrar" type="button" aria-label="Cerrar" class="rounded-lg p-1.5 text-gray-500 hover:bg-gray-200 hover:text-gray-700">
+      <span class="material-symbols-outlined text-[20px]" aria-hidden="true">close</span>
     </button>
   </div>
 
   <div class="flex-1 overflow-y-auto p-6 space-y-6">
     <div>
-      <input id="drawer-titulo" type="text" placeholder="Título de la oferta..."
+      <input id="drawer-titulo" type="text" placeholder="Título de la oferta..." aria-label="Título de la oferta"
         class="w-full text-xl font-bold text-gray-900 border-0 border-b border-transparent focus:border-primary focus:ring-0 px-0 py-1" />
     </div>
 
-    <div class="grid grid-cols-2 gap-4 text-xs">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
       <div>
         <label class="block font-medium text-gray-500 mb-1">Estado (con relevo)</label>
         <select id="drawer-estado" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
@@ -275,7 +277,7 @@
     <div class="border-t border-gray-100 pt-4 space-y-2.5">
       <div class="flex items-center justify-between">
         <h3 class="text-xs font-bold uppercase tracking-wider text-gray-700">Subtareas</h3>
-        <span id="drawer-subtareas-count" class="text-[11px] text-gray-400">0/0</span>
+        <span id="drawer-subtareas-count" class="text-[11px] text-gray-500">0/0</span>
       </div>
       <div id="drawer-subtareas-lista" class="space-y-1.5"></div>
       <div class="flex gap-2">
@@ -319,12 +321,12 @@
 </div>
 
 <!-- MODAL NUEVA OFERTA -->
-<div id="modal-nuevo" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
+<div id="modal-nuevo" role="dialog" aria-modal="true" aria-labelledby="modal-nuevo-titulo" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
   <div class="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl space-y-4">
     <div class="flex items-center justify-between border-b border-gray-100 pb-3">
-      <h2 class="text-base font-bold text-gray-900">Nueva Oferta Pre-venta</h2>
-      <button id="btn-modal-nuevo-cerrar" type="button" class="text-gray-400 hover:text-gray-600">
-        <span class="material-symbols-outlined text-[20px]">close</span>
+      <h2 id="modal-nuevo-titulo" class="text-base font-bold text-gray-900">Nueva Oferta Pre-venta</h2>
+      <button id="btn-modal-nuevo-cerrar" type="button" aria-label="Cerrar" class="text-gray-500 hover:text-gray-600">
+        <span class="material-symbols-outlined text-[20px]" aria-hidden="true">close</span>
       </button>
     </div>
     <form id="form-nuevo" class="space-y-3 text-xs">
@@ -332,7 +334,7 @@
         <label class="block font-medium text-gray-700 mb-1">Título de la Oferta *</label>
         <input id="nuevo-titulo" type="text" required placeholder="Ej. Cotización CCTV Bodega Norte" class="w-full rounded-lg border-gray-300 text-xs" />
       </div>
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label class="block font-medium text-gray-700 mb-1">Cliente</label>
           <select id="nuevo-cliente" class="w-full rounded-lg border-gray-300 text-xs"><option value="">Selecciona cliente...</option></select>
@@ -342,7 +344,7 @@
           <select id="nuevo-empresa" class="w-full rounded-lg border-gray-300 text-xs"><option value="">Selecciona empresa...</option></select>
         </div>
       </div>
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label class="block font-medium text-gray-700 mb-1">Responsable</label>
           <select id="nuevo-responsable" class="w-full rounded-lg border-gray-300 text-xs"><option value="">Sin asignar</option></select>
@@ -357,7 +359,7 @@
           </select>
         </div>
       </div>
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label class="block font-medium text-gray-700 mb-1">Valor Estimado (COP)</label>
           <input id="nuevo-valor" type="text" inputmode="decimal" placeholder="0" class="input-moneda w-full rounded-lg border-gray-300 text-xs font-semibold" />
@@ -376,12 +378,12 @@
 </div>
 
 <!-- MODAL RELEVO AL CAMBIAR ETAPA -->
-<div id="modal-relevo" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
+<div id="modal-relevo" role="dialog" aria-modal="true" aria-labelledby="modal-relevo-titulo" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm">
   <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl space-y-4">
     <div class="flex items-center justify-between border-b border-gray-100 pb-3">
-      <h2 class="text-base font-bold text-gray-900">Confirmar Relevo de Etapa</h2>
-      <button id="btn-relevo-cerrar" type="button" class="text-gray-400 hover:text-gray-600">
-        <span class="material-symbols-outlined text-[20px]">close</span>
+      <h2 id="modal-relevo-titulo" class="text-base font-bold text-gray-900">Confirmar Relevo de Etapa</h2>
+      <button id="btn-relevo-cerrar" type="button" aria-label="Cerrar" class="text-gray-500 hover:text-gray-600">
+        <span class="material-symbols-outlined text-[20px]" aria-hidden="true">close</span>
       </button>
     </div>
     <p id="relevo-resumen" class="text-xs text-gray-600"></p>
@@ -403,7 +405,7 @@
   </div>
 </div>
 
-<script src="assets/js/layout.js?v=2.1"></script>
-<script src="assets/js/ofertas.js"></script>
+<script defer src="assets/js/layout.js?v=2.3"></script>
+<script defer src="assets/js/ofertas.js"></script>
 </body>
 </html>

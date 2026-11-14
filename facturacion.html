@@ -22,6 +22,8 @@
 
 <title>Facturación · Pctronic</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
 <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
@@ -31,15 +33,12 @@
   };
 </script>
 <link rel="stylesheet" href="assets/css/styles.css" />
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="assets/js/config.js"></script>
-<script src="assets/js/supabaseClient.js"></script>
-<script src="assets/js/util.js"></script>
-<script src="assets/js/excel.js"></script>
-<script src="assets/js/pdf.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script defer src="assets/js/config.js"></script>
+<script defer src="assets/js/supabaseClient.js"></script>
+<script defer src="assets/js/util.js?v=2.3"></script>
+<script defer src="assets/js/excel.js"></script>
+<script defer src="assets/js/pdf.js"></script>
 </head>
 <body data-page="facturacion" data-title="Facturación" class="font-display bg-gray-50 text-gray-900 antialiased">
 
@@ -68,25 +67,25 @@
     </div>
 
     <div class="flex flex-wrap items-center gap-3">
-      <input id="filtro-busqueda" type="search" placeholder="Buscar por proyecto o N° factura..."
-        class="w-72 rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary" />
-      <select id="filtro-estado" class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary">
+      <input id="filtro-busqueda" type="search" placeholder="Buscar por proyecto o N° factura..." aria-label="Buscar por proyecto o número de factura"
+        class="w-full sm:w-72 rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary" />
+      <select id="filtro-estado" aria-label="Filtrar por estado" class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary">
         <option value="">Estado: Todos</option>
         <option value="pendiente">Pendiente</option>
         <option value="pagada">Pagada</option>
         <option value="vencida">Vencida</option>
         <option value="anulada">Anulada</option>
       </select>
-      <select id="filtro-empresa" class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary">
+      <select id="filtro-empresa" aria-label="Filtrar por empresa" class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary">
         <option value="">Empresa: Todas</option>
       </select>
-      <input id="filtro-mes" type="month" class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary" title="Filtrar por mes de emisión" />
+      <input id="filtro-mes" type="month" aria-label="Filtrar por mes de emisión" class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary" title="Filtrar por mes de emisión" />
       <div class="ml-auto flex gap-2">
         <button id="btn-exportar-excel" class="flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
-          <span class="material-symbols-outlined text-[16px]">download</span> Excel
+          <span class="material-symbols-outlined text-[16px]" aria-hidden="true">download</span> Excel
         </button>
         <button id="btn-exportar-pdf" class="flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
-          <span class="material-symbols-outlined text-[16px]">picture_as_pdf</span> PDF
+          <span class="material-symbols-outlined text-[16px]" aria-hidden="true">picture_as_pdf</span> PDF
         </button>
       </div>
     </div>
@@ -105,14 +104,14 @@
           </tr>
         </thead>
         <tbody id="tabla-facturas">
-          <tr><td class="px-4 py-6 text-gray-400" colspan="6">Cargando…</td></tr>
+          <tr aria-live="polite"><td class="px-4 py-6 text-gray-500" colspan="7">Cargando…</td></tr>
         </tbody>
       </table>
     </div>
   </main>
 </div>
 
-<script src="assets/js/layout.js?v=2.1"></script>
-<script src="assets/js/facturacion.js"></script>
+<script defer src="assets/js/layout.js?v=2.3"></script>
+<script defer src="assets/js/facturacion.js"></script>
 </body>
 </html>

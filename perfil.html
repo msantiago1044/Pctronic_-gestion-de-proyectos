@@ -22,6 +22,8 @@
 
 <title>Mi Perfil · Pctronic</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
 <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
@@ -31,10 +33,10 @@
   };
 </script>
 <link rel="stylesheet" href="assets/css/styles.css" />
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="assets/js/config.js"></script>
-<script src="assets/js/supabaseClient.js"></script>
-<script src="assets/js/util.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script defer src="assets/js/config.js"></script>
+<script defer src="assets/js/supabaseClient.js"></script>
+<script defer src="assets/js/util.js?v=2.3"></script>
 </head>
 <body data-page="" data-title="Mi Perfil" class="font-display bg-gray-50 text-gray-900 antialiased">
 
@@ -48,15 +50,15 @@
       <h2 class="mb-4 text-base font-bold text-gray-900">Foto de perfil</h2>
       <div class="flex items-center gap-5">
         <div id="perfil-avatar-preview"
-          class="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10 bg-cover bg-center text-2xl font-bold text-primary">
+          class="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary/10 text-2xl font-bold text-primary">
           ?
         </div>
         <div>
-          <label class="flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+          <label for="input-avatar" class="flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
             <span class="material-symbols-outlined text-[18px]">upload</span> Cambiar foto
-            <input type="file" id="input-avatar" accept="image/*" class="hidden" />
+            <input type="file" id="input-avatar" accept="image/jpeg,image/png,image/webp" class="sr-only" />
           </label>
-          <p class="mt-1 text-xs text-gray-400">Formatos JPG o PNG. Se sube automáticamente al seleccionarla.</p>
+          <p class="mt-1 text-xs text-gray-400">Formatos JPG, PNG o WebP (máx. 2 MB). Se sube automáticamente al seleccionarla.</p>
         </div>
       </div>
     </section>
@@ -65,19 +67,19 @@
       <h2 class="mb-4 text-base font-bold text-gray-900">Información personal</h2>
       <div class="space-y-3">
         <div>
-          <label class="mb-1 block text-sm font-medium text-gray-700">Nombre completo</label>
+          <label for="perfil-nombre" class="mb-1 block text-sm font-medium text-gray-700">Nombre completo</label>
           <input id="perfil-nombre" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm" />
         </div>
         <div>
-          <label class="mb-1 block text-sm font-medium text-gray-700">Cargo</label>
+          <label for="perfil-cargo" class="mb-1 block text-sm font-medium text-gray-700">Cargo</label>
           <input id="perfil-cargo" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm" />
         </div>
         <div>
-          <label class="mb-1 block text-sm font-medium text-gray-700">Teléfono</label>
+          <label for="perfil-telefono" class="mb-1 block text-sm font-medium text-gray-700">Teléfono</label>
           <input id="perfil-telefono" type="tel" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm" />
         </div>
         <div>
-          <label class="mb-1 block text-sm font-medium text-gray-700">Correo electrónico</label>
+          <label for="perfil-email" class="mb-1 block text-sm font-medium text-gray-700">Correo electrónico</label>
           <input id="perfil-email" disabled class="block w-full rounded-lg border-gray-200 bg-gray-50 text-gray-500 shadow-sm sm:text-sm" />
         </div>
       </div>
@@ -90,13 +92,13 @@
       <h2 class="mb-4 text-base font-bold text-gray-900">Cambiar contraseña</h2>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
-          <label class="mb-1 block text-sm font-medium text-gray-700">Nueva contraseña</label>
-          <input id="perfil-password" type="password" autocomplete="new-password"
+          <label for="perfil-password" class="mb-1 block text-sm font-medium text-gray-700">Nueva contraseña</label>
+          <input id="perfil-password" type="password" autocomplete="new-password" minlength="8"
             class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm" />
         </div>
         <div>
-          <label class="mb-1 block text-sm font-medium text-gray-700">Confirmar contraseña</label>
-          <input id="perfil-password-confirm" type="password" autocomplete="new-password"
+          <label for="perfil-password-confirm" class="mb-1 block text-sm font-medium text-gray-700">Confirmar contraseña</label>
+          <input id="perfil-password-confirm" type="password" autocomplete="new-password" minlength="8"
             class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm" />
         </div>
       </div>
@@ -107,7 +109,7 @@
   </main>
 </div>
 
-<script src="assets/js/layout.js?v=2.1"></script>
-<script src="assets/js/perfil.js"></script>
+<script defer src="assets/js/layout.js?v=2.3"></script>
+<script defer src="assets/js/perfil.js"></script>
 </body>
 </html>

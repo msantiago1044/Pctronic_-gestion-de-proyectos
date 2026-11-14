@@ -22,6 +22,8 @@
 
 <title>Iniciar sesión · Pctronic</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
 <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
@@ -31,10 +33,10 @@
   };
 </script>
 <link rel="stylesheet" href="assets/css/styles.css" />
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="assets/js/config.js"></script>
-<script src="assets/js/supabaseClient.js"></script>
-<script src="assets/js/util.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script defer src="assets/js/config.js"></script>
+<script defer src="assets/js/supabaseClient.js"></script>
+<script defer src="assets/js/util.js?v=2.3"></script>
 </head>
 <body data-page="login" class="font-display min-h-screen bg-gray-50 text-gray-900 antialiased">
 
@@ -51,16 +53,16 @@
 
     <form id="form-login" class="space-y-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
       <div>
-        <label class="mb-1 block text-sm font-medium text-gray-700">Correo electrónico</label>
+        <label for="email" class="mb-1 block text-sm font-medium text-gray-700">Correo electrónico</label>
         <input id="email" type="email" required autocomplete="username"
           class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm" />
       </div>
       <div>
-        <label class="mb-1 block text-sm font-medium text-gray-700">Contraseña</label>
+        <label for="password" class="mb-1 block text-sm font-medium text-gray-700">Contraseña</label>
         <input id="password" type="password" required autocomplete="current-password"
           class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm" />
       </div>
-      <p id="login-error" class="hidden text-sm text-red-600"></p>
+      <p id="login-error" role="alert" class="hidden text-sm text-red-600"></p>
       <button id="btn-submit" type="submit"
         class="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">
         Entrar
@@ -72,47 +74,42 @@
   </div>
 </div>
 
-<script src="assets/js/layout.js?v=2.1"></script>
+<script defer src="assets/js/layout.js?v=2.3"></script>
 <script>
-  if (!window.PCTRONIC_IS_CONFIGURED) {
-    const errorEl = document.getElementById("login-error");
-    errorEl.textContent = "⚠️ La app aún no tiene configuradas las credenciales de Supabase. Agrégalas en el panel de Vercel (Settings -> Environment Variables) o en assets/js/config.js.";
-    errorEl.classList.remove("hidden");
-  }
-
-  document.getElementById("form-login").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const email = document.getElementById("email").value.trim();
-    const password = document.getElementById("password").value;
-    const btn = document.getElementById("btn-submit");
-    const errorEl = document.getElementById("login-error");
-    errorEl.classList.add("hidden");
-    btn.disabled = true;
-    btn.textContent = "Entrando...";
-
-    const { error } = await window.sb.auth.signInWithPassword({ email, password });
-
-    if (error) {
-      console.error("Error de inicio de sesión:", error);
-
-      let mensaje = "Correo o contraseña incorrectos.";
-      if (/email not confirmed/i.test(error.message)) {
-        mensaje =
-          'Este usuario no está confirmado. En Supabase, ve a Authentication → Users, ábrelo y marca "Confirm email" (o bórralo y créalo de nuevo marcando "Auto Confirm User").';
-      } else if (/failed to fetch|networkerror/i.test(error.message)) {
-        mensaje =
-          "No se pudo conectar con Supabase. Revisa que copiaste bien la URL y la llave en assets/js/config.js o en las variables de entorno de Vercel.";
-      } else if (error.message) {
-        mensaje = "Error de Supabase: " + error.message;
-      }
-
-      errorEl.textContent = mensaje;
+  document.addEventListener("DOMContentLoaded", () => {
+    if (!window.PCTRONIC_IS_CONFIGURED) {
+      const errorEl = document.getElementById("login-error");
+      errorEl.textContent = "⚠️ La app aún no tiene configuradas las credenciales de Supabase. Agrégalas en el panel de Vercel (Settings -> Environment Variables) o en assets/js/config.js.";
       errorEl.classList.remove("hidden");
-      btn.disabled = false;
-      btn.textContent = "Entrar";
-      return;
     }
-    window.location.href = "dashboard.html";
+
+    document.getElementById("form-login").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+      const btn = document.getElementById("btn-submit");
+      const errorEl = document.getElementById("login-error");
+      errorEl.classList.add("hidden");
+      btn.disabled = true;
+      btn.textContent = "Entrando...";
+
+      const { error } = await window.sb.auth.signInWithPassword({ email, password });
+
+      if (error) {
+        console.error("Error de inicio de sesión:", error);
+
+        const mensaje = /failed to fetch|networkerror/i.test(error.message || "")
+          ? "No se pudo conectar con el servidor. Verifica tu conexión e inténtalo de nuevo."
+          : "Correo o contraseña incorrectos.";
+
+        errorEl.textContent = mensaje;
+        errorEl.classList.remove("hidden");
+        btn.disabled = false;
+        btn.textContent = "Entrar";
+        return;
+      }
+      window.location.href = "dashboard.html";
+    });
   });
 </script>
 </body>

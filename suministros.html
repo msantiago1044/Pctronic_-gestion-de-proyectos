@@ -22,6 +22,8 @@
 
 <title>Suministros · Pctronic</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
 <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
@@ -31,12 +33,11 @@
   };
 </script>
 <link rel="stylesheet" href="assets/css/styles.css" />
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="assets/js/config.js"></script>
-<script src="assets/js/supabaseClient.js"></script>
-<script src="assets/js/util.js"></script>
-<script src="assets/js/excel.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script defer src="assets/js/config.js"></script>
+<script defer src="assets/js/supabaseClient.js"></script>
+<script defer src="assets/js/util.js?v=2.3"></script>
+<script defer src="assets/js/excel.js"></script>
 </head>
 <body data-page="suministros" data-title="Suministros" class="font-display bg-gray-50 text-gray-900 antialiased">
 
@@ -47,7 +48,7 @@
   <main class="p-6 space-y-4">
     <div class="flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
       <div class="flex items-start gap-3">
-        <span class="material-symbols-outlined mt-0.5 text-[20px] text-primary">info</span>
+        <span class="material-symbols-outlined mt-0.5 text-[20px] text-primary" aria-hidden="true">info</span>
         <div class="text-sm text-blue-950">
           <p class="font-semibold">Nuevo flujo operativo de suministros</p>
           <p class="mt-0.5 text-blue-900/80">
@@ -56,7 +57,7 @@
         </div>
       </div>
       <a href="compras.html" class="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700">
-        <span class="material-symbols-outlined text-[16px]">shopping_cart</span>
+        <span class="material-symbols-outlined text-[16px]" aria-hidden="true">shopping_cart</span>
         Ir a Compras
       </a>
     </div>
@@ -79,9 +80,9 @@
     </div>
 
     <div class="flex flex-wrap items-center gap-3">
-      <input id="filtro-busqueda" type="search" placeholder="Buscar por cliente u oferta..."
-        class="w-72 rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary" />
-      <select id="filtro-estado" class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary">
+      <input id="filtro-busqueda" type="search" placeholder="Buscar por cliente u oferta..." aria-label="Buscar por cliente u oferta"
+        class="w-full sm:w-72 rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary" />
+      <select id="filtro-estado" aria-label="Filtrar por estado" class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary">
         <option value="">Estado: Todos</option>
         <option value="en_curso">En Curso</option>
         <option value="cerrado">Cerrado</option>
@@ -89,10 +90,10 @@
       </select>
       <div class="ml-auto flex gap-2">
         <button id="btn-exportar" class="flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
-          <span class="material-symbols-outlined text-[16px]">download</span> Excel
+          <span class="material-symbols-outlined text-[16px]" aria-hidden="true">download</span> Excel
         </button>
         <button id="btn-nuevo" class="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
-          <span class="material-symbols-outlined text-[18px]">add</span> Nuevo Suministro
+          <span class="material-symbols-outlined text-[18px]" aria-hidden="true">add</span> Nuevo Suministro
         </button>
       </div>
     </div>
@@ -112,14 +113,14 @@
           </tr>
         </thead>
         <tbody id="tabla-suministros">
-          <tr><td class="px-4 py-6 text-gray-400" colspan="8">Cargando…</td></tr>
+          <tr aria-live="polite"><td class="px-4 py-6 text-gray-500" colspan="8">Cargando…</td></tr>
         </tbody>
       </table>
     </div>
   </main>
 </div>
 
-<div id="modal-suministro" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/40 p-4">
+<div id="modal-suministro" role="dialog" aria-modal="true" aria-labelledby="modal-titulo" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/40 p-4">
   <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
     <h3 id="modal-titulo" class="mb-4 text-base font-bold text-gray-900">Nuevo Suministro</h3>
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -179,7 +180,7 @@
   </div>
 </div>
 
-<script src="assets/js/layout.js?v=2.1"></script>
-<script src="assets/js/suministros.js"></script>
+<script defer src="assets/js/layout.js?v=2.3"></script>
+<script defer src="assets/js/suministros.js"></script>
 </body>
 </html>

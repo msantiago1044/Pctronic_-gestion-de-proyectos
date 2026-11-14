@@ -22,6 +22,8 @@
 
 <title>Usuarios · Pctronic</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
 <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
@@ -31,10 +33,10 @@
   };
 </script>
 <link rel="stylesheet" href="assets/css/styles.css" />
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="assets/js/config.js"></script>
-<script src="assets/js/supabaseClient.js"></script>
-<script src="assets/js/util.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script defer src="assets/js/config.js"></script>
+<script defer src="assets/js/supabaseClient.js"></script>
+<script defer src="assets/js/util.js?v=2.3"></script>
 </head>
 <body data-page="usuarios" data-title="Usuarios" class="font-display bg-gray-50 text-gray-900 antialiased">
 
@@ -70,7 +72,7 @@
             <th class="px-4 py-3">Miembro desde</th>
           </tr>
         </thead>
-        <tbody id="tabla-usuarios">
+        <tbody id="tabla-usuarios" aria-live="polite">
           <tr><td class="px-4 py-6 text-gray-400" colspan="3">Cargando…</td></tr>
         </tbody>
       </table>
@@ -78,9 +80,9 @@
   </main>
 </div>
 
-<script src="assets/js/layout.js?v=2.1"></script>
+<script defer src="assets/js/layout.js?v=2.3"></script>
 <script>
-  (async () => {
+  document.addEventListener("DOMContentLoaded", async () => {
     const { profile } = await window.pctronicReady;
     const esSuper = profile?.rol === "super_usuario" || profile?.rol === "admin";
     if (!esSuper) {
@@ -123,7 +125,7 @@
             ${esLegacy ? `<span class="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500">legacy: ${escapeHtml(u.rol)}</span>` : ""}
           </td>
           <td class="px-4 py-3">
-            <select class="select-rol rounded-lg border-gray-300 text-xs" data-id="${u.id}">
+            <select class="select-rol rounded-lg border-gray-300 text-xs" data-id="${escapeHtml(u.id)}">
               ${ROLES_OPCIONES.map((opt) => `<option value="${opt.value}" ${rolActual === opt.value ? "selected" : ""}>${opt.label}</option>`).join("")}
             </select>
           </td>
@@ -141,7 +143,7 @@
       );
     }
     cargar();
-  })();
+  });
 </script>
 </body>
 </html>

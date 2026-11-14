@@ -22,6 +22,8 @@
 
 <title>Proyectos · Pctronic</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
 <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
@@ -31,10 +33,10 @@
   };
 </script>
 <link rel="stylesheet" href="assets/css/styles.css" />
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="assets/js/config.js"></script>
-<script src="assets/js/supabaseClient.js"></script>
-<script src="assets/js/util.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script defer src="assets/js/config.js"></script>
+<script defer src="assets/js/supabaseClient.js"></script>
+<script defer src="assets/js/util.js?v=2.3"></script>
 </head>
 <body data-page="proyectos" data-title="Proyectos" class="font-display bg-gray-50 text-gray-900 antialiased">
 
@@ -45,9 +47,9 @@
   <main class="p-6 space-y-4">
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div class="flex flex-wrap items-center gap-3">
-        <input id="filtro-busqueda" type="search" placeholder="Buscar proyecto o cliente..."
-          class="w-64 rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary" />
-        <select id="filtro-estado" class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary">
+        <input id="filtro-busqueda" type="search" placeholder="Buscar proyecto o cliente..." aria-label="Buscar proyecto o cliente"
+          class="w-full sm:w-64 rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary" />
+        <select id="filtro-estado" aria-label="Filtrar por estado" class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary">
           <option value="">Estado: Todos</option>
           <option value="sin_iniciar">Sin Iniciar</option>
           <option value="en_curso">En Curso</option>
@@ -57,7 +59,7 @@
       </div>
       <a href="proyecto-nuevo.html" id="link-nuevo-proyecto"
         class="hidden items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
-        <span class="material-symbols-outlined text-[18px]">add</span>
+        <span class="material-symbols-outlined text-[18px]" aria-hidden="true">add</span>
         Nuevo Proyecto
       </a>
     </div>
@@ -76,7 +78,7 @@
             </tr>
           </thead>
           <tbody id="tabla-proyectos">
-            <tr><td class="px-5 py-6 text-gray-400" colspan="6">Cargando…</td></tr>
+            <tr aria-live="polite"><td class="px-5 py-6 text-gray-500" colspan="6">Cargando…</td></tr>
           </tbody>
         </table>
       </div>
@@ -84,7 +86,7 @@
   </main>
 </div>
 
-<script src="assets/js/layout.js?v=2.1"></script>
-<script src="assets/js/proyectos.js"></script>
+<script defer src="assets/js/layout.js?v=2.3"></script>
+<script defer src="assets/js/proyectos.js"></script>
 </body>
 </html>

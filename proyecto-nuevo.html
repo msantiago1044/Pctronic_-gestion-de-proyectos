@@ -22,6 +22,8 @@
 
 <title>Crear Nuevo Proyecto · Pctronic</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
 <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
@@ -31,12 +33,11 @@
   };
 </script>
 <link rel="stylesheet" href="assets/css/styles.css" />
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="assets/js/config.js"></script>
-<script src="assets/js/supabaseClient.js"></script>
-<script src="assets/js/util.js"></script>
-<script src="assets/js/excel.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script defer src="assets/js/config.js"></script>
+<script defer src="assets/js/supabaseClient.js"></script>
+<script defer src="assets/js/util.js?v=2.3"></script>
+<script defer src="assets/js/excel.js"></script>
 </head>
 <body data-page="proyectos" data-title="Crear Nuevo Proyecto" class="font-display bg-gray-50 text-gray-900 antialiased">
 
@@ -46,7 +47,7 @@
 
   <main class="mx-auto max-w-6xl space-y-5 p-6">
     <a href="proyectos.html" class="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800">
-      <span class="material-symbols-outlined text-[18px]">arrow_back</span> Volver a Proyectos
+      <span class="material-symbols-outlined text-[18px]" aria-hidden="true">arrow_back</span> Volver a Proyectos
     </a>
 
     <!-- Importar desde la plantilla de Excel -->
@@ -58,11 +59,11 @@
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <button type="button" id="btn-descargar-plantilla" class="flex items-center gap-2 rounded-lg border border-primary bg-white px-4 py-2 text-sm font-semibold text-primary hover:bg-blue-50">
-            <span class="material-symbols-outlined text-[18px]">download</span> Descargar plantilla
+            <span class="material-symbols-outlined text-[18px]" aria-hidden="true">download</span> Descargar plantilla
           </button>
           <label class="flex cursor-pointer items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
-            <span class="material-symbols-outlined text-[18px]">upload_file</span> Importar cotización (.xlsx)
-            <input type="file" id="input-plantilla" accept=".xlsx,.xls" class="hidden" />
+            <span class="material-symbols-outlined text-[18px]" aria-hidden="true">upload_file</span> Importar cotización (.xlsx)
+            <input type="file" id="input-plantilla" accept=".xlsx,.xls" class="sr-only" />
           </label>
         </div>
       </div>
@@ -71,7 +72,7 @@
 
     <form id="form-proyecto" class="rounded-xl border border-gray-200 bg-white p-6">
       <div id="form-proyecto-campos"></div>
-      <p class="mt-4 text-xs text-gray-400">El valor del contrato sale de la Cotización (cantidad × precio unitario de cada ítem) más los impuestos del tipo de contrato.</p>
+      <p class="mt-4 text-xs text-gray-500">El valor del contrato sale de la Cotización (cantidad × precio unitario de cada ítem) más los impuestos del tipo de contrato.</p>
       <div class="mt-5 flex items-center justify-end gap-3 border-t border-gray-100 pt-4">
         <a href="proyectos.html" class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Cancelar</a>
         <button id="btn-crear" type="submit" class="rounded-lg bg-primary px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">Crear proyecto</button>
@@ -80,10 +81,10 @@
   </main>
 </div>
 
-<script src="assets/js/layout.js?v=2.1"></script>
-<script src="assets/js/proy/core.js"></script>
-<script src="assets/js/proy/importar.js"></script>
-<script src="assets/js/proy/inicio.js"></script>
-<script src="assets/js/proyecto-nuevo.js"></script>
+<script defer src="assets/js/layout.js?v=2.3"></script>
+<script defer src="assets/js/proy/core.js"></script>
+<script defer src="assets/js/proy/importar.js"></script>
+<script defer src="assets/js/proy/inicio.js"></script>
+<script defer src="assets/js/proyecto-nuevo.js"></script>
 </body>
 </html>

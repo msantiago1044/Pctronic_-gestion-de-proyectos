@@ -20,6 +20,8 @@
 
 <title>Terceros · Pctronic</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
 <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
@@ -29,12 +31,11 @@
   };
 </script>
 <link rel="stylesheet" href="assets/css/styles.css" />
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="assets/js/config.js"></script>
-<script src="assets/js/supabaseClient.js"></script>
-<script src="assets/js/util.js"></script>
-<script src="assets/js/excel.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script defer src="assets/js/config.js"></script>
+<script defer src="assets/js/supabaseClient.js"></script>
+<script defer src="assets/js/util.js?v=2.3"></script>
+<script defer src="assets/js/excel.js"></script>
 </head>
 <body data-page="terceros" data-title="Terceros" class="font-display bg-gray-50 text-gray-900 antialiased">
 
@@ -52,24 +53,24 @@
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
-        <input id="filtro-busqueda" type="search" placeholder="Buscar por nombre, NIT, categoría..."
-          class="w-64 rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary" />
+        <input id="filtro-busqueda" type="search" placeholder="Buscar por nombre, NIT, categoría..." aria-label="Buscar por nombre, NIT o categoría"
+          class="w-full sm:w-64 rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary" />
         <button id="btn-sincronizar" title="Importar clientes, proveedores y contratistas existentes"
           class="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
-          <span class="material-symbols-outlined text-[16px]">sync</span> Sincronizar
+          <span class="material-symbols-outlined text-[16px]" aria-hidden="true">sync</span> Sincronizar
         </button>
         <button id="btn-exportar"
           class="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
-          <span class="material-symbols-outlined text-[16px]">download</span> Excel
+          <span class="material-symbols-outlined text-[16px]" aria-hidden="true">download</span> Excel
         </button>
         <button id="btn-nuevo"
           class="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
-          <span class="material-symbols-outlined text-[18px]">add</span> Nuevo Tercero
+          <span class="material-symbols-outlined text-[18px]" aria-hidden="true">add</span> Nuevo Tercero
         </button>
       </div>
     </div>
 
-    <p class="text-xs text-gray-400">
+    <p class="text-xs text-gray-500">
       Directorio unificado de clientes, proveedores y contratistas. Un mismo tercero puede cumplir varios roles y se sincroniza automáticamente con los proyectos, compras y cortes. Haz clic en una fila para ver su ficha y contactos.
     </p>
 
@@ -86,7 +87,7 @@
           </tr>
         </thead>
         <tbody id="tabla-terceros">
-          <tr><td class="px-4 py-6 text-gray-400" colspan="6">Cargando…</td></tr>
+          <tr aria-live="polite"><td class="px-4 py-6 text-gray-500" colspan="6">Cargando…</td></tr>
         </tbody>
       </table>
     </div>
@@ -94,12 +95,12 @@
 </div>
 
 <!-- Modal Crear / Editar Tercero -->
-<div id="modal-tercero" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/40 p-4 overflow-y-auto">
+<div id="modal-tercero" role="dialog" aria-modal="true" aria-labelledby="modal-titulo" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/40 p-4 overflow-y-auto">
   <div class="w-full max-w-2xl rounded-xl bg-white p-6 shadow-xl my-8">
     <div class="mb-4 flex items-center justify-between">
       <h3 id="modal-titulo" class="text-base font-bold text-gray-900">Nuevo tercero</h3>
-      <button type="button" id="modal-cerrar" class="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
-        <span class="material-symbols-outlined text-[20px]">close</span>
+      <button type="button" id="modal-cerrar" aria-label="Cerrar" class="rounded-lg p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-600">
+        <span class="material-symbols-outlined text-[20px]" aria-hidden="true">close</span>
       </button>
     </div>
 
@@ -211,7 +212,7 @@
   </div>
 </div>
 
-<script src="assets/js/layout.js?v=2.2"></script>
-<script src="assets/js/terceros.js"></script>
+<script defer src="assets/js/layout.js?v=2.3"></script>
+<script defer src="assets/js/terceros.js"></script>
 </body>
 </html>

@@ -20,6 +20,8 @@
 
 <title>Tercero · Pctronic</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
 <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
@@ -29,10 +31,10 @@
   };
 </script>
 <link rel="stylesheet" href="assets/css/styles.css" />
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="assets/js/config.js"></script>
-<script src="assets/js/supabaseClient.js"></script>
-<script src="assets/js/util.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script defer src="assets/js/config.js"></script>
+<script defer src="assets/js/supabaseClient.js"></script>
+<script defer src="assets/js/util.js?v=2.3"></script>
 </head>
 <body data-page="terceros" data-title="Detalle de Tercero" class="font-display bg-gray-50 text-gray-900 antialiased">
 
@@ -43,7 +45,7 @@
   <main class="p-6 space-y-6">
     <div class="flex items-center gap-2 text-sm text-gray-500">
       <a href="terceros.html" class="hover:text-primary flex items-center gap-1">
-        <span class="material-symbols-outlined text-[18px]">arrow_back</span> Terceros
+        <span class="material-symbols-outlined text-[18px]" aria-hidden="true">arrow_back</span> Terceros
       </a>
       <span>/</span>
       <span id="detalle-nombre" class="font-medium text-gray-800">—</span>
@@ -145,7 +147,7 @@
       <div class="mb-4 flex items-center justify-between">
         <h2 class="text-base font-bold text-gray-900">Contactos</h2>
         <button id="btn-nuevo-contacto" class="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
-          <span class="material-symbols-outlined text-[18px]">add</span> Nuevo Contacto
+          <span class="material-symbols-outlined text-[18px]" aria-hidden="true">add</span> Nuevo Contacto
         </button>
       </div>
       <div class="overflow-x-auto rounded-xl border border-gray-200">
@@ -161,7 +163,7 @@
             </tr>
           </thead>
           <tbody id="tabla-contactos">
-            <tr><td class="px-4 py-6 text-gray-400" colspan="6">Cargando…</td></tr>
+            <tr aria-live="polite"><td class="px-4 py-6 text-gray-500" colspan="6">Cargando…</td></tr>
           </tbody>
         </table>
       </div>
@@ -169,7 +171,7 @@
   </main>
 </div>
 
-<div id="modal-contacto" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/40 p-4">
+<div id="modal-contacto" role="dialog" aria-modal="true" aria-labelledby="modal-contacto-titulo" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/40 p-4">
   <div class="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
     <h3 id="modal-contacto-titulo" class="mb-4 text-base font-bold text-gray-900">Nuevo contacto</h3>
     <div class="space-y-3">
@@ -210,7 +212,7 @@
   </div>
 </div>
 
-<script src="assets/js/layout.js?v=2.2"></script>
-<script src="assets/js/tercero-detalle.js"></script>
+<script defer src="assets/js/layout.js?v=2.3"></script>
+<script defer src="assets/js/tercero-detalle.js"></script>
 </body>
 </html>
