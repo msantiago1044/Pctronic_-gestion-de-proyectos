@@ -27,3 +27,6 @@ desktop.ini
 .idea/
 *.swp
 *.swo
+
+# Grabaciones y transcripciones locales de reuniones
+1.reunion/
