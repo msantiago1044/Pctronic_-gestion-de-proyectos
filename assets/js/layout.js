@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   {
     group: "comercial",
     label: "Comercial",
+    icon: "storefront",
     items: [
       { page: "crm", href: "crm.html", icon: "handshake", label: "CRM Comercial" },
       { page: "ofertas", href: "ofertas.html", icon: "assignment", label: "Ofertas Pre-venta" },
@@ -66,14 +67,24 @@ function logoSvg() {
     </svg>`;
 }
 
+function grupoNavAbierto(groupKey, activePage, items) {
+  if (items.some((sub) => sub.page === activePage)) return true;
+  try {
+    const val = localStorage.getItem(`pctronic_nav_group_${groupKey}`);
+    return val === null ? true : val === "1";
+  } catch (e) {
+    return true;
+  }
+}
+
 function renderNavLinksHtml(activePage, allowedPages = null) {
-  const linkItem = (item) => {
+  const linkItem = (item, esSubitem = false) => {
     const active = item.page === activePage;
     return `
       <a href="${item.href}" title="${escapeHtml(item.label)}"
-         class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors
+         class="flex items-center gap-3 rounded-lg ${esSubitem ? "px-2.5 py-2 text-[13px]" : "px-3 py-2.5 text-sm"} font-medium transition-colors
            ${active ? "bg-blue-50 text-primary" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"}">
-        <span class="material-symbols-outlined shrink-0 text-[20px]">${item.icon}</span>
+        <span class="material-symbols-outlined shrink-0 ${esSubitem ? "text-[18px]" : "text-[20px]"}">${item.icon}</span>
         <span class="nav-label truncate">${item.label}</span>
       </a>`;
   };
@@ -84,14 +95,27 @@ function renderNavLinksHtml(activePage, allowedPages = null) {
         ? entry.items.filter((sub) => allowedPages.includes(sub.page))
         : entry.items;
       if (!visibles.length) return "";
+      const tieneActivo = visibles.some((sub) => sub.page === activePage);
+      const abierto = grupoNavAbierto(entry.group, activePage, visibles);
       return `
-        <div class="pt-2 pb-1">
-          <p class="nav-label px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">${escapeHtml(entry.label)}</p>
-          <div class="space-y-1">${visibles.map(linkItem).join("")}</div>
+        <div class="nav-group-wrap space-y-1">
+          <button type="button" data-nav-group="${escapeHtml(entry.group)}" aria-expanded="${abierto ? "true" : "false"}"
+             title="${escapeHtml(entry.label)}"
+             class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors
+               ${tieneActivo ? "text-primary bg-blue-50/50" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"}">
+            <span class="flex items-center gap-3 min-w-0">
+              <span class="material-symbols-outlined shrink-0 text-[20px]">${entry.icon || "folder"}</span>
+              <span class="nav-label truncate">${escapeHtml(entry.label)}</span>
+            </span>
+            <span class="nav-label material-symbols-outlined shrink-0 text-[18px] text-gray-400 transition-transform duration-150 ${abierto ? "rotate-180" : ""}" data-nav-chevron="${escapeHtml(entry.group)}">expand_more</span>
+          </button>
+          <div data-nav-sublist="${escapeHtml(entry.group)}" class="nav-sublist space-y-1 pl-3 ml-4 border-l border-gray-200 ${abierto ? "" : "hidden"}">
+            ${visibles.map((sub) => linkItem(sub, true)).join("")}
+          </div>
         </div>`;
     }
     if (allowedPages && !allowedPages.includes(entry.page)) return "";
-    return linkItem(entry);
+    return linkItem(entry, false);
   }).join("");
 }
 
@@ -156,6 +180,11 @@ function aplicarEstadoSidebar(colapsada) {
     wrapper.classList.toggle("lg:pl-[72px]", colapsada);
   }
   aside.querySelectorAll(".nav-label, .sidebar-brand-text").forEach((el) => el.classList.toggle("hidden", colapsada));
+  aside.querySelectorAll(".nav-sublist").forEach((el) => {
+    el.classList.toggle("pl-3", !colapsada);
+    el.classList.toggle("ml-4", !colapsada);
+    el.classList.toggle("border-l", !colapsada);
+  });
   const icono = document.getElementById("btn-toggle-sidebar-icon");
   if (icono) icono.textContent = colapsada ? "chevron_right" : "chevron_left";
 }
@@ -210,6 +239,22 @@ async function inicializarApp() {
       colapsada = !colapsada;
       aplicarEstadoSidebar(colapsada);
       guardarEstadoSidebar(colapsada);
+    });
+  }
+  if (sidebarEl) {
+    sidebarEl.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("[data-nav-group]");
+      if (!btn) return;
+      const groupKey = btn.dataset.navGroup;
+      const sublist = sidebarEl.querySelector(`[data-nav-sublist="${groupKey}"]`);
+      const chevron = sidebarEl.querySelector(`[data-nav-chevron="${groupKey}"]`);
+      if (!sublist) return;
+      const ahoraAbierto = sublist.classList.toggle("hidden") === false;
+      btn.setAttribute("aria-expanded", ahoraAbierto ? "true" : "false");
+      if (chevron) chevron.classList.toggle("rotate-180", ahoraAbierto);
+      try {
+        localStorage.setItem(`pctronic_nav_group_${groupKey}`, ahoraAbierto ? "1" : "0");
+      } catch (e) { /* sin localStorage */ }
     });
   }
 
@@ -274,6 +319,7 @@ async function inicializarApp() {
   const navLinksEl = document.getElementById("nav-links");
   if (navLinksEl) {
     navLinksEl.innerHTML = `${renderNavLinksHtml(page, rolCfg.pages)}<div id="nav-admin-slot"></div>`;
+    aplicarEstadoSidebar(colapsada);
   }
 
   const nombre = profile?.nombre_completo || session.user.email;
