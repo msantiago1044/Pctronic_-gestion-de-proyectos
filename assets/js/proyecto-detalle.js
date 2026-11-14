@@ -85,11 +85,49 @@
   // --------------------------------------------------------------------
   // Resumen
   // --------------------------------------------------------------------
-  const renderResumen = (root) => {
+  const renderResumen = async (root) => {
     const p = PCT.estado.proyecto;
     const c = PCT.contrato();
     const { base } = PCT.resumenPresupuesto();
     const av = PCT.avanceFisico();
+    let actividades = [];
+    try {
+      const { data, error } = await window.sb
+        .from("proyecto_cronograma")
+        .select("id, titulo, fecha_fin, progreso")
+        .eq("proyecto_id", p.id);
+      if (!error && Array.isArray(data)) actividades = data;
+    } catch (e) {
+      actividades = [];
+    }
+    const alertas = PCT.alertasProyecto(p, PCT.estado.items, PCT.estado.ejec, PCT.estado.finanzas, actividades);
+    const curvaS = PCT.curvaSProyecto(PCT.estado.items, PCT.estado.ejec, actividades);
+    const estilosAlerta = {
+      peligro: "border-red-200 bg-red-50 text-red-800",
+      advertencia: "border-amber-200 bg-amber-50 text-amber-800",
+      info: "border-blue-200 bg-blue-50 text-blue-800",
+    };
+    const alertasHtml = alertas.length
+      ? `<ul class="space-y-2">${alertas
+          .map(
+            (a) => `<li class="rounded-lg border px-3 py-2 text-xs ${estilosAlerta[a.tipo] || estilosAlerta.info}">
+              <p class="font-semibold">${escapeHtml(a.titulo)}</p>
+              ${a.detalle ? `<p class="mt-0.5 opacity-85">${escapeHtml(a.detalle)}</p>` : ""}
+            </li>`
+          )
+          .join("")}</ul>`
+      : `<div class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">Sin alertas activas — proyecto saludable.</div>`;
+    const desv = curvaS.desviacionPct;
+    const desvTexto = desv === null ? "Sin cronograma" : `${desv > 0 ? "+" : ""}${desv}% vs cronograma`;
+    const desvClase =
+      desv === null
+        ? "bg-gray-100 text-gray-600"
+        : desv < -10
+        ? "bg-red-100 text-red-700"
+        : desv >= 0
+        ? "bg-emerald-100 text-emerald-700"
+        : "bg-amber-100 text-amber-700";
+
     const kpi = (t, v, s = "") => `<div class="rounded-xl border border-gray-200 bg-white p-4"><p class="text-[11px] font-semibold uppercase text-gray-500">${t}</p><p class="mt-1 text-xl font-bold tabular-nums text-gray-900">${v}</p>${s ? `<p class="mt-1 text-xs text-gray-400">${s}</p>` : ""}</div>`;
     const fila = (k, v) => `<div class="flex justify-between gap-4 py-1.5"><dt class="text-gray-500">${k}</dt><dd class="text-right font-medium text-gray-900">${v || "—"}</dd></div>`;
     const margenPpto = c.ingreso - base.costo;
@@ -101,6 +139,17 @@
           ${kpi("Costo presupuestado", formatoMoneda(base.costo), `Materiales y equipos · ${base.n} ítems`)}
           ${kpi("Margen bruto presupuestado", formatoMoneda(margenPpto), c.ingreso ? PCT.fmtPct(margenPpto / c.ingreso) + " del ingreso" : "")}
           ${kpi("Anticipo", formatoMoneda(c.anticipo), `${p.anticipo_porcentaje}% pactado · recibido ${formatoMoneda(p.anticipo_recibido)}`)}
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-5">
+          <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h3 class="font-bold text-gray-900">Alertas y Salud del Proyecto (Curva S)</h3>
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+              <span class="rounded-full bg-blue-50 px-2.5 py-1 font-semibold text-blue-700">Físico: ${escapeHtml(String(curvaS.avanceFisicoPct))}%</span>
+              <span class="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-700">Programado: ${curvaS.avanceCronogramaPct !== null ? escapeHtml(String(curvaS.avanceCronogramaPct)) + "%" : "—"}</span>
+              <span class="rounded-full px-2.5 py-1 font-semibold ${desvClase}">${escapeHtml(desvTexto)}</span>
+            </div>
+          </div>
+          ${alertasHtml}
         </div>
         <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div class="rounded-xl border border-gray-200 bg-white p-5">
@@ -161,7 +210,7 @@
         pintarEncabezado();
       }
       root.innerHTML = "";
-      if (tab.id === "resumen") return renderResumen(root);
+      if (tab.id === "resumen") return await renderResumen(root);
       if (tab.id === "inicio") return PCT.renderInicio(root);
       if (tab.id === "cotizacion") return PCT.renderCotizacion(root);
       if (tab.id === "costos") return PCT.renderCostos(root);

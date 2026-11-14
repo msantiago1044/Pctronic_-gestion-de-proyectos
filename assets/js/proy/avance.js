@@ -261,6 +261,16 @@
         res = await window.sb.from("avance_items").insert({ registro_id: reg.id, proyecto_id: pid, presupuesto_item_id: item.id, cantidad: nueva, ejecutor: ejecutorElegido });
       }
       if (res?.error) throw res.error;
+      if (nueva > 0 && PCT.estado.proyecto?.estado === "sin_iniciar") {
+        const { error: errEstado } = await window.sb
+          .from("proyectos")
+          .update({ estado: "en_curso" })
+          .eq("id", pid);
+        if (!errEstado) {
+          PCT.estado.proyecto.estado = "en_curso";
+          PCT.emit("proyecto");
+        }
+      }
       await refrescarTodo();
     };
 

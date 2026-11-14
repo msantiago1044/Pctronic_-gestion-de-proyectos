@@ -121,8 +121,29 @@ _globalRoot.PCT = _globalRoot.PCT || {};
   };
 
   // Lo facturado sale de los cortes de cliente; lo gastado, de Gastos.
-  PCT.recargarFinanzas = async () => {
-    const id = PCT.estado.proyecto.id;
+  PCT.recargarFinanzas = async (proyectoId = PCT.estado.proyecto?.id) => {
+    const id = proyectoId;
+    if (!id) return PCT.estado.finanzas;
+
+    // Intentar primero la RPC agregada; si aún no existe en Supabase, fallback silencioso.
+    if (typeof window.sb?.rpc === "function") {
+      try {
+        const { data: rpcData, error: rpcError } = await window.sb.rpc("rpc_proyecto_finanzas", { p_proyecto_id: id });
+        if (!rpcError && rpcData) {
+          const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+          if (row && (row.cd_cortado !== undefined || row.cdCortado !== undefined || row.gastado !== undefined)) {
+            PCT.estado.finanzas = {
+              cdCortado: PCT.num(row.cdCortado ?? row.cd_cortado),
+              gastado: PCT.num(row.gastado),
+            };
+            return PCT.estado.finanzas;
+          }
+        }
+      } catch (e) {
+        // Fallback silencioso a las consultas directas
+      }
+    }
+
     const [c, g] = await Promise.all([
       // solo cortes ya facturados o pagados (un corte "pendiente" aún no se ha facturado)
       window.sb
@@ -304,6 +325,177 @@ _globalRoot.PCT = _globalRoot.PCT || {};
   };
 
   // --------------------------------------------------------------------
+  // ALERTAS Y SALUD DEL PROYECTO (Curva S) — funciones puras
+  // --------------------------------------------------------------------
+  PCT.curvaSProyecto = (items = [], ejec = new Map(), actividades = []) => {
+    const listaItems = Array.isArray(items) ? items : [];
+    const listaAct = Array.isArray(actividades) ? actividades : [];
+    const obtenerEjec = (itemId) => (ejec instanceof Map ? ejec.get(itemId) : ejec?.[itemId]) || null;
+
+    let cd = 0;
+    let ejecBase = 0;
+    listaItems.forEach((i) => {
+      if (!i || i.tipo !== "item" || i.es_adicional) return;
+      const cant = PCT.num(i.cantidad);
+      const cantEjec = PCT.num(obtenerEjec(i.id)?.cant_ejecutada);
+      cd += cant * PCT.num(i.pu_venta);
+      ejecBase += Math.min(cantEjec, cant) * PCT.num(i.pu_venta);
+    });
+
+    const avanceFisicoPct = cd ? Math.round(Math.min(1, ejecBase / cd) * 1000) / 10 : 0;
+    const avanceCronogramaPct = listaAct.length
+      ? Math.round(
+          (listaAct.reduce((s, a) => s + Math.max(0, Math.min(100, PCT.num(a?.progreso ?? a?.porcentaje))), 0) /
+            listaAct.length) *
+            10
+        ) / 10
+      : null;
+    const desviacionPct =
+      avanceCronogramaPct !== null ? Math.round((avanceFisicoPct - avanceCronogramaPct) * 10) / 10 : null;
+    const estado =
+      avanceCronogramaPct === null
+        ? "sin_cronograma"
+        : desviacionPct < -10
+        ? "retrasado"
+        : desviacionPct > 5
+        ? "adelantado"
+        : "en_linea";
+
+    return { avanceFisicoPct, avanceCronogramaPct, desviacionPct, estado };
+  };
+
+  PCT.alertasProyecto = (proyectoOrOpts, itemsArg = [], ejecArg = new Map(), finanzasArg = {}, actividadesArg = []) => {
+    const esOpts =
+      proyectoOrOpts &&
+      typeof proyectoOrOpts === "object" &&
+      ("proyecto" in proyectoOrOpts || "finanzas" in proyectoOrOpts || "tareas" in proyectoOrOpts || "actividades" in proyectoOrOpts);
+    const proy = (esOpts ? proyectoOrOpts.proyecto : proyectoOrOpts) || {};
+    const listaItems = Array.isArray(esOpts ? proyectoOrOpts.items : itemsArg)
+      ? esOpts
+        ? proyectoOrOpts.items
+        : itemsArg
+      : [];
+    const ejec = (esOpts ? proyectoOrOpts.ejec : ejecArg) || new Map();
+    const fin = (esOpts ? proyectoOrOpts.finanzas : finanzasArg) || {};
+    const listaActRaw = esOpts ? proyectoOrOpts.actividades ?? proyectoOrOpts.tareas : actividadesArg;
+    const listaAct = Array.isArray(listaActRaw) ? listaActRaw : [];
+    const hoy = PCT.hoyISO();
+    const obtenerEjec = (itemId) => (ejec instanceof Map ? ejec.get(itemId) : ejec?.[itemId]) || null;
+
+    const alertas = [];
+
+    // 1. Tareas vencidas del cronograma
+    const tareasVencidas = listaAct.filter(
+      (a) => a && a.fecha_fin && a.fecha_fin < hoy && PCT.num(a.progreso ?? a.porcentaje) < 100
+    );
+    if (tareasVencidas.length > 0) {
+      alertas.push({
+        tipo: "advertencia",
+        codigo: "tareas_vencidas",
+        titulo: `${tareasVencidas.length} tarea(s) vencida(s) en cronograma`,
+        detalle:
+          tareasVencidas
+            .slice(0, 3)
+            .map((t) => t.titulo || t.nombre || t.edt || "Tarea")
+            .join(", ") + (tareasVencidas.length > 3 ? ` (+${tareasVencidas.length - 3})` : ""),
+      });
+    }
+
+    // 2. Fecha fin estimada de proyecto vencida
+    if (proy.fecha_fin_estimada && proy.fecha_fin_estimada < hoy && proy.estado !== "finalizado") {
+      alertas.push({
+        tipo: "peligro",
+        codigo: "proyecto_vencido",
+        titulo: "Fecha fin contractual vencida",
+        detalle: `Venció el ${proy.fecha_fin_estimada}`,
+      });
+    }
+
+    // 3. Margen bruto negativo o < 10%
+    const mg = PCT.margenActual(proy, fin);
+    if (mg.margen < 0) {
+      alertas.push({
+        tipo: "peligro",
+        codigo: "margen_negativo",
+        titulo: "Margen bruto negativo",
+        detalle: "El gasto supera lo facturado",
+      });
+    } else if (mg.pct !== null && mg.pct < 0.1) {
+      alertas.push({
+        tipo: "advertencia",
+        codigo: "margen_bajo",
+        titulo: "Margen bruto bajo (< 10%)",
+        detalle: `Margen actual de ${PCT.fmtPct(mg.pct)}`,
+      });
+    }
+
+    // 4. Sobrecosto (gastado > presupuestoCosto)
+    const { base } = PCT.resumenPresupuesto(listaItems, proy);
+    const presupuestoCosto = base.costo;
+    const gastado = PCT.num(fin.gastado);
+    if (presupuestoCosto > 0 && gastado > presupuestoCosto) {
+      alertas.push({
+        tipo: "peligro",
+        codigo: "sobrecosto",
+        titulo: "Sobrecosto detectado",
+        detalle: "Gastado supera el costo presupuestado",
+      });
+    }
+
+    // 5. Sobre-ejecución física en ítems y 6. Ítems sin costo unitario
+    const sobreEjecutados = [];
+    const sinCostoUnitario = [];
+    listaItems.forEach((i) => {
+      if (!i || i.tipo !== "item") return;
+      const cant = PCT.num(i.cantidad);
+      const cantEjec = PCT.num(obtenerEjec(i.id)?.cant_ejecutada);
+      if (cant > 0 && cantEjec > cant) sobreEjecutados.push(i);
+      if (i.cu_material == null || Number(i.cu_material) === 0) sinCostoUnitario.push(i);
+    });
+
+    if (sobreEjecutados.length > 0) {
+      alertas.push({
+        tipo: "advertencia",
+        codigo: "sobre_ejecucion",
+        titulo: `${sobreEjecutados.length} ítem(s) con sobre-ejecución física`,
+        detalle: "Cantidad ejecutada supera la cantidad contratada",
+      });
+    }
+
+    if (sinCostoUnitario.length > 0) {
+      alertas.push({
+        tipo: "info",
+        codigo: "sin_costo_unitario",
+        titulo: `${sinCostoUnitario.length} ítem(s) sin costo unitario`,
+        detalle: "Falta definir cu_material en el presupuesto de costos",
+      });
+    }
+
+    // 7. Curva S: avance físico real vs avance programado
+    const curva = PCT.curvaSProyecto(listaItems, ejec, listaAct);
+    const avRealPct =
+      esOpts && proyectoOrOpts.avanceReal !== undefined
+        ? Math.round(PCT.num(proyectoOrOpts.avanceReal) * 1000) / 10
+        : curva.avanceFisicoPct;
+    const avProgPct =
+      esOpts && proyectoOrOpts.avanceProgramado !== undefined
+        ? Math.round(PCT.num(proyectoOrOpts.avanceProgramado) * 1000) / 10
+        : curva.avanceCronogramaPct;
+    const desv = avProgPct !== null ? Math.round((avRealPct - avProgPct) * 10) / 10 : null;
+
+    if (desv !== null && desv < -10) {
+      alertas.push({
+        tipo: "advertencia",
+        codigo: "curva_s_retraso",
+        titulo: "Curva S por debajo del cronograma",
+        detalle: `Físico ${avRealPct}% vs Programado ${avProgPct}% (${desv}%)`,
+      });
+    }
+
+    return alertas;
+  };
+
+  // --------------------------------------------------------------------
   // Modal sencillo reutilizable
   // --------------------------------------------------------------------
   // PCT.modal({ titulo, html, ancho, botones: [{ texto, clase, onClick }] })
@@ -388,6 +580,7 @@ if (typeof module !== "undefined" && module.exports) {
     contrato: _globalRoot.PCT.contrato,
     margenActual: _globalRoot.PCT.margenActual,
     avanceFisico: _globalRoot.PCT.avanceFisico,
+    alertasProyecto: _globalRoot.PCT.alertasProyecto,
     PCT: _globalRoot.PCT,
   };
 }

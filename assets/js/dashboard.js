@@ -522,6 +522,17 @@
   document.getElementById("filtro-empresa-dashboard")?.addEventListener("change", renderDashboard);
 
   try {
+    // Intento no-bloqueante de RPC agregado para diagnóstico/aceleración futura
+    if (typeof window.sb?.rpc === "function") {
+      Promise.resolve(window.sb.rpc("rpc_dashboard_resumen"))
+        .then((res) => {
+          if (res && !res.error && res.data) {
+            datosGlobales.resumenRpc = res.data;
+          }
+        })
+        .catch(() => {});
+    }
+
     const [
       { data: proyectos, error: errProyectos },
       { data: facturasTodas, error: errFacturasTodas },
