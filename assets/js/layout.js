@@ -213,16 +213,35 @@ async function inicializarApp() {
     });
   }
 
+  const PROFILE_CACHE_KEY = "pct_profile_cache";
+  const PROFILE_CACHE_TTL_MS = 3 * 60 * 1000;
   let profile = null;
   try {
-    const { data, error } = await window.sb
-      .from("profiles")
-      .select("nombre_completo, rol, cargo, telefono, avatar_url")
-      .eq("id", session.user.id)
-      .single();
-    if (!error) profile = data;
-  } catch (e) {
-    console.warn("No se pudo cargar el perfil", e);
+    const rawCache = sessionStorage.getItem(PROFILE_CACHE_KEY);
+    if (rawCache) {
+      const parsed = JSON.parse(rawCache);
+      if (parsed && parsed.uid === session.user.id && Date.now() - parsed.ts < PROFILE_CACHE_TTL_MS) {
+        profile = parsed.data;
+      }
+    }
+  } catch (e) { /* sin sessionStorage */ }
+
+  if (!profile) {
+    try {
+      const { data, error } = await window.sb
+        .from("profiles")
+        .select("nombre_completo, rol, cargo, telefono, avatar_url")
+        .eq("id", session.user.id)
+        .single();
+      if (!error && data) {
+        profile = data;
+        try {
+          sessionStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify({ uid: session.user.id, ts: Date.now(), data }));
+        } catch (e) { /* sin sessionStorage */ }
+      }
+    } catch (e) {
+      console.warn("No se pudo cargar el perfil", e);
+    }
   }
 
   const rolRaw = profile?.rol || "miembro";
@@ -301,6 +320,7 @@ async function inicializarApp() {
   const btnLogout = document.getElementById("btn-logout");
   if (btnLogout) {
     btnLogout.addEventListener("click", async () => {
+      try { sessionStorage.removeItem("pct_profile_cache"); } catch (e) { /* noop */ }
       await window.sb.auth.signOut();
       window.location.href = "login.html";
     });

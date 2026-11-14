@@ -43,6 +43,7 @@
     };
     const { error } = await window.sb.from("profiles").update(payload).eq("id", session.user.id);
     if (error) return manejarError(error, "No se pudo guardar tu perfil");
+    try { sessionStorage.removeItem("pct_profile_cache"); } catch (e) { /* noop */ }
     mostrarAviso("Perfil actualizado. Los cambios se verán en el menú al recargar la página.", "exito");
     cargarPerfil();
   });
@@ -88,6 +89,7 @@
       return;
     }
 
+    try { sessionStorage.removeItem("pct_profile_cache"); } catch (err) { /* noop */ }
     pintarAvatar(document.getElementById("perfil-nombre").value, urlConVersion);
     mostrarAviso("Foto de perfil actualizada", "exito");
     e.target.value = "";
