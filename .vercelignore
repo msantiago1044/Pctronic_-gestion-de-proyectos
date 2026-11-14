@@ -1,0 +1,13 @@
+1.reunion/
+docs/
+sql/
+tests/
+.github/
+node_modules/
+.env
+.env.*
+.gitignore
+README.md
+CLAUDE.md
+tailwind.config.js
+assets/css/tailwind.input.css

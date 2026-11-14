@@ -4,7 +4,8 @@
   "private": true,
   "description": "Sistema de gestión de proyectos para Pctronic Seguridad Electrónica",
   "scripts": {
-    "build": "node scripts/build.js",
+    "build:css": "tailwindcss -i assets/css/tailwind.input.css -o assets/css/tailwind.min.css --minify",
+    "build": "node scripts/build.js && npm run build:css",
     "test": "node --test tests/*.test.mjs",
     "lint": "node -e \"const fs=require('fs'),path=require('path'),cp=require('child_process');function walk(d){for(const e of fs.readdirSync(d,{withFileTypes:true})){const p=path.join(d,e.name);if(e.isDirectory())walk(p);else if(p.endsWith('.js'))cp.execFileSync(process.execPath,['--check',p],{stdio:'inherit'});}}walk('assets/js');walk('scripts');console.log('Syntax OK');\""
   },
@@ -15,5 +16,9 @@
     "vercel"
   ],
   "author": "Pctronic",
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@tailwindcss/forms": "^0.5.11",
+    "tailwindcss": "^3.4.19"
+  }
 }
