@@ -89,11 +89,13 @@ for (const file of htmlFiles) {
 
     const html = await res.text();
 
-    // 1. Debe incluir el CSS compilado de Tailwind
-    assert.ok(
-      html.includes("assets/css/tailwind.min.css"),
-      `${file} debe incluir assets/css/tailwind.min.css`
-    );
+    // 1. Debe incluir el CSS compilado de Tailwind (excepto index.html que es redirector puro)
+    if (file !== "index.html") {
+      assert.ok(
+        html.includes("assets/css/tailwind.min.css"),
+        `${file} debe incluir assets/css/tailwind.min.css`
+      );
+    }
 
     // 2. No debe contener ningún <script> inline sin atributo src (CSP)
     const inlineScripts = [...html.matchAll(/<script\b(?![^>]*\bsrc\s*=)[^>]*>/gi)];
