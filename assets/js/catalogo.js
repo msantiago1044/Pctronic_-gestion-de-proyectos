@@ -26,14 +26,21 @@
   function celdaImagen(fila) {
     if (!cfg.campoImagen) return "";
     const rawUrl = fila[cfg.campoImagen.key];
-    const urlSegura = typeof rawUrl === "string" && /^(https?:\/\/|data:image\/)/i.test(rawUrl)
-      ? rawUrl.replace(/'/g, "\\'").replace(/"/g, "&quot;")
-      : "";
+    const safeUrl =
+      typeof urlSegura === "function"
+        ? urlSegura(rawUrl)
+        : typeof rawUrl === "string" && /^(https?:\/\/|data:image\/)/i.test(rawUrl)
+          ? rawUrl
+          : "";
     return `
       <td class="px-4 py-3">
         <div class="flex items-center gap-2">
-          <div class="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-gray-50 bg-cover bg-center" ${urlSegura ? `style="background-image:url('${urlSegura}')"` : ""}>
-            ${urlSegura ? "" : '<span class="material-symbols-outlined text-[18px] text-gray-300">image</span>'}
+          <div class="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+            ${
+              safeUrl
+                ? `<img src="${escapeHtml(safeUrl)}" alt="${escapeHtml(fila.nombre || "Imagen")}" class="h-full w-full object-cover" />`
+                : '<span class="material-symbols-outlined text-[18px] text-gray-300">image</span>'
+            }
           </div>
           <label class="cursor-pointer text-xs font-semibold text-primary hover:underline">
             Subir
@@ -152,7 +159,7 @@
         .join("");
       return `
       <div id="campo-wrap-${c.key}" data-show-if="${c.showIf ? escapeHtml(JSON.stringify(c.showIf)) : ""}">
-        <label class="mb-1 block text-sm font-medium text-gray-700">${c.label}${c.requerido ? " *" : ""}</label>
+        <label class="mb-1 block text-sm font-medium text-gray-700">${escapeHtml(c.label)}${c.requerido ? " *" : ""}</label>
         <select id="campo-${c.key}" ${c.requerido ? "required" : ""}
           class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm">
           <option value="">Seleccionar…</option>
@@ -162,7 +169,7 @@
     }
     return `
       <div id="campo-wrap-${c.key}" data-show-if="${c.showIf ? escapeHtml(JSON.stringify(c.showIf)) : ""}">
-        <label class="mb-1 block text-sm font-medium text-gray-700">${c.label}${c.requerido ? " *" : ""}</label>
+        <label class="mb-1 block text-sm font-medium text-gray-700">${escapeHtml(c.label)}${c.requerido ? " *" : ""}</label>
         <input id="campo-${c.key}" type="${c.tipo || "text"}" ${c.requerido ? "required" : ""}
           class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
           value="${escapeHtml(valorActual || "")}" />
@@ -182,7 +189,10 @@
 
   function abrirModal(registro) {
     editandoId = registro?.id || null;
-    document.getElementById("modal-titulo").textContent = registro ? `Editar ${cfg.titulo.slice(0, -1) || cfg.titulo}` : `Nuevo registro`;
+    const tituloSingular =
+      cfg.tituloSingular ||
+      (cfg.titulo.endsWith("ores") ? cfg.titulo.replace(/es$/, "") : cfg.titulo.replace(/s$/, ""));
+    document.getElementById("modal-titulo").textContent = registro ? `Editar ${tituloSingular || cfg.titulo}` : `Nuevo registro`;
     const cont = document.getElementById("modal-campos");
     cont.innerHTML = cfg.campos.map((c) => campoHtml(c, registro)).join("");
 
@@ -208,8 +218,10 @@
   document.getElementById("filtro-busqueda").addEventListener("input", render);
 
   const btnExportar = document.getElementById("btn-exportar");
-  if (btnExportar && typeof XLSX !== "undefined") {
-    btnExportar.addEventListener("click", () => {
+  if (btnExportar) {
+    btnExportar.addEventListener("click", async () => {
+      if (typeof asegurarXLSX === "function") await asegurarXLSX();
+      if (typeof XLSX === "undefined") return mostrarAviso("No se pudo cargar Excel", "error");
       const columnas = cfg.campos.map((c) => c.label);
       const filas = cache.map((f) => cfg.campos.map((c) => valorVisible(c, f)));
       descargarPlantillaExcel(`${cfg.tabla}.xlsx`, columnas, filas);
@@ -233,6 +245,12 @@
       }
       if (c.tipo === "boolean") {
         payload[c.key] = valor === "" ? null : valor === "true";
+      } else if (c.tipo === "number" || c.tipo === "porcentaje") {
+        const n = Number(valor);
+        if (valor !== "" && !Number.isFinite(n)) {
+          return mostrarAviso(`El campo "${c.label}" debe ser numérico`, "error");
+        }
+        payload[c.key] = valor === "" ? null : n;
       } else {
         payload[c.key] = valor || null;
       }

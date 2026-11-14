@@ -103,7 +103,7 @@
     document.getElementById("campo-contacto-email").value = contacto?.email || "";
     const selectTipo = document.getElementById("campo-contacto-tipo");
     selectTipo.innerHTML = cfg.tiposContacto
-      .map((t) => `<option value="${t.value}" ${contacto?.tipo_contacto === t.value ? "selected" : ""}>${t.label}</option>`)
+      .map((t) => `<option value="${escapeHtml(t.value)}" ${contacto?.tipo_contacto === t.value ? "selected" : ""}>${escapeHtml(t.label)}</option>`)
       .join("");
     document.getElementById("modal-contacto").classList.remove("hidden");
     document.getElementById("modal-contacto").classList.add("flex");

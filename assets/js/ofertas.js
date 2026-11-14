@@ -57,6 +57,9 @@
       ]);
 
       if (resOf.error) throw resOf.error;
+      if (resCli.error) throw resCli.error;
+      if (resEmp.error) throw resEmp.error;
+      if (resProf.error) throw resProf.error;
       ofertas = resOf.data || [];
       clientes = resCli.data || [];
       empresas = resEmp.data || [];
@@ -341,7 +344,7 @@
 
     const deLabel = ESTADOS[o.estado]?.label || o.estado;
     const aLabel = ESTADOS[nuevoEstado]?.label || nuevoEstado;
-    document.getElementById("relevo-resumen").innerHTML = `Vas a mover <b>${escapeHtml(o.titulo)}</b> de <b>${deLabel}</b> a <b>${aLabel}</b>. Confirma o asigna el nuevo responsable para registrar el relevo.`;
+    document.getElementById("relevo-resumen").innerHTML = `Vas a mover <b>${escapeHtml(o.titulo)}</b> de <b>${escapeHtml(deLabel)}</b> a <b>${escapeHtml(aLabel)}</b>. Confirma o asigna el nuevo responsable para registrar el relevo.`;
     document.getElementById("relevo-responsable").value = o.responsable_id || "";
     document.getElementById("relevo-nota").value = "";
     document.getElementById("modal-relevo").classList.remove("hidden");
@@ -390,10 +393,11 @@
 
       // Si pasa a Enviado al cliente y tiene oportunidad vinculada, actualizar etapa en CRM
       if (nuevoEstado === "enviado_cliente" && o.oportunidad_id) {
-        await window.sb
+        const { error: errCrm } = await window.sb
           .from("crm_oportunidades")
           .update({ etapa: "negociacion", updated_at: new Date().toISOString() })
           .eq("id", o.oportunidad_id);
+        if (errCrm) throw errCrm;
       }
 
       cerrarModalRelevo(false);

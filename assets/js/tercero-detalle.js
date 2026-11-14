@@ -65,6 +65,19 @@
       return mostrarAviso("Debe tener al menos un rol activo", "error");
     }
 
+    const pctRet = Number(document.getElementById("d-porcentaje-retencion").value || 0);
+    const pctIca = Number(document.getElementById("d-porcentaje-ica").value || 0);
+    const montoMin = Number(document.getElementById("d-monto-minimo").value || 0);
+    if (!Number.isFinite(pctRet) || pctRet < 0 || pctRet > 100) {
+      return mostrarAviso("El porcentaje de retención debe estar entre 0 y 100", "error");
+    }
+    if (!Number.isFinite(pctIca) || pctIca < 0 || pctIca > 100) {
+      return mostrarAviso("El porcentaje de ICA debe estar entre 0 y 100", "error");
+    }
+    if (!Number.isFinite(montoMin) || montoMin < 0) {
+      return mostrarAviso("El monto mínimo de retención debe ser mayor o igual a 0", "error");
+    }
+
     const payload = {
       nombre,
       identificacion: document.getElementById("d-identificacion").value.trim() || null,
@@ -77,9 +90,9 @@
       es_contratista: chkCont.checked,
       categoria: document.getElementById("d-categoria").value.trim() || null,
       aplica_retencion: document.getElementById("d-aplica-retencion").checked,
-      porcentaje_retencion: Number(document.getElementById("d-porcentaje-retencion").value || 0),
-      porcentaje_ica: Number(document.getElementById("d-porcentaje-ica").value || 0),
-      monto_minimo_retencion: Number(document.getElementById("d-monto-minimo").value || 0),
+      porcentaje_retencion: pctRet,
+      porcentaje_ica: pctIca,
+      monto_minimo_retencion: montoMin,
       especialidad: document.getElementById("d-especialidad").value.trim() || null,
       tipo_persona: document.getElementById("d-tipo-persona").value || "empresa",
       es_declarante_renta: document.getElementById("d-declarante-renta").checked,

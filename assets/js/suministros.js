@@ -18,10 +18,12 @@
   };
 
   async function cargarSelects() {
-    const [{ data: clientes }, { data: empresas }] = await Promise.all([
+    const [{ data: clientes, error: errClientes }, { data: empresas, error: errEmpresas }] = await Promise.all([
       window.sb.from("clientes").select("id, nombre").order("nombre"),
       window.sb.from("empresas").select("id, nombre").order("nombre"),
     ]);
+    if (errClientes) return manejarError(errClientes, "No se pudo cargar los clientes");
+    if (errEmpresas) return manejarError(errEmpresas, "No se pudo cargar las empresas");
     clientesCache = clientes || [];
     empresasCache = empresas || [];
     document.getElementById("s-cliente").innerHTML =
@@ -152,7 +154,8 @@
     cargar();
   });
 
-  document.getElementById("btn-exportar").addEventListener("click", () => {
+  document.getElementById("btn-exportar").addEventListener("click", async () => {
+    if (typeof asegurarXLSX === "function") await asegurarXLSX();
     const columnas = ["Cliente", "Oferta", "Fecha Notificación", "Fecha Recibo Insumos", "Fecha Cierre", "Valor Venta", "IVA Incluido", "Estado"];
     const filas = cache.map((s) => [
       s.clientes?.nombre || "—",

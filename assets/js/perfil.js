@@ -2,15 +2,24 @@
   const { session } = await window.pctronicReady;
   if (!session) return;
 
+  const AVATAR_MIME_PERMITIDOS = new Set(["image/jpeg", "image/png", "image/webp"]);
+  const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
   const avatarPreview = document.getElementById("perfil-avatar-preview");
   let perfilActual = null;
 
+  function esUrlHttpsSegura(url) {
+    return typeof url === "string" && /^https:\/\//i.test(url.trim());
+  }
+
   function pintarAvatar(nombre, avatarUrl) {
-    if (avatarUrl) {
-      avatarPreview.style.backgroundImage = `url('${avatarUrl}')`;
-      avatarPreview.textContent = "";
+    avatarPreview.innerHTML = "";
+    if (esUrlHttpsSegura(avatarUrl)) {
+      const img = document.createElement("img");
+      img.src = avatarUrl.trim();
+      img.alt = "Foto de perfil";
+      img.className = "h-full w-full object-cover";
+      avatarPreview.appendChild(img);
     } else {
-      avatarPreview.style.backgroundImage = "";
       avatarPreview.textContent = (nombre || "?").trim().charAt(0).toUpperCase();
     }
   }
@@ -41,8 +50,13 @@
   document.getElementById("input-avatar").addEventListener("change", async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      mostrarAviso("Selecciona un archivo de imagen (JPG o PNG)", "error");
+    if (!AVATAR_MIME_PERMITIDOS.has(file.type)) {
+      mostrarAviso("Selecciona una imagen JPG, PNG o WebP", "error");
+      e.target.value = "";
+      return;
+    }
+    if (file.size > AVATAR_MAX_BYTES) {
+      mostrarAviso("La imagen no puede superar los 2 MB", "error");
       e.target.value = "";
       return;
     }
@@ -82,8 +96,8 @@
   document.getElementById("btn-cambiar-password").addEventListener("click", async () => {
     const nueva = document.getElementById("perfil-password").value;
     const confirmar = document.getElementById("perfil-password-confirm").value;
-    if (!nueva || nueva.length < 6) {
-      return mostrarAviso("La contraseña debe tener al menos 6 caracteres", "error");
+    if (!nueva || nueva.length < 8) {
+      return mostrarAviso("La contraseña debe tener al menos 8 caracteres", "error");
     }
     if (nueva !== confirmar) {
       return mostrarAviso("Las contraseñas no coinciden", "error");

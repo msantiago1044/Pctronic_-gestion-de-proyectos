@@ -4,7 +4,8 @@
   let cache = [];
 
   async function cargarEmpresasFiltro() {
-    const { data } = await window.sb.from("empresas").select("id, nombre").order("nombre");
+    const { data, error } = await window.sb.from("empresas").select("id, nombre").order("nombre");
+    if (error) return manejarError(error, "No se pudo cargar las empresas");
     const sel = document.getElementById("filtro-empresa");
     sel.innerHTML =
       `<option value="">Empresa: Todas</option>` +
@@ -41,11 +42,18 @@
     });
     ultimasFiltradas = filtradas;
 
-    const total = filtradas.reduce((a, f) => a + Number(f.valor), 0);
-    const pagado = filtradas.filter((f) => f.estado === "pagada").reduce((a, f) => a + Number(f.valor), 0);
+    const total = filtradas
+      .filter((f) => f.estado !== "anulada")
+      .reduce((a, f) => a + Number(f.valor || 0), 0);
+    const pagado = filtradas
+      .filter((f) => f.estado === "pagada")
+      .reduce((a, f) => a + Number(f.valor || 0), 0);
+    const pendiente = filtradas
+      .filter((f) => ["pendiente", "vencida"].includes(f.estado))
+      .reduce((a, f) => a + Number(f.valor || 0), 0);
     document.getElementById("kpi-total").textContent = formatoMoneda(total);
     document.getElementById("kpi-pagado").textContent = formatoMoneda(pagado);
-    document.getElementById("kpi-pendiente").textContent = formatoMoneda(total - pagado);
+    document.getElementById("kpi-pendiente").textContent = formatoMoneda(pendiente);
 
     const tbody = document.getElementById("tabla-facturas");
     tbody.innerHTML = filtradas.length
@@ -88,12 +96,14 @@
     ]);
   }
 
-  document.getElementById("btn-exportar-excel").addEventListener("click", () => {
+  document.getElementById("btn-exportar-excel").addEventListener("click", async () => {
     if (!ultimasFiltradas.length) return mostrarAviso("No hay facturas para exportar con este filtro", "error");
+    if (typeof asegurarXLSX === "function") await asegurarXLSX();
     descargarPlantillaExcel("facturacion.xlsx", COLUMNAS_EXPORT, filasExport());
   });
-  document.getElementById("btn-exportar-pdf").addEventListener("click", () => {
+  document.getElementById("btn-exportar-pdf").addEventListener("click", async () => {
     if (!ultimasFiltradas.length) return mostrarAviso("No hay facturas para exportar con este filtro", "error");
+    if (typeof asegurarJsPDF === "function") await asegurarJsPDF();
     const mes = document.getElementById("filtro-mes").value;
     generarPdfTabla({
       titulo: "Facturación",

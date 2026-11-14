@@ -34,6 +34,12 @@
     manual: "Manual / Excel",
   };
 
+  const hoyLocal = () => {
+    if (typeof fechaLocalISO === "function") return fechaLocalISO();
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+
   async function cargarCatalogos() {
     const [pRes, eRes, prRes, cRes] = await Promise.all([
       window.sb.from("proveedores").select("*").order("nombre"),
@@ -41,6 +47,10 @@
       window.sb.from("proyectos").select("id, nombre, cliente_id, empresa_id").order("nombre"),
       window.sb.from("clientes").select("id, nombre").order("nombre"),
     ]);
+    if (pRes.error) return manejarError(pRes.error, "No se pudo cargar los proveedores");
+    if (eRes.error) return manejarError(eRes.error, "No se pudo cargar las empresas");
+    if (prRes.error) return manejarError(prRes.error, "No se pudo cargar los proyectos");
+    if (cRes.error) return manejarError(cRes.error, "No se pudo cargar los clientes");
     proveedores = pRes.data || [];
     empresas = eRes.data || [];
     proyectos = prRes.data || [];
@@ -48,7 +58,7 @@
   }
 
   async function cargarDatos() {
-    const [sRes, oRes, itRes] = await Promise.all([
+    const [sRes, oRes] = await Promise.all([
       window.sb
         .from("compras_solicitudes")
         .select("*, proyectos(id, nombre), empresas(id, nombre, nit, direccion, telefono, email, logo_url), clientes(id, nombre)")
@@ -57,10 +67,6 @@
         .from("compras_ordenes")
         .select("*, compras_solicitudes(numero, titulo)")
         .order("created_at", { ascending: false }),
-      window.sb
-        .from("compras_solicitud_items")
-        .select("id, solicitud_id, presupuesto_item_id, cantidad_solicitada, precio_ganador, proveedor_ganador_id, created_at, compras_solicitudes(numero, titulo, estado, fecha_solicitud)")
-        .not("presupuesto_item_id", "is", null),
     ]);
 
     if (sRes.error) return manejarError(sRes.error, "No se pudo cargar las solicitudes");
@@ -72,7 +78,6 @@
       empresas: empresas.find((e) => e.id === o.empresa_id) || null,
       proveedores: proveedores.find((p) => p.id === o.proveedor_id) || null,
     }));
-    itemsPrevios = itRes.data || [];
 
     actualizarKPIs();
     renderSolicitudes();
@@ -238,9 +243,13 @@
     const idx = e.target.dataset.nsIdx;
     const f = e.target.dataset.nsF;
     if (idx === undefined || !f) return;
-    nuevoItems[Number(idx)][f] = ["cantidad_solicitada", "costo_presupuestado_unit"].includes(f)
-      ? Number(e.target.value || 0)
-      : e.target.value;
+    if (["cantidad_solicitada", "costo_presupuestado_unit"].includes(f)) {
+      const val = Number(e.target.value || 0);
+      nuevoItems[Number(idx)][f] = Number.isFinite(val) && val >= 0 ? val : 0;
+      if (val < 0) e.target.value = "0";
+    } else {
+      nuevoItems[Number(idx)][f] = e.target.value;
+    }
   });
 
   document.getElementById("ns-items-tbody").addEventListener("click", (e) => {
@@ -250,7 +259,8 @@
     renderNuevoItems();
   });
 
-  document.getElementById("ns-descargar-plantilla").addEventListener("click", () => {
+  document.getElementById("ns-descargar-plantilla").addEventListener("click", async () => {
+    if (typeof asegurarXLSX === "function") await asegurarXLSX();
     descargarPlantillaExcel(
       "plantilla_solicitud_compra.xlsx",
       ["Código", "Descripción", "Unidad", "Cantidad", "Costo Presupuestado"],
@@ -263,14 +273,15 @@
     e.target.value = "";
     if (!file) return;
     try {
+      if (typeof asegurarXLSX === "function") await asegurarXLSX();
       const filas = await leerArchivoExcel(file);
       const parseados = filas
         .map((r) => ({
           codigo: String(r["Código"] || r["Codigo"] || r["codigo"] || "").trim(),
           descripcion: String(r["Descripción"] || r["Descripcion"] || r["descripcion"] || "").trim(),
           unidad: String(r["Unidad"] || r["Und"] || r["unidad"] || "Und").trim(),
-          cantidad_solicitada: Number(r["Cantidad"] || r["Cant"] || r["cantidad"] || 1) || 1,
-          costo_presupuestado_unit: Number(r["Costo Presupuestado"] || r["Costo"] || r["costo"] || 0) || 0,
+          cantidad_solicitada: Math.max(0, Number(r["Cantidad"] || r["Cant"] || r["cantidad"] || 1) || 1),
+          costo_presupuestado_unit: Math.max(0, Number(r["Costo Presupuestado"] || r["Costo"] || r["costo"] || 0) || 0),
         }))
         .filter((x) => x.descripcion);
       if (!parseados.length) return mostrarAviso("No se encontraron filas con «Descripción» en el Excel", "error");
@@ -516,6 +527,17 @@
     if (error) return manejarError(error, "No se pudo cargar los ítems de la solicitud");
 
     itemsActuales = data || [];
+    const presupuestoIds = [...new Set(itemsActuales.map((it) => it.presupuesto_item_id).filter(Boolean))];
+    if (presupuestoIds.length > 0) {
+      const { data: prevData, error: errPrev } = await window.sb
+        .from("compras_solicitud_items")
+        .select("id, solicitud_id, presupuesto_item_id, cantidad_solicitada, precio_ganador, proveedor_ganador_id, created_at, compras_solicitudes(numero, titulo, estado, fecha_solicitud)")
+        .in("presupuesto_item_id", presupuestoIds);
+      if (errPrev) return manejarError(errPrev, "No se pudo cargar el historial de ítems");
+      itemsPrevios = prevData || [];
+    } else {
+      itemsPrevios = [];
+    }
     document.getElementById("cmp-titulo").textContent = `${solicitudActual.numero || ""} · ${solicitudActual.titulo}`;
     document.getElementById("cmp-subtitulo").textContent =
       `Empresa: ${solicitudActual.empresas?.nombre || "—"} · Origen: ${ORIGEN_LABEL[solicitudActual.origen]} · ` +
@@ -552,7 +574,17 @@
     const idx = e.target.dataset.cmpIdx;
     const f = e.target.dataset.cmpF;
     if (idx === undefined || !f) return;
-    itemsActuales[Number(idx)][f] = e.target.value === "" ? null : Number(e.target.value);
+    if (e.target.value === "") {
+      itemsActuales[Number(idx)][f] = null;
+    } else {
+      const val = Number(e.target.value);
+      if (!Number.isFinite(val) || val < 0) {
+        e.target.value = "0";
+        itemsActuales[Number(idx)][f] = 0;
+      } else {
+        itemsActuales[Number(idx)][f] = val;
+      }
+    }
     const calc = calcularItemComparativo(itemsActuales[Number(idx)]);
     itemsActuales[Number(idx)].proveedor_ganador_id = calc.ganadorId;
     itemsActuales[Number(idx)].precio_ganador = calc.precioGanador || null;
@@ -583,20 +615,32 @@
   async function guardarComparativo(nuevoEstado = null) {
     try {
       for (const it of itemsActuales) {
+        const invalido = [it.precio_1, it.precio_2, it.precio_3, it.cantidad_solicitada].some(
+          (v) => v !== null && v !== undefined && v !== "" && (!Number.isFinite(Number(v)) || Number(v) < 0)
+        );
+        if (invalido) {
+          return mostrarAviso("Los precios y cantidades deben ser mayores o iguales a 0", "error");
+        }
+      }
+      const updates = itemsActuales.map((it) => {
         const calc = calcularItemComparativo(it);
-        const { error } = await window.sb
-          .from("compras_solicitud_items")
-          .update({
-            proveedor_1_id: it.proveedor_1_id || null,
-            precio_1: it.precio_1 ?? null,
-            proveedor_2_id: it.proveedor_2_id || null,
-            precio_2: it.precio_2 ?? null,
-            proveedor_3_id: it.proveedor_3_id || null,
-            precio_3: it.precio_3 ?? null,
-            proveedor_ganador_id: calc.ganadorId || null,
-            precio_ganador: calc.precioGanador || null,
-          })
-          .eq("id", it.id);
+        return {
+          id: it.id,
+          solicitud_id: it.solicitud_id || solicitudActual.id,
+          descripcion: it.descripcion,
+          cantidad_solicitada: Math.max(0, Number(it.cantidad_solicitada || 0)),
+          proveedor_1_id: it.proveedor_1_id || null,
+          precio_1: it.precio_1 ?? null,
+          proveedor_2_id: it.proveedor_2_id || null,
+          precio_2: it.precio_2 ?? null,
+          proveedor_3_id: it.proveedor_3_id || null,
+          precio_3: it.precio_3 ?? null,
+          proveedor_ganador_id: calc.ganadorId || null,
+          precio_ganador: calc.precioGanador || null,
+        };
+      });
+      if (updates.length > 0) {
+        const { error } = await window.sb.from("compras_solicitud_items").upsert(updates, { onConflict: "id" });
         if (error) throw error;
       }
       const estadoFinal = nuevoEstado || (solicitudActual.estado === "pendiente" ? "en_comparativo" : solicitudActual.estado);
@@ -710,6 +754,10 @@
   });
 
   async function resolverComite(nuevoEstado) {
+    const puedeAprobar = !!window.PCT_ROL_INFO?.puedeAprobarCompras;
+    if (!puedeAprobar) {
+      return mostrarAviso("No tienes permisos para aprobar o rechazar compras", "error");
+    }
     const { error } = await window.sb
       .from("compras_solicitudes")
       .update({
@@ -734,6 +782,7 @@
   // GENERAR ORDEN / PRE-ORDEN + PDF + REGISTRO EN GASTOS
   // --------------------------------------------------------------------------
   async function generarPdfOrdenCompra(orden, empresa, proveedor, itemsOrden) {
+    if (typeof asegurarJsPDF === "function") await asegurarJsPDF();
     if (!window.jspdf || !window.jspdf.jsPDF) {
       return mostrarAviso("No se pudo cargar jsPDF para generar el PDF", "error");
     }
@@ -765,7 +814,7 @@
     doc.setFontSize(9);
     doc.setFont(undefined, "normal");
     doc.text(`Proveedor: ${proveedor?.nombre || "—"} (NIT: ${proveedor?.nit || "—"})`, m, y);
-    doc.text(`Fecha de emisión: ${formatoFecha(new Date().toISOString().slice(0, 10))}`, m, y + 14);
+    doc.text(`Fecha de emisión: ${formatoFecha(hoyLocal())}`, m, y + 14);
 
     y += 28;
     doc.autoTable({
@@ -785,9 +834,14 @@
     });
 
     const finalY = doc.lastAutoTable.finalY + 18;
+    const ivaPctLabel =
+      orden.iva_porcentaje ??
+      (Number(orden.subtotal || 0) > 0
+        ? Math.round((Number(orden.iva || 0) / Number(orden.subtotal)) * 1000) / 10
+        : 19);
     doc.setFontSize(10);
     doc.text(`Subtotal: ${formatoMoneda(orden.subtotal)}`, 380, finalY);
-    doc.text(`IVA (19%): ${formatoMoneda(orden.iva)}`, 380, finalY + 15);
+    doc.text(`IVA (${ivaPctLabel}%): ${formatoMoneda(orden.iva)}`, 380, finalY + 15);
     doc.text(`Retenciones: -${formatoMoneda(orden.retenciones)}`, 380, finalY + 30);
     doc.setFont(undefined, "bold");
     doc.text(`TOTAL A PAGAR: ${formatoMoneda(orden.total)}`, 380, finalY + 48);
@@ -811,19 +865,27 @@
     const emp = solicitudActual.empresas || {};
     const esPctronic = /pctronic/i.test(emp.nombre || "");
     const tipoOrden = esPctronic ? "pre_orden" : "orden_compra";
+    const ivaInputEl = document.getElementById("cmp-iva-porcentaje");
+    const ivaRaw = ivaInputEl && ivaInputEl.value !== "" ? Number(ivaInputEl.value) : (solicitudActual?.iva_porcentaje ?? 19);
+    if (!Number.isFinite(ivaRaw) || ivaRaw < 0 || ivaRaw > 100) {
+      return mostrarAviso("La tarifa de IVA debe estar entre 0% y 100%", "error");
+    }
+    const ivaPct = ivaRaw;
 
     try {
+      let indiceOrden = ordenes.length;
       for (const [provId, itemsProv] of porProveedor.entries()) {
         const prov = proveedores.find((p) => p.id === provId) || {};
         const subtotal = itemsProv.reduce((a, it) => a + Number(it.cantidad_solicitada) * Number(it.precio_ganador), 0);
-        const iva = subtotal * 0.19;
+        const iva = subtotal * (ivaPct / 100);
         let retenciones = 0;
         if (prov.aplica_retencion && subtotal >= Number(prov.monto_minimo_retencion || 0)) {
           const pctTotal = (Number(prov.porcentaje_retencion || 0) + Number(prov.porcentaje_ica || 0)) / 100;
           retenciones = subtotal * pctTotal;
         }
         const total = subtotal + iva - retenciones;
-        const numeroOrden = `${esPctronic ? "PRE" : "OC"}-${new Date().getFullYear()}-${String(ordenes.length + 1).padStart(4, "0")}`;
+        indiceOrden += 1;
+        const numeroOrden = `${esPctronic ? "PRE" : "OC"}-${new Date().getFullYear()}-${String(indiceOrden).padStart(4, "0")}`;
 
         const { data: ord, error } = await window.sb
           .from("compras_ordenes")
@@ -846,7 +908,7 @@
         if (solicitudActual.proyecto_id) {
           const gastosRows = itemsProv.map((it) => ({
             proyecto_id: solicitudActual.proyecto_id,
-            fecha: new Date().toISOString().slice(0, 10),
+            fecha: hoyLocal(),
             tipo: "Material",
             proveedor_id: provId,
             documento: numeroOrden,
@@ -860,10 +922,11 @@
           if (errG) throw errG;
         }
 
-        await generarPdfOrdenCompra(ord, emp, prov, itemsProv);
+        await generarPdfOrdenCompra({ ...ord, iva_porcentaje: ivaPct }, emp, prov, itemsProv);
       }
 
-      await window.sb.from("compras_solicitudes").update({ estado: "ordenada" }).eq("id", solicitudActual.id);
+      const { error: errSol } = await window.sb.from("compras_solicitudes").update({ estado: "ordenada" }).eq("id", solicitudActual.id);
+      if (errSol) throw errSol;
       solicitudActual.estado = "ordenada";
       document.getElementById("cmp-estado-badge").innerHTML = badgeHtml(ESTADOS_SOL, "ordenada");
       mostrarAviso(
@@ -881,11 +944,12 @@
     if (!btn) return;
     const ord = ordenes.find((o) => o.id === btn.dataset.pdfOrden);
     if (!ord) return;
-    const { data: items } = await window.sb
+    const { data: items, error: errItems } = await window.sb
       .from("compras_solicitud_items")
       .select("*")
       .eq("solicitud_id", ord.solicitud_id)
       .eq("proveedor_ganador_id", ord.proveedor_id);
+    if (errItems) return manejarError(errItems, "No se pudieron cargar los ítems de la orden");
     await generarPdfOrdenCompra(ord, ord.empresas, ord.proveedores, items || []);
   });
 

@@ -524,12 +524,12 @@
     const [
       { data: proyectos, error: errProyectos },
       { data: facturasTodas, error: errFacturasTodas },
-      { data: compras },
-      { data: gastos },
-      { data: comprasSolicitudes },
-      { data: vinculos },
-      { data: suministros },
-      { data: empresas },
+      { data: compras, error: errCompras },
+      { data: gastos, error: errGastos },
+      { data: comprasSolicitudes, error: errComprasSolicitudes },
+      { data: vinculos, error: errVinculos },
+      { data: suministros, error: errSuministros },
+      { data: empresas, error: errEmpresas },
       resOps,
       resOfertas,
     ] = await Promise.all([
@@ -546,6 +546,14 @@
     ]);
     if (errProyectos) throw errProyectos;
     if (errFacturasTodas) throw errFacturasTodas;
+    if (errCompras) throw errCompras;
+    if (errGastos) throw errGastos;
+    if (errComprasSolicitudes) throw errComprasSolicitudes;
+    if (errVinculos) throw errVinculos;
+    if (errSuministros) throw errSuministros;
+    if (errEmpresas) throw errEmpresas;
+    if (resOps?.error) throw resOps.error;
+    if (resOfertas?.error) throw resOfertas.error;
 
     datosGlobales = {
       proyectos: proyectos || [],
@@ -556,8 +564,8 @@
       vinculos: vinculos || [],
       suministros: suministros || [],
       empresas: empresas || [],
-      crmOportunidades: resOps?.error ? [] : resOps?.data || [],
-      crmOfertas: resOfertas?.error ? [] : resOfertas?.data || [],
+      crmOportunidades: resOps?.data || [],
+      crmOfertas: resOfertas?.data || [],
     };
 
     const selEmpresa = document.getElementById("filtro-empresa-dashboard");
@@ -762,7 +770,7 @@
           return `
           <div class="flex items-center justify-between gap-2 border-b border-gray-100 py-2 last:border-0 text-xs">
             <span class="font-medium text-gray-800 truncate">${escapeHtml(of.titulo || "Oferta sin título")}</span>
-            <span class="shrink-0 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${est.cls}">${est.label}</span>
+            <span class="shrink-0 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${est.cls}">${escapeHtml(est.label || "")}</span>
           </div>`;
         })
         .join("");
@@ -901,12 +909,11 @@
 
     function slideFacturacionMensual(empresaId, nombreEmpresa) {
       const anioActual = new Date().getFullYear();
-      const facturasEmpresa = facturas.filter(
-        (f) =>
-          f.estado !== "anulada" &&
-          (empresaId ? f.proyectos?.empresa_id === empresaId : true) &&
-          new Date(f.fecha_emision + "T00:00:00").getFullYear() === anioActual
-      );
+      const facturasEmpresa = facturas.filter((f) => {
+        if (!f.fecha_emision || f.estado === "anulada") return false;
+        if (empresaId && f.proyectos?.empresa_id !== empresaId) return false;
+        return new Date(f.fecha_emision + "T00:00:00").getFullYear() === anioActual;
+      });
       let acumulado = 0;
       const filas = Array.from({ length: 12 }, (_, mes) => {
         const totalMes = facturasEmpresa

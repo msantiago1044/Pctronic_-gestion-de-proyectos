@@ -78,7 +78,10 @@
       ]);
 
       if (resOps.error) throw resOps.error;
-      const ofertas = resOfertas.error ? [] : (resOfertas.data || []);
+      if (resCli.error) throw resCli.error;
+      if (resProf.error) throw resProf.error;
+      if (resOfertas.error) throw resOfertas.error;
+      const ofertas = resOfertas.data || [];
       const ofertasPorId = new Map(ofertas.map((o) => [o.id, o]));
       const ofertasPorOpId = new Map(ofertas.filter((o) => o.oportunidad_id).map((o) => [o.oportunidad_id, o]));
 
@@ -166,8 +169,7 @@
         op.titulo.toLowerCase().includes(texto) ||
         (op.clientes?.nombre || "").toLowerCase().includes(texto) ||
         (op.contacto_nombre || "").toLowerCase().includes(texto) ||
-        (op.contacto_telefono || "").toLowerCase().includes(texto) ||
-        (op.contacto_id || "").toLowerCase().includes(texto);
+        (op.contacto_telefono || "").toLowerCase().includes(texto);
       const coincideServ = !serv || op.tipo_servicio === serv;
       const coincideResp = !resp || op.responsable_id === resp;
       return coincideTexto && coincideServ && coincideResp;
@@ -786,13 +788,14 @@
 
       if (errUpd) throw errUpd;
 
-      await window.sb.from("crm_actividades").insert({
+      const { error: errAct } = await window.sb.from("crm_actividades").insert({
         oportunidad_id: op.id,
         tipo: "tarea",
         titulo: "Enviada a Ofertas Pre-venta",
         descripcion: `Se creó la oferta en Pre-venta en estado Levantamiento.`,
         creado_por: usuarioActualId || null,
       });
+      if (errAct) throw errAct;
 
       oportunidadActual._oferta = nuevaOferta;
       oportunidadActual.oferta_preventa_id = nuevaOferta.id;
@@ -984,6 +987,12 @@
     }
 
     try {
+      const hoyLocal = (() => {
+        if (typeof fechaLocalISO === "function") return fechaLocalISO();
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      })();
+
       // 1. Insertar el proyecto operativo (NO enviar valor_total: es columna GENERATED)
       const { data: nuevoProyecto, error: errProy } = await window.sb
         .from("proyectos")
@@ -991,9 +1000,9 @@
           nombre: op.titulo,
           cliente_id: op.cliente_id,
           empresa_id: op.empresa_id || null,
-          valor_antes_impuestos: op.costo_estimado || op.valor_estimado || 0,
+          valor_antes_impuestos: op.valor_estimado || op.costo_estimado || 0,
           estado: "sin_iniciar",
-          fecha_inicio: new Date().toISOString().slice(0, 10),
+          fecha_inicio: hoyLocal,
           fecha_fin_estimada: op.fecha_cierre_estimada || null,
           created_by: usuarioActualId || null,
           tipo_contrato: "aiu",
@@ -1004,7 +1013,7 @@
       if (errProy) throw errProy;
 
       // 2. Asociar el proyecto creado a la oportunidad
-      await window.sb
+      const { error: errUpdOp } = await window.sb
         .from("crm_oportunidades")
         .update({
           proyecto_id: nuevoProyecto.id,
@@ -1013,15 +1022,17 @@
           updated_at: new Date().toISOString(),
         })
         .eq("id", op.id);
+      if (errUpdOp) throw errUpdOp;
 
       // 3. Registrar actividad en la bitácora
-      await window.sb.from("crm_actividades").insert({
+      const { error: errAct } = await window.sb.from("crm_actividades").insert({
         oportunidad_id: op.id,
         tipo: "tarea",
         titulo: "🚀 Convertida en Proyecto Operativo",
         descripcion: `Se inició el proyecto en la plataforma con ID: ${nuevoProyecto.id}. Listo para carga de cotización y ejecución.`,
         creado_por: usuarioActualId || null,
       });
+      if (errAct) throw errAct;
 
       mostrarAviso("¡Proyecto creado exitosamente!", "exito");
       cerrarDrawer();
@@ -1090,13 +1101,14 @@
       if (errUpdate) throw errUpdate;
 
       // Registrar actividad automática en bitácora
-      await window.sb.from("crm_actividades").insert({
+      const { error: errAct } = await window.sb.from("crm_actividades").insert({
         oportunidad_id: id,
         tipo: "tarea",
         titulo: `Etapa cambiada a ${etapaNombre}`,
         descripcion: `Movida desde "${ETAPAS[etapaAnterior]?.label || etapaAnterior}"`,
         creado_por: usuarioActualId || null,
       });
+      if (errAct) throw errAct;
 
       mostrarAviso(`Oportunidad movida a ${etapaNombre}`, "exito");
     } catch (err) {
@@ -1226,18 +1238,18 @@
       document.getElementById("drawer-etapa").value = "ganada";
       document.getElementById("drawer-probabilidad").value = 100;
       document.getElementById("drawer-probabilidad-badge").textContent = "100%";
-      actualizarEstadoBanners({ etapa: "ganada", proyecto_id: oportunidadActual?.proyecto_id });
+      actualizarEstadoBanners({ ...(oportunidadActual || {}), etapa: "ganada" });
     });
 
     document.getElementById("btn-drawer-perdida")?.addEventListener("click", () => {
       document.getElementById("drawer-etapa").value = "perdida";
       document.getElementById("drawer-probabilidad").value = 0;
       document.getElementById("drawer-probabilidad-badge").textContent = "0%";
-      actualizarEstadoBanners({ etapa: "perdida" });
+      actualizarEstadoBanners({ ...(oportunidadActual || {}), etapa: "perdida" });
     });
 
     document.getElementById("drawer-etapa")?.addEventListener("change", (e) => {
-      actualizarEstadoBanners({ etapa: e.target.value, proyecto_id: oportunidadActual?.proyecto_id });
+      actualizarEstadoBanners({ ...(oportunidadActual || {}), etapa: e.target.value });
     });
 
     document.getElementById("drawer-valor")?.addEventListener("input", actualizarMargenLabel);
@@ -1288,7 +1300,7 @@
 
       try {
         const titulo = document.getElementById("nuevo-titulo").value.trim();
-        const cliente_id = document.getElementById("nuevo-cliente").value;
+        const cliente_id = document.getElementById("nuevo-cliente").value || null;
         const contacto_nombre = document.getElementById("nuevo-contacto")?.value.trim() || null;
         const contacto_telefono = document.getElementById("crear-op-telefono")?.value.trim() || null;
         const etapa = document.getElementById("nuevo-etapa").value;

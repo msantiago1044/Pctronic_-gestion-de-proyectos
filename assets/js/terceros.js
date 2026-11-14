@@ -83,30 +83,38 @@
       const porNombre = new Map(existentes.map((t) => [String(t.nombre || "").trim().toLowerCase(), t]));
 
       let importados = 0;
+      const loteInsertar = [];
+      const nuevosPorNombre = new Map();
 
       for (const c of cliRes.data || []) {
         if (porClienteId.has(c.id)) continue;
         const key = String(c.nombre || "").trim().toLowerCase();
         const match = porNombre.get(key);
         if (match && !match.cliente_id) {
-          await window.sb.from("terceros").update({ es_cliente: true, cliente_id: c.id }).eq("id", match.id);
+          const { error: errUpd } = await window.sb.from("terceros").update({ es_cliente: true, cliente_id: c.id }).eq("id", match.id);
+          if (errUpd) throw errUpd;
+          match.es_cliente = true;
+          match.cliente_id = c.id;
           porClienteId.add(c.id);
           importados++;
         } else if (!match) {
-          const { data: nuevo } = await window.sb
-            .from("terceros")
-            .insert({
+          const pend = nuevosPorNombre.get(key);
+          if (pend) {
+            pend.es_cliente = true;
+            pend.cliente_id = c.id;
+            if (!pend.notas && c.notas) pend.notas = c.notas;
+          } else {
+            const nuevo = {
               nombre: c.nombre,
               identificacion: c.nit || null,
               es_cliente: true,
               cliente_id: c.id,
               notas: c.notas || null,
-            })
-            .select()
-            .single();
-          if (nuevo) porNombre.set(key, nuevo);
+            };
+            nuevosPorNombre.set(key, nuevo);
+            loteInsertar.push(nuevo);
+          }
           porClienteId.add(c.id);
-          importados++;
         }
       }
 
@@ -115,7 +123,7 @@
         const key = String(p.nombre || "").trim().toLowerCase();
         const match = porNombre.get(key);
         if (match && !match.proveedor_id) {
-          await window.sb
+          const { error: errUpd } = await window.sb
             .from("terceros")
             .update({
               es_proveedor: true,
@@ -127,12 +135,24 @@
               monto_minimo_retencion: Number(p.monto_minimo_retencion || 0),
             })
             .eq("id", match.id);
+          if (errUpd) throw errUpd;
+          match.es_proveedor = true;
+          match.proveedor_id = p.id;
           porProveedorId.add(p.id);
           importados++;
         } else if (!match) {
-          const { data: nuevo } = await window.sb
-            .from("terceros")
-            .insert({
+          const pend = nuevosPorNombre.get(key);
+          if (pend) {
+            pend.es_proveedor = true;
+            pend.proveedor_id = p.id;
+            pend.categoria = pend.categoria || p.categoria || null;
+            pend.aplica_retencion = !!p.aplica_retencion;
+            pend.porcentaje_retencion = Number(p.porcentaje_retencion || 0);
+            pend.porcentaje_ica = Number(p.porcentaje_ica || 0);
+            pend.monto_minimo_retencion = Number(p.monto_minimo_retencion || 0);
+            if (!pend.notas && p.notas) pend.notas = p.notas;
+          } else {
+            const nuevo = {
               nombre: p.nombre,
               identificacion: p.nit || null,
               es_proveedor: true,
@@ -143,12 +163,11 @@
               porcentaje_ica: Number(p.porcentaje_ica || 0),
               monto_minimo_retencion: Number(p.monto_minimo_retencion || 0),
               notas: p.notas || null,
-            })
-            .select()
-            .single();
-          if (nuevo) porNombre.set(key, nuevo);
+            };
+            nuevosPorNombre.set(key, nuevo);
+            loteInsertar.push(nuevo);
+          }
           porProveedorId.add(p.id);
-          importados++;
         }
       }
 
@@ -157,7 +176,7 @@
         const key = String(k.nombre || "").trim().toLowerCase();
         const match = porNombre.get(key);
         if (match && !match.contratista_id) {
-          await window.sb
+          const { error: errUpd } = await window.sb
             .from("terceros")
             .update({
               es_contratista: true,
@@ -169,12 +188,23 @@
               email: match.email || k.email || null,
             })
             .eq("id", match.id);
+          if (errUpd) throw errUpd;
+          match.es_contratista = true;
+          match.contratista_id = k.id;
           porContratistaId.add(k.id);
           importados++;
         } else if (!match) {
-          const { data: nuevo } = await window.sb
-            .from("terceros")
-            .insert({
+          const pend = nuevosPorNombre.get(key);
+          if (pend) {
+            pend.es_contratista = true;
+            pend.contratista_id = k.id;
+            pend.especialidad = pend.especialidad || k.especialidad || null;
+            pend.tipo_persona = k.tipo_persona || "empresa";
+            pend.es_declarante_renta = !!k.es_declarante_renta;
+            pend.telefono = pend.telefono || k.telefono || null;
+            pend.email = pend.email || k.email || null;
+          } else {
+            const nuevo = {
               nombre: k.nombre,
               identificacion: k.identificacion || null,
               es_contratista: true,
@@ -184,13 +214,18 @@
               es_declarante_renta: !!k.es_declarante_renta,
               telefono: k.telefono || null,
               email: k.email || null,
-            })
-            .select()
-            .single();
-          if (nuevo) porNombre.set(key, nuevo);
+            };
+            nuevosPorNombre.set(key, nuevo);
+            loteInsertar.push(nuevo);
+          }
           porContratistaId.add(k.id);
-          importados++;
         }
+      }
+
+      if (loteInsertar.length > 0) {
+        const { data: insertados, error: errIns } = await window.sb.from("terceros").insert(loteInsertar).select();
+        if (errIns) throw errIns;
+        importados += (insertados || []).length;
       }
 
       if (!silencioso) {
@@ -304,6 +339,19 @@
       return mostrarAviso("Selecciona al menos un rol (Cliente, Proveedor o Contratista)", "error");
     }
 
+    const pctRet = Number(document.getElementById("t-porcentaje-retencion").value || 0);
+    const pctIca = Number(document.getElementById("t-porcentaje-ica").value || 0);
+    const montoMin = Number(document.getElementById("t-monto-minimo").value || 0);
+    if (!Number.isFinite(pctRet) || pctRet < 0 || pctRet > 100) {
+      return mostrarAviso("El porcentaje de retención debe estar entre 0 y 100", "error");
+    }
+    if (!Number.isFinite(pctIca) || pctIca < 0 || pctIca > 100) {
+      return mostrarAviso("El porcentaje de ICA debe estar entre 0 y 100", "error");
+    }
+    if (!Number.isFinite(montoMin) || montoMin < 0) {
+      return mostrarAviso("El monto mínimo de retención debe ser mayor o igual a 0", "error");
+    }
+
     const existente = editandoId ? cache.find((x) => x.id === editandoId) : null;
     const payload = {
       nombre,
@@ -316,9 +364,9 @@
       es_contratista: chkContratista.checked,
       categoria: document.getElementById("t-categoria").value.trim() || null,
       aplica_retencion: document.getElementById("t-aplica-retencion").checked,
-      porcentaje_retencion: Number(document.getElementById("t-porcentaje-retencion").value || 0),
-      porcentaje_ica: Number(document.getElementById("t-porcentaje-ica").value || 0),
-      monto_minimo_retencion: Number(document.getElementById("t-monto-minimo").value || 0),
+      porcentaje_retencion: pctRet,
+      porcentaje_ica: pctIca,
+      monto_minimo_retencion: montoMin,
       especialidad: document.getElementById("t-especialidad").value.trim() || null,
       tipo_persona: document.getElementById("t-tipo-persona").value || "empresa",
       es_declarante_renta: document.getElementById("t-declarante-renta").checked,
@@ -415,9 +463,10 @@
 
   document.getElementById("filtro-busqueda").addEventListener("input", render);
   document.getElementById("btn-sincronizar").addEventListener("click", () => sincronizarExistentes(false));
-  document.getElementById("btn-exportar").addEventListener("click", () => {
+  document.getElementById("btn-exportar").addEventListener("click", async () => {
     const lista = filtrar();
     if (!lista.length) return mostrarAviso("No hay terceros para exportar", "error");
+    if (typeof asegurarXLSX === "function") await asegurarXLSX();
     const cols = ["Nombre", "NIT/ID", "Cliente", "Proveedor", "Contratista", "Teléfono", "Email", "Categoría", "Especialidad"];
     const filas = lista.map((t) => [
       t.nombre,
