@@ -28,9 +28,12 @@
   let empresas = [];
   let perfiles = [];
   let ofertaActual = null;
+  let proyectosPorOportunidad = new Map();
   let vistaActual = localStorage.getItem("pctronic_ofertas_vista") || "tablero";
   let relevoPendiente = null; // { id, nuevoEstado, origen }
   let arrastrandoId = null;
+  let puenteExcelData = null; // { items, trm_cotizacion, inicio, archivoNombre }
+  let puenteArchivoFile = null;
 
   const nombrePerfil = (id) => perfiles.find((p) => p.id === id)?.nombre_completo || "Sin asignar";
 
@@ -46,7 +49,7 @@
 
   async function cargarDatos() {
     try {
-      const [resOf, resCli, resEmp, resProf] = await Promise.all([
+      const [resOf, resCli, resEmp, resProf, resOps] = await Promise.all([
         window.sb
           .from("crm_ofertas_preventa")
           .select("*, clientes(id, nombre), empresas(id, nombre), profiles:responsable_id(id, nombre_completo)")
@@ -54,6 +57,7 @@
         window.sb.from("clientes").select("id, nombre").order("nombre"),
         window.sb.from("empresas").select("id, nombre").order("nombre"),
         window.sb.from("profiles").select("id, nombre_completo").order("nombre_completo"),
+        window.sb.from("crm_oportunidades").select("id, proyecto_id, oferta_preventa_id"),
       ]);
 
       if (resOf.error) throw resOf.error;
@@ -64,6 +68,15 @@
       clientes = resCli.data || [];
       empresas = resEmp.data || [];
       perfiles = resProf.data || [];
+      proyectosPorOportunidad = new Map();
+      if (!resOps.error && Array.isArray(resOps.data)) {
+        resOps.data.forEach((op) => {
+          if (op.proyecto_id) {
+            proyectosPorOportunidad.set(op.id, op.proyecto_id);
+            if (op.oferta_preventa_id) proyectosPorOportunidad.set(`of:${op.oferta_preventa_id}`, op.proyecto_id);
+          }
+        });
+      }
 
       poblarSelects();
       actualizarKPIs();
@@ -78,11 +91,11 @@
     const optsEmp = empresas.map((e) => `<option value="${e.id}">${escapeHtml(e.nombre)}</option>`).join("");
     const optsProf = perfiles.map((p) => `<option value="${p.id}">${escapeHtml(p.nombre_completo || "Usuario")}</option>`).join("");
 
-    ["drawer-cliente", "nuevo-cliente"].forEach((id) => {
+    ["drawer-cliente", "nuevo-cliente", "puente-cliente"].forEach((id) => {
       const el = document.getElementById(id);
       if (el) el.innerHTML = `<option value="">Sin cliente</option>${optsCli}`;
     });
-    ["drawer-empresa", "nuevo-empresa"].forEach((id) => {
+    ["drawer-empresa", "nuevo-empresa", "puente-empresa"].forEach((id) => {
       const el = document.getElementById(id);
       if (el) el.innerHTML = `<option value="">Sin empresa</option>${optsEmp}`;
     });
@@ -171,6 +184,7 @@
                 <span class="inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-semibold ${pr.badge}">${pr.label}</span>
                 <div class="flex items-center gap-1 flex-wrap justify-end">
                   ${o.plazo_ejecucion ? `<span class="inline-flex items-center gap-0.5 rounded-md bg-sky-50 border border-sky-200 px-1.5 py-0.5 text-[10px] font-medium text-sky-700" title="Plazo de ejecución"><span class="material-symbols-outlined text-[12px]">schedule</span>${escapeHtml(o.plazo_ejecucion)}</span>` : ""}
+                  ${o.archivo_cotizacion_nombre ? `<span class="inline-flex items-center gap-0.5 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-700" title="${escapeHtml(o.archivo_cotizacion_nombre)}"><span class="material-symbols-outlined text-[12px]">table_view</span> Excel</span>` : ""}
                   ${o.oportunidad_id ? `<span class="inline-flex items-center gap-0.5 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700" title="Vinculada al CRM"><span class="material-symbols-outlined text-[12px]">handshake</span> CRM</span>` : ""}
                 </div>
               </div>
@@ -257,15 +271,16 @@
     const cont = document.getElementById("drawer-adjuntos-lista");
     cont.innerHTML = lista.length
       ? lista
-          .map(
-            (a, i) => `
+          .map((a, i) => {
+            const href = (typeof urlSegura === "function" ? urlSegura(a.url) : "") || "#";
+            return `
           <div class="flex items-center justify-between gap-2 rounded-lg border border-gray-100 bg-gray-50/70 px-3 py-1.5 text-xs">
-            <a href="${escapeHtml(a.url)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 font-medium text-primary hover:underline truncate">
+            <a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 font-medium text-primary hover:underline truncate">
               <span class="material-symbols-outlined text-[15px]">link</span> ${escapeHtml(a.nombre)}
             </a>
             <button type="button" data-adj-del="${i}" class="text-gray-400 hover:text-red-600"><span class="material-symbols-outlined text-[16px]">delete</span></button>
-          </div>`
-          )
+          </div>`;
+          })
           .join("")
       : `<p class="text-[11px] text-gray-400">Sin enlaces adjuntos.</p>`;
   }
@@ -294,6 +309,72 @@
       : `<p class="text-[11px] text-gray-400">Sin relevos registrados.</p>`;
   }
 
+  function obtenerProyectoIdDeOferta(o) {
+    if (!o) return null;
+    return (
+      o.proyecto_id ||
+      (o.oportunidad_id && proyectosPorOportunidad.get(o.oportunidad_id)) ||
+      proyectosPorOportunidad.get(`of:${o.id}`) ||
+      null
+    );
+  }
+
+  function obtenerExcelDeOferta(o) {
+    if (!o) return { path: null, nombre: null };
+    if (o.archivo_cotizacion_path) {
+      return { path: o.archivo_cotizacion_path, nombre: o.archivo_cotizacion_nombre || "Cotizacion.xlsx" };
+    }
+    const adj = Array.isArray(o.adjuntos) ? o.adjuntos.find((a) => a && a.storage_path) : null;
+    if (adj) return { path: adj.storage_path, nombre: adj.nombre || "Cotizacion.xlsx" };
+    return { path: null, nombre: null };
+  }
+
+  function pintarBloqueExcelOferta(o) {
+    const estadoEl = document.getElementById("oferta-excel-estado");
+    const btnDesc = document.getElementById("btn-oferta-excel-descargar");
+    const btnLbl = document.getElementById("oferta-excel-btn-lbl");
+    const trmEl = document.getElementById("oferta-trm");
+    const prevEl = document.getElementById("oferta-excel-preview");
+    const { path, nombre } = obtenerExcelDeOferta(o);
+    if (trmEl) trmEl.value = o?.trm_oferta ?? "";
+    if (prevEl) prevEl.textContent = "";
+    if (path) {
+      if (estadoEl) estadoEl.textContent = `Archivo adjunto: ${nombre}`;
+      if (btnDesc) {
+        btnDesc.classList.remove("hidden");
+        btnDesc.classList.add("inline-flex");
+      }
+      if (btnLbl) btnLbl.textContent = "Reemplazar Excel";
+    } else {
+      if (estadoEl) estadoEl.textContent = "Sin archivo Excel adjunto todavía.";
+      if (btnDesc) {
+        btnDesc.classList.add("hidden");
+        btnDesc.classList.remove("inline-flex");
+      }
+      if (btnLbl) btnLbl.textContent = "Subir Excel";
+    }
+  }
+
+  function pintarBannerProyectoOferta(o) {
+    const infoEl = document.getElementById("drawer-oferta-proy-info");
+    const btnEnviar = document.getElementById("btn-oferta-enviar-proyecto");
+    const linkProy = document.getElementById("link-oferta-proyecto");
+    const proyId = obtenerProyectoIdDeOferta(o);
+    if (!infoEl || !btnEnviar || !linkProy) return;
+    if (proyId) {
+      infoEl.textContent = "Esta oferta ya fue convertida en un proyecto operativo.";
+      btnEnviar.classList.add("hidden");
+      linkProy.href = `proyecto-detalle.html?id=${proyId}`;
+      linkProy.classList.remove("hidden");
+      linkProy.classList.add("inline-flex");
+    } else {
+      infoEl.textContent = "Crea el proyecto operativo en 1 paso importando el Excel de cotización y documentos de cierre.";
+      btnEnviar.classList.remove("hidden");
+      linkProy.classList.add("hidden");
+      linkProy.classList.remove("inline-flex");
+    }
+  }
+
   function abrirDrawer(id) {
     const o = ofertas.find((x) => x.id === id);
     if (!o) return;
@@ -320,6 +401,8 @@
       linkCrm.classList.remove("inline-flex");
     }
 
+    pintarBannerProyectoOferta(ofertaActual);
+    pintarBloqueExcelOferta(ofertaActual);
     renderSubtareas();
     renderAdjuntos();
     renderRelevos();
@@ -416,32 +499,452 @@
     const titulo = document.getElementById("drawer-titulo").value.trim();
     if (!titulo) return mostrarAviso("El título es obligatorio", "error");
 
-    try {
-      const { error } = await window.sb
-        .from("crm_ofertas_preventa")
-        .update({
-          titulo,
-          responsable_id: document.getElementById("drawer-responsable").value || null,
-          cliente_id: document.getElementById("drawer-cliente").value || null,
-          empresa_id: document.getElementById("drawer-empresa").value || null,
-          prioridad: document.getElementById("drawer-prioridad").value,
-          fecha_limite: document.getElementById("drawer-fecha").value || null,
-          plazo_ejecucion: document.getElementById("of-plazo").value.trim() || null,
-          valor_estimado: valorMoneda(document.getElementById("drawer-valor")),
-          descripcion: document.getElementById("drawer-descripcion").value.trim() || null,
-          informe_levantamiento: document.getElementById("drawer-informe").value.trim() || null,
-          subtareas: ofertaActual.subtareas || [],
-          adjuntos: ofertaActual.adjuntos || [],
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", ofertaActual.id);
+    const trmRaw = document.getElementById("oferta-trm")?.value.trim() || "";
+    const trmVal = trmRaw === "" ? null : Number(trmRaw);
 
+    const payloadBase = {
+      titulo,
+      responsable_id: document.getElementById("drawer-responsable").value || null,
+      cliente_id: document.getElementById("drawer-cliente").value || null,
+      empresa_id: document.getElementById("drawer-empresa").value || null,
+      prioridad: document.getElementById("drawer-prioridad").value,
+      fecha_limite: document.getElementById("drawer-fecha").value || null,
+      plazo_ejecucion: document.getElementById("of-plazo").value.trim() || null,
+      valor_estimado: valorMoneda(document.getElementById("drawer-valor")),
+      descripcion: document.getElementById("drawer-descripcion").value.trim() || null,
+      informe_levantamiento: document.getElementById("drawer-informe").value.trim() || null,
+      subtareas: ofertaActual.subtareas || [],
+      adjuntos: ofertaActual.adjuntos || [],
+      updated_at: new Date().toISOString(),
+    };
+    const payloadConTrm = Number.isFinite(trmVal) ? { ...payloadBase, trm_oferta: trmVal } : payloadBase;
+
+    try {
+      let { error } = await window.sb.from("crm_ofertas_preventa").update(payloadConTrm).eq("id", ofertaActual.id);
+      if (error && (error.code === "42703" || error.code === "PGRST204" || /trm_oferta/i.test(String(error.message || "")))) {
+        const retry = await window.sb.from("crm_ofertas_preventa").update(payloadBase).eq("id", ofertaActual.id);
+        error = retry.error;
+      }
       if (error) throw error;
       mostrarAviso("Oferta actualizada.", "exito");
       cerrarDrawer();
       await cargarDatos();
     } catch (err) {
       manejarError(err, "No se pudo guardar la oferta");
+    }
+  }
+
+  async function subirExcelOferta(file) {
+    if (!ofertaActual || !file) return;
+    const estadoEl = document.getElementById("oferta-excel-estado");
+    const prevEl = document.getElementById("oferta-excel-preview");
+    if (estadoEl) estadoEl.textContent = `Subiendo ${file.name}...`;
+
+    try {
+      let trmDetectada = null;
+      let itemsCount = 0;
+      let ventaTotal = 0;
+      if (window.PCT?.leerLibroExcel && window.PCT?.parsearPresupuesto) {
+        try {
+          const libro = await window.PCT.leerLibroExcel(file);
+          const parsed = window.PCT.parsearPresupuesto(libro);
+          const soloItems = (parsed.items || []).filter((i) => i.tipo === "item");
+          itemsCount = soloItems.length;
+          ventaTotal = soloItems.reduce((s, i) => s + Number(i.cantidad || 0) * Number(i.pu_venta || 0), 0);
+          trmDetectada = parsed.trm_cotizacion || null;
+          if (trmDetectada) {
+            const trmEl = document.getElementById("oferta-trm");
+            if (trmEl && !trmEl.value) trmEl.value = trmDetectada;
+          }
+          if (prevEl && itemsCount > 0) {
+            prevEl.textContent = `Detectados ${itemsCount} ítem(s) · Venta CD: ${formatoMoneda(ventaTotal)}${trmDetectada ? ` · TRM ${trmDetectada}` : ""}`;
+          }
+        } catch (errParse) {
+          console.warn("No se pudo pre-analizar el Excel:", errParse);
+        }
+      }
+
+      const nombreLimpio = file.name.replace(/[^\w.\-]+/g, "_");
+      const storagePath = `ofertas/${ofertaActual.id}/${Date.now()}_${nombreLimpio}`;
+      const { error: errUp } = await window.sb.storage.from("documentos").upload(storagePath, file, { upsert: true });
+      if (errUp) throw errUp;
+
+      const patch = {
+        archivo_cotizacion_path: storagePath,
+        archivo_cotizacion_nombre: file.name,
+        updated_at: new Date().toISOString(),
+      };
+      if (trmDetectada) patch.trm_oferta = trmDetectada;
+
+      const { error: errDb } = await window.sb.from("crm_ofertas_preventa").update(patch).eq("id", ofertaActual.id);
+      if (errDb) {
+        const msg = String(errDb.message || "");
+        if (errDb.code === "42703" || errDb.code === "PGRST204" || /archivo_cotizacion|trm_oferta/i.test(msg)) {
+          // Fallback seguro en adjuntos JSONB si la migración SQL aún no se ejecuta
+          const adjActuales = Array.isArray(ofertaActual.adjuntos) ? ofertaActual.adjuntos.filter((a) => !a.storage_path) : [];
+          const urlPub = window.sb.storage.from("documentos").getPublicUrl(storagePath).data.publicUrl;
+          adjActuales.push({ id: Date.now(), nombre: file.name, url: urlPub, storage_path: storagePath });
+          const { error: errAdj } = await window.sb
+            .from("crm_ofertas_preventa")
+            .update({ adjuntos: adjActuales, updated_at: new Date().toISOString() })
+            .eq("id", ofertaActual.id);
+          if (errAdj) throw errAdj;
+          ofertaActual.adjuntos = adjActuales;
+          renderAdjuntos();
+        } else {
+          throw errDb;
+        }
+      } else {
+        ofertaActual.archivo_cotizacion_path = storagePath;
+        ofertaActual.archivo_cotizacion_nombre = file.name;
+        if (trmDetectada) ofertaActual.trm_oferta = trmDetectada;
+      }
+
+      pintarBloqueExcelOferta(ofertaActual);
+      if (prevEl && itemsCount > 0) {
+        prevEl.textContent = `Detectados ${itemsCount} ítem(s) · Venta CD: ${formatoMoneda(ventaTotal)}${trmDetectada ? ` · TRM ${trmDetectada}` : ""}`;
+      }
+      mostrarAviso("Archivo Excel adjuntado a la oferta.", "exito");
+      await cargarDatos();
+    } catch (err) {
+      manejarError(err, "No se pudo subir el Excel de cotización");
+      pintarBloqueExcelOferta(ofertaActual);
+    }
+  }
+
+  async function descargarExcelOferta() {
+    if (!ofertaActual) return;
+    const { path, nombre } = obtenerExcelDeOferta(ofertaActual);
+    if (!path) return;
+    try {
+      const { data, error } = await window.sb.storage.from("documentos").createSignedUrl(path, 120);
+      if (!error && data?.signedUrl) {
+        window.open(data.signedUrl, "_blank", "noopener");
+        return;
+      }
+      const { data: blob, error: errDl } = await window.sb.storage.from("documentos").download(path);
+      if (errDl) throw errDl;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = nombre || "Cotizacion.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (err) {
+      manejarError(err, "No se pudo descargar el archivo Excel");
+    }
+  }
+
+  function mostrarPreviewPuente(parsed, archivoNombre) {
+    const prevEl = document.getElementById("puente-excel-preview");
+    if (!prevEl) return;
+    if (!parsed || !Array.isArray(parsed.items)) {
+      prevEl.classList.add("hidden");
+      prevEl.innerHTML = "";
+      return;
+    }
+    const soloItems = parsed.items.filter((i) => i.tipo === "item");
+    const caps = parsed.items.length - soloItems.length;
+    const totalVenta = soloItems.reduce((s, i) => s + Number(i.cantidad || 0) * Number(i.pu_venta || 0), 0);
+    const totalCosto = soloItems.reduce((s, i) => s + Number(i.cantidad || 0) * Number(i.cu_material || 0), 0);
+    const conCosto = soloItems.filter((i) => Number(i.cu_material || 0) > 0).length;
+    if (parsed.trm_cotizacion) {
+      const trmInp = document.getElementById("puente-trm");
+      if (trmInp) trmInp.value = parsed.trm_cotizacion;
+    }
+    if (totalVenta > 0) {
+      establecerValorMoneda(document.getElementById("puente-valor"), totalVenta);
+    }
+    if (parsed.inicio?.proyecto?.tipo_contrato) {
+      const tcSel = document.getElementById("puente-tipo-contrato");
+      if (tcSel) tcSel.value = parsed.inicio.proyecto.tipo_contrato;
+    }
+    prevEl.classList.remove("hidden");
+    prevEl.innerHTML = `
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <span class="font-bold text-indigo-950">📄 ${escapeHtml(archivoNombre || "Excel cargado")}</span>
+        <span class="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">${soloItems.length} ítem(s) · ${caps} cap.</span>
+      </div>
+      <div class="mt-1.5 grid grid-cols-3 gap-2 text-[11px]">
+        <div><span class="text-gray-500">Venta (CD):</span> <strong class="text-gray-900">${formatoMoneda(totalVenta)}</strong></div>
+        <div><span class="text-gray-500">Costos (${conCosto}):</span> <strong class="text-gray-900">${formatoMoneda(totalCosto)}</strong></div>
+        <div><span class="text-gray-500">TRM:</span> <strong class="text-indigo-700">${parsed.trm_cotizacion ? formatoMoneda(parsed.trm_cotizacion) : "No detectada"}</strong></div>
+      </div>`;
+  }
+
+  async function parsearExcelFilePuente(file) {
+    if (!file || !window.PCT?.leerLibroExcel || !window.PCT?.parsearPresupuesto) return null;
+    const libro = await window.PCT.leerLibroExcel(file);
+    const inicio = window.PCT.parsearInicio?.(libro) || window.PCT.parsearEncabezadoCotizacion?.(libro) || null;
+    const pres = window.PCT.parsearPresupuesto(libro);
+    return { ...pres, inicio, archivoNombre: file.name };
+  }
+
+  async function abrirModalPuenteOferta() {
+    if (!ofertaActual) return;
+    puenteExcelData = null;
+    puenteArchivoFile = null;
+    document.getElementById("puente-excel").value = "";
+    document.getElementById("puente-docs").value = "";
+    document.getElementById("puente-docs-lista").textContent = "";
+    document.getElementById("puente-excel-preview").classList.add("hidden");
+
+    document.getElementById("puente-nombre").value = document.getElementById("drawer-titulo").value.trim() || ofertaActual.titulo || "";
+    document.getElementById("puente-cliente").value = document.getElementById("drawer-cliente").value || ofertaActual.cliente_id || "";
+    document.getElementById("puente-empresa").value = document.getElementById("drawer-empresa").value || ofertaActual.empresa_id || "";
+    const valorActual = valorMoneda(document.getElementById("drawer-valor")) || Number(ofertaActual.valor_estimado || 0);
+    establecerValorMoneda(document.getElementById("puente-valor"), valorActual);
+    document.getElementById("puente-trm").value = document.getElementById("oferta-trm")?.value || ofertaActual.trm_oferta || "";
+    document.getElementById("puente-tipo-contrato").value = "aiu";
+    document.getElementById("puente-categoria").value = "Instalación / Proyecto";
+
+    const banner = document.getElementById("puente-oferta-banner");
+    const { path, nombre } = obtenerExcelDeOferta(ofertaActual);
+    if (path && banner) {
+      banner.classList.remove("hidden");
+      banner.textContent = `⏳ Descargando cotización adjunta de Pre-venta (${nombre})...`;
+    } else if (banner) {
+      banner.classList.add("hidden");
+    }
+
+    document.getElementById("modal-puente-proyecto")?.classList.remove("hidden");
+
+    if (path) {
+      try {
+        const { data: blob, error } = await window.sb.storage.from("documentos").download(path);
+        if (error || !blob) throw error || new Error("No se pudo descargar");
+        const archivo = new File([blob], nombre || "Cotizacion.xlsx", {
+          type: blob.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        });
+        puenteArchivoFile = archivo;
+        puenteExcelData = await parsearExcelFilePuente(archivo);
+        if (banner) {
+          banner.innerHTML = `✅ <strong>Excel de Pre-venta cargado automáticamente:</strong> ${escapeHtml(nombre)}. Puedes reemplazarlo abajo si tienes una versión final.`;
+        }
+        mostrarPreviewPuente(puenteExcelData, nombre);
+      } catch (err) {
+        if (banner) {
+          banner.textContent = `ℹ️ Esta oferta tiene "${nombre}" adjunto, pero no se pudo descargar automáticamente. Puedes cargarlo abajo.`;
+        }
+      }
+    }
+  }
+
+  function cerrarModalPuenteOferta() {
+    document.getElementById("modal-puente-proyecto")?.classList.add("hidden");
+    puenteExcelData = null;
+    puenteArchivoFile = null;
+  }
+
+  async function ejecutarPuenteOferta(e) {
+    e.preventDefault();
+    if (!ofertaActual) return;
+    const nombre = document.getElementById("puente-nombre").value.trim();
+    if (!nombre) return mostrarAviso("Escribe el nombre del proyecto.", "error");
+
+    const btn = document.getElementById("btn-puente-submit");
+    const textoOrig = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Creando proyecto...";
+    }
+
+    try {
+      const clienteId = document.getElementById("puente-cliente").value || null;
+      const empresaId = document.getElementById("puente-empresa").value || null;
+      const valorBase = valorMoneda(document.getElementById("puente-valor"));
+      const trmRaw = document.getElementById("puente-trm").value.trim();
+      const trmVal = trmRaw === "" ? null : Number(trmRaw);
+      const tipoContrato = document.getElementById("puente-tipo-contrato").value || "aiu";
+      const categoria = document.getElementById("puente-categoria").value || "Instalación / Proyecto";
+      const hoyLocal = typeof fechaLocalISO === "function" ? fechaLocalISO() : new Date().toISOString().slice(0, 10);
+
+      let proyectoId = null;
+      let yaExistia = false;
+
+      // 1. Crear proyecto (intentar RPC si tiene oportunidad_id)
+      if (ofertaActual.oportunidad_id && typeof window.sb?.rpc === "function") {
+        try {
+          const { data: rpcRes, error: rpcErr } = await window.sb.rpc("rpc_convertir_oportunidad_a_proyecto", {
+            p_oportunidad_id: ofertaActual.oportunidad_id,
+            p_nombre: nombre,
+            p_codigo: null,
+          });
+          if (!rpcErr && rpcRes?.proyecto_id) {
+            proyectoId = rpcRes.proyecto_id;
+            yaExistia = rpcRes.ya_existia === true;
+          }
+        } catch (errRpc) { /* fallback a insert directo */ }
+      }
+
+      if (yaExistia && proyectoId) {
+        cerrarModalPuenteOferta();
+        cerrarDrawer();
+        await cargarDatos();
+        mostrarAviso("Esta oportunidad ya había sido convertida en proyecto. Abriendo proyecto existente...", "info");
+        if (window.PCT?.modal) {
+          window.PCT.modal({
+            titulo: "Proyecto ya existente",
+            html: `<p class="text-sm text-gray-700">Esta oportunidad ya había sido convertida previamente en un proyecto operativo. No se modificó ni se duplicó su presupuesto.</p>`,
+            botones: [
+              { texto: "Cerrar" },
+              {
+                texto: "Abrir Proyecto →",
+                clase: window.PCT.BTN_PRIMARIO,
+                onClick: () => {
+                  window.location.href = `proyecto-detalle.html?id=${proyectoId}`;
+                },
+              },
+            ],
+          });
+        } else {
+          window.location.href = `proyecto-detalle.html?id=${proyectoId}`;
+        }
+        return;
+      }
+
+      const extraInicio = puenteExcelData?.inicio?.proyecto || {};
+      const datosProyecto = {
+        nombre,
+        cliente_id: clienteId,
+        empresa_id: empresaId,
+        valor_antes_impuestos: valorBase,
+        tipo_contrato: tipoContrato,
+        tipo_proyecto: [categoria],
+        estado: "sin_iniciar",
+        fecha_inicio: hoyLocal,
+        fecha_fin_estimada: ofertaActual.fecha_limite || null,
+        created_by: usuarioActualId || null,
+      };
+      if (tipoContrato === "aiu") {
+        if (extraInicio.administracion_porcentaje !== undefined) datosProyecto.administracion_porcentaje = extraInicio.administracion_porcentaje;
+        if (extraInicio.imprevistos_porcentaje !== undefined) datosProyecto.imprevistos_porcentaje = extraInicio.imprevistos_porcentaje;
+        if (extraInicio.utilidad_porcentaje !== undefined) datosProyecto.utilidad_porcentaje = extraInicio.utilidad_porcentaje;
+      }
+      if (extraInicio.iva_porcentaje !== undefined) datosProyecto.iva_porcentaje = extraInicio.iva_porcentaje;
+      if (extraInicio.anticipo_porcentaje !== undefined) datosProyecto.anticipo_porcentaje = extraInicio.anticipo_porcentaje;
+      if (extraInicio.numero_cotizacion) datosProyecto.numero_cotizacion = extraInicio.numero_cotizacion;
+
+      if (!proyectoId) {
+        const { data: nuevoProy, error: errProy } = await window.sb
+          .from("proyectos")
+          .insert(datosProyecto)
+          .select()
+          .single();
+        if (errProy) throw errProy;
+        proyectoId = nuevoProy.id;
+      } else {
+        const { error: errUpd } = await window.sb.from("proyectos").update(datosProyecto).eq("id", proyectoId);
+        if (errUpd) {
+          const esColumnaFaltante =
+            errUpd.code === "42703" ||
+            errUpd.code === "PGRST204" ||
+            /column|schema cache/i.test(String(errUpd.message || ""));
+          if (esColumnaFaltante) {
+            console.warn("Algunas columnas opcionales del proyecto aún no están migradas:", errUpd);
+          } else {
+            console.warn("No se pudieron actualizar todos los datos iniciales del proyecto:", errUpd);
+            mostrarAviso("El proyecto se creó, pero no se pudieron guardar todos los datos iniciales.", "info");
+          }
+        }
+      }
+
+      if (trmVal && Number.isFinite(trmVal)) {
+        try {
+          const { error: errTrm } = await window.sb.from("proyectos").update({ trm_cotizacion: trmVal }).eq("id", proyectoId);
+          if (errTrm && errTrm.code !== "42703" && errTrm.code !== "PGRST204" && !/trm_cotizacion|column/i.test(String(errTrm.message || ""))) {
+            console.warn("No se pudo guardar la TRM de cotización del proyecto:", errTrm);
+          }
+        } catch (eTrm) { /* silencioso si la columna aún no está migrada */ }
+      }
+
+      // 2. Vincular oportunidad CRM si existe
+      if (ofertaActual.oportunidad_id) {
+        try {
+          await window.sb
+            .from("crm_oportunidades")
+            .update({
+              proyecto_id: proyectoId,
+              etapa: "ganada",
+              probabilidad: 100,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", ofertaActual.oportunidad_id);
+        } catch (eOp) { /* no bloqueante */ }
+      }
+
+      // 3. Importar Cotización + Presupuesto de costos en 1 solo paso
+      let itemsImportados = 0;
+      if (puenteExcelData?.items?.length && window.PCT?.insertarItems) {
+        itemsImportados = await window.PCT.insertarItems(proyectoId, puenteExcelData.items, 0);
+      }
+
+      // 4. Subir documentos de cierre + Excel cotización a Storage y tabla documentos
+      const docsInput = document.getElementById("puente-docs");
+      const docsCat = document.getElementById("puente-docs-categoria")?.value || "orden_compra";
+      const archivosSubir = [...(docsInput?.files || [])].map((f) => ({ file: f, categoria: docsCat }));
+      if (puenteArchivoFile) {
+        archivosSubir.push({ file: puenteArchivoFile, categoria: "cotizacion" });
+      }
+      for (const { file, categoria: cat } of archivosSubir) {
+        try {
+          const ruta = `${proyectoId}/cierre/${Date.now()}_${file.name.replace(/[^\w.\-]+/g, "_")}`;
+          const { error: errUp } = await window.sb.storage.from("documentos").upload(ruta, file, { upsert: true });
+          if (errUp) continue;
+          const url = window.sb.storage.from("documentos").getPublicUrl(ruta).data.publicUrl;
+          await window.sb.from("documentos").insert({
+            proyecto_id: proyectoId,
+            categoria: cat,
+            nombre_archivo: file.name,
+            url,
+            subido_por: usuarioActualId || null,
+          });
+        } catch (errDoc) {
+          console.warn("No se pudo adjuntar documento de cierre:", errDoc);
+        }
+      }
+
+      // 5. Notificación a proyectos/directivos
+      if (typeof window.PCT_NOTIFICAR === "function") {
+        await window.PCT_NOTIFICAR({
+          tipo: "nuevo_proyecto",
+          titulo: `Nuevo proyecto creado: ${nombre}`,
+          mensaje: `Enviado desde Ofertas Pre-venta${itemsImportados ? ` con ${itemsImportados} filas importadas` : ""}.`,
+          url: `proyecto-detalle.html?id=${proyectoId}`,
+          rol_destino: ["super_usuario", "directivo", "proyectos"],
+          proyecto_id: proyectoId,
+        });
+      }
+
+      cerrarModalPuenteOferta();
+      cerrarDrawer();
+      await cargarDatos();
+      mostrarAviso(`¡Proyecto "${nombre}" creado con éxito!`, "exito");
+      if (window.PCT?.modal) {
+        window.PCT.modal({
+          titulo: "¡Proyecto creado en 1 paso!",
+          html: `<p class="text-sm text-gray-700">El proyecto <strong>${escapeHtml(nombre)}</strong> ya está listo${itemsImportados ? ` con <strong>${itemsImportados}</strong> renglones de Cotización y Costos cargados` : ""}.</p>`,
+          botones: [
+            { texto: "Quedarme en Ofertas" },
+            {
+              texto: "Abrir Proyecto →",
+              clase: window.PCT.BTN_PRIMARIO,
+              onClick: () => {
+                window.location.href = `proyecto-detalle.html?id=${proyectoId}`;
+              },
+            },
+          ],
+        });
+      }
+    } catch (err) {
+      manejarError(err, "No se pudo crear el proyecto desde la oferta");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = textoOrig;
+      }
     }
   }
 
@@ -613,6 +1116,40 @@
     document.getElementById("drawer-backdrop")?.addEventListener("click", cerrarDrawer);
     document.getElementById("btn-drawer-guardar")?.addEventListener("click", guardarOferta);
     document.getElementById("btn-drawer-eliminar")?.addEventListener("click", eliminarOferta);
+    document.getElementById("btn-oferta-enviar-proyecto")?.addEventListener("click", abrirModalPuenteOferta);
+    document.getElementById("btn-oferta-excel-descargar")?.addEventListener("click", descargarExcelOferta);
+    document.getElementById("oferta-excel-input")?.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (file) subirExcelOferta(file);
+    });
+
+    // Modal Puente de Cierre Ganado -> Nuevo Proyecto
+    document.getElementById("btn-puente-cerrar")?.addEventListener("click", cerrarModalPuenteOferta);
+    document.getElementById("btn-puente-cancelar")?.addEventListener("click", cerrarModalPuenteOferta);
+    document.getElementById("form-puente-proyecto")?.addEventListener("submit", ejecutarPuenteOferta);
+    document.getElementById("puente-excel")?.addEventListener("change", async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        puenteArchivoFile = file;
+        puenteExcelData = await parsearExcelFilePuente(file);
+        mostrarPreviewPuente(puenteExcelData, file.name);
+      } catch (err) {
+        puenteExcelData = null;
+        puenteArchivoFile = null;
+        mostrarAviso(err.message || "No se pudo leer el archivo Excel", "error");
+      }
+    });
+    document.getElementById("puente-docs")?.addEventListener("change", (e) => {
+      const files = [...(e.target.files || [])];
+      const listaEl = document.getElementById("puente-docs-lista");
+      if (listaEl) {
+        listaEl.textContent = files.length
+          ? `${files.length} archivo(s) seleccionado(s): ${files.map((f) => f.name).join(", ")}`
+          : "";
+      }
+    });
 
     document.getElementById("drawer-estado")?.addEventListener("change", (e) => {
       if (ofertaActual && e.target.value !== ofertaActual.estado) {

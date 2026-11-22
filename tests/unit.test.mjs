@@ -268,3 +268,91 @@ test("proy/core.js: alertasProyecto detecta tareas vencidas, margen negativo, so
   assert.ok(Array.isArray(sinAlertas));
   assert.equal(sinAlertas.length, 0);
 });
+
+test("proy/core.js: calcPapelVsReal calcula papel vs real con ajustes por ítem y override de proyecto", () => {
+  const proyectoBase = { iva_materiales: false, iva_porcentaje: 19, falta_real_override: null };
+  const items = [
+    { tipo: "capitulo", descripcion: "Suministros" },
+    // cu_mano_obra > 0 NO debe inflar pptoPapel: debe coincidir con calcItem.costoTotal (solo material)
+    {
+      tipo: "item",
+      cantidad: 10,
+      cu_material: 100000,
+      cu_mano_obra: 50000,
+      pu_venta: 180000,
+      costo_real_estimado_total: 800000,
+    },
+    {
+      tipo: "item",
+      cantidad: 5,
+      cu_material: 200000,
+      cu_mano_obra: 30000,
+      pu_venta: 300000,
+      costo_real_estimado_total: null,
+    },
+  ];
+
+  // calcItem.costoTotal: item1 = 1,000,000; item2 = 1,000,000 -> total papel = 2,000,000
+  const esperadoPapel =
+    PCT.calcItem(items[1], proyectoBase).costoTotal + PCT.calcItem(items[2], proyectoBase).costoTotal;
+  assert.equal(esperadoPapel, 2000000);
+
+  const res = PCT.calcPapelVsReal(items, 500000, proyectoBase);
+  assert.equal(res.pptoPapel, esperadoPapel);
+  assert.equal(res.costoEstimadoReal, 1800000); // 800,000 (ajuste) + 1,000,000 (papel)
+  assert.equal(res.gastadoReal, 500000);
+  assert.equal(res.faltaPapel, 1500000);
+  assert.equal(res.faltaReal, 1300000);
+  assert.equal(res.ahorroProyectado, 200000);
+  assert.equal(res.tieneOverride, false);
+
+  // Override manual a nivel de proyecto debe tomar precedencia sobre los ajustes por ítem
+  const resOverride = PCT.calcPapelVsReal(items, 500000, { ...proyectoBase, falta_real_override: 950000 });
+  assert.equal(resOverride.tieneOverride, true);
+  assert.equal(resOverride.faltaPapel, 1500000);
+  assert.equal(resOverride.faltaReal, 950000);
+  assert.equal(resOverride.ahorroProyectado, 550000);
+});
+
+test("proy/importar.js: parsearPresupuesto extrae costos internos en USD y TRM en un solo paso", () => {
+  const filasCotizador = [
+    ["#", "REFERENCIA", "DESCRIPCIÓN", "CANT.", "UNIDAD", "MARCA", "Precio Unitario", "Subtotal", "", "Costo", "Moneda", "TRM"],
+    ["SUMINISTRO DE EQUIPOS"],
+    ["1", "CAM-4MP", "Cámara IP 4MP Domo", 5, "UND", "Hikvision", 750000, 3750000, "", 100, "USD", 4200],
+    ["2", "CAB-UTP", "Cable UTP Cat 6A", 2, "ROLLO", "Panduit", 450000, 900000, "", 280000, "COP", ""],
+    ["TOTAL OFERTA SUMINISTROS", "", "", "", "", "", "", 4650000],
+  ];
+
+  const prevXlsx = ctx.XLSX;
+  ctx.XLSX = {
+    utils: {
+      sheet_to_json: (ws) => ws,
+    },
+  };
+  try {
+    const libro = {
+      SheetNames: ["Cotizador"],
+      Sheets: { Cotizador: filasCotizador },
+    };
+    const res = PCT.parsearPresupuesto(libro);
+    assert.equal(res.trm_cotizacion, 4200);
+    assert.ok(res.columnas.includes("cu_material"));
+
+    const soloItems = res.items.filter((i) => i.tipo === "item");
+    assert.equal(soloItems.length, 2);
+
+    const itemUsd = soloItems[0];
+    assert.equal(itemUsd.pu_venta, 750000);
+    assert.equal(itemUsd.moneda_costo, "USD");
+    assert.equal(itemUsd.costo_origen_usd, 100);
+    assert.equal(itemUsd.cu_material, 420000);
+
+    const itemCop = soloItems[1];
+    assert.equal(itemCop.pu_venta, 450000);
+    assert.equal(itemCop.moneda_costo, "COP");
+    assert.equal(itemCop.costo_origen_usd, null);
+    assert.equal(itemCop.cu_material, 280000);
+  } finally {
+    ctx.XLSX = prevXlsx;
+  }
+});

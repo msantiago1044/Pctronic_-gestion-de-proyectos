@@ -225,6 +225,55 @@ _globalRoot.PCT = _globalRoot.PCT || {};
   };
 
   // --------------------------------------------------------------------
+  // CÁLCULOS · En Papel vs. Real (caja requerida para terminar el proyecto)
+  // --------------------------------------------------------------------
+  PCT.calcPapelVsReal = (
+    items = PCT.estado.items,
+    gastadoReal = PCT.estado.finanzas?.gastado,
+    proyecto = PCT.estado.proyecto
+  ) => {
+    const lista = Array.isArray(items) ? items : [];
+    const p = proyecto || {};
+    let pptoPapel = 0;
+    let costoEstimadoReal = 0;
+
+    lista.forEach((it) => {
+      const c = PCT.calcItem(it, p);
+      if (!c) return;
+      const costoPapelItem = PCT.num(c.costoTotal);
+      pptoPapel += costoPapelItem;
+      const tieneReal =
+        it.costo_real_estimado_total !== null &&
+        it.costo_real_estimado_total !== undefined &&
+        it.costo_real_estimado_total !== "" &&
+        Number.isFinite(Number(it.costo_real_estimado_total));
+      costoEstimadoReal += tieneReal ? Math.max(0, Number(it.costo_real_estimado_total)) : costoPapelItem;
+    });
+
+    const gastado = Math.max(0, PCT.num(gastadoReal));
+    const faltaPapel = Math.max(0, pptoPapel - gastado);
+    const tieneOverride =
+      p.falta_real_override !== null &&
+      p.falta_real_override !== undefined &&
+      p.falta_real_override !== "" &&
+      Number.isFinite(Number(p.falta_real_override));
+    const faltaReal = tieneOverride
+      ? Math.max(0, Number(p.falta_real_override))
+      : Math.max(0, costoEstimadoReal - gastado);
+    const ahorroProyectado = faltaPapel - faltaReal;
+
+    return {
+      pptoPapel,
+      costoEstimadoReal,
+      gastadoReal: gastado,
+      faltaPapel,
+      faltaReal,
+      ahorroProyectado,
+      tieneOverride,
+    };
+  };
+
+  // --------------------------------------------------------------------
   // CÁLCULOS · hoja INICIO (valor del contrato, AIU, anticipo)
   // --------------------------------------------------------------------
   // `cd` = costo directo = subtotal de la cotización. Por defecto el que mantiene la base de datos.
@@ -577,6 +626,7 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     calcItem: _globalRoot.PCT.calcItem,
     resumenPresupuesto: _globalRoot.PCT.resumenPresupuesto,
+    calcPapelVsReal: _globalRoot.PCT.calcPapelVsReal,
     contrato: _globalRoot.PCT.contrato,
     margenActual: _globalRoot.PCT.margenActual,
     avanceFisico: _globalRoot.PCT.avanceFisico,

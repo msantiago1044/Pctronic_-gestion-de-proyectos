@@ -193,16 +193,257 @@ function renderTopbar(titulo) {
   return `
   <header class="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-gray-200 bg-white px-6">
     <h1 class="text-lg font-bold text-gray-900">${escapeHtml(titulo || "")}</h1>
-    <a href="perfil.html" class="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-gray-50" title="Mi perfil">
-      <div class="text-right leading-tight hidden sm:block">
-        <p id="topbar-nombre" class="text-sm font-semibold text-gray-800">—</p>
-        <p id="topbar-rol" class="text-xs text-gray-500">—</p>
+    <div class="flex items-center gap-2">
+      <div class="relative" id="notif-wrap">
+        <button type="button" id="btn-notif-bell" aria-label="Notificaciones" aria-expanded="false" title="Notificaciones"
+          class="relative flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors">
+          <span class="material-symbols-outlined text-[22px]" aria-hidden="true">notifications</span>
+          <span id="notif-badge" class="hidden absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-bold flex items-center justify-center leading-none">0</span>
+        </button>
+        <div id="notif-popover" class="hidden absolute right-0 mt-2 w-80 sm:w-96 rounded-xl border border-gray-200 bg-white shadow-xl z-50 overflow-hidden">
+          <div class="flex items-center justify-between border-b border-gray-100 px-4 py-3 bg-gray-50/70">
+            <span class="text-xs font-bold uppercase tracking-wider text-gray-700">Notificaciones</span>
+            <button type="button" id="btn-notif-marcar-todas" class="text-[11px] font-semibold text-primary hover:underline">
+              Marcar todas como leídas
+            </button>
+          </div>
+          <div id="notif-lista" class="max-h-80 overflow-y-auto divide-y divide-gray-100">
+            <p class="px-4 py-6 text-center text-xs text-gray-400">Sin notificaciones recientes.</p>
+          </div>
+        </div>
       </div>
-      <div class="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-primary/10 text-primary font-bold text-sm bg-cover bg-center" id="topbar-avatar">
-        ?
-      </div>
-    </a>
+      <a href="perfil.html" class="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-gray-50" title="Mi perfil">
+        <div class="text-right leading-tight hidden sm:block">
+          <p id="topbar-nombre" class="text-sm font-semibold text-gray-800">—</p>
+          <p id="topbar-rol" class="text-xs text-gray-500">—</p>
+        </div>
+        <div class="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-primary/10 text-primary font-bold text-sm bg-cover bg-center" id="topbar-avatar">
+          ?
+        </div>
+      </a>
+    </div>
   </header>`;
+}
+
+function sanitizarUrlNotif(rawUrl) {
+  const s = String(rawUrl || "").trim();
+  if (!s) return "";
+  if (/^[a-z0-9_\-]+\.html([?#][^\s<>'"]*)?$/i.test(s)) return s;
+  if (typeof urlSegura === "function") return urlSegura(s);
+  return "";
+}
+
+function tiempoRelativoNotif(fechaIso) {
+  if (!fechaIso) return "";
+  const d = new Date(fechaIso);
+  if (isNaN(d.getTime())) return "";
+  const diffSeg = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+  if (diffSeg < 60) return "Hace un momento";
+  const mins = Math.floor(diffSeg / 60);
+  if (mins < 60) return `Hace ${mins} min`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `Hace ${hrs} h`;
+  const dias = Math.floor(hrs / 24);
+  if (dias < 30) return `Hace ${dias} d`;
+  return typeof formatoFecha === "function" ? formatoFecha(fechaIso) : d.toLocaleDateString("es-CO");
+}
+
+window.PCT_NOTIFICAR = async function ({ tipo = "info", titulo, mensaje = "", url = null, rol_destino = null, usuario_destino = null, proyecto_id = null } = {}) {
+  if (!titulo || !window.sb) return;
+  try {
+    const { data: sessionData } = await window.sb.auth.getSession();
+    const uid = sessionData?.session?.user?.id || null;
+    const roles = Array.isArray(rol_destino)
+      ? rol_destino
+      : rol_destino
+        ? [rol_destino]
+        : usuario_destino
+          ? []
+          : ["super_usuario", "directivo", "proyectos"];
+    const { error } = await window.sb.from("notificaciones").insert({
+      tipo,
+      titulo: String(titulo).slice(0, 200),
+      mensaje: String(mensaje || "").slice(0, 500),
+      url: url || null,
+      rol_destino: roles,
+      usuario_destino: usuario_destino || null,
+      proyecto_id: proyecto_id || null,
+      leida_por: [],
+      creado_por: uid,
+    });
+    if (error) return;
+  } catch (e) {
+    // Silencioso si la tabla `notificaciones` aún no ha sido migrada
+  }
+};
+
+function inicializarNotificaciones({ session, rolNorm }) {
+  const wrap = document.getElementById("notif-wrap");
+  const btn = document.getElementById("btn-notif-bell");
+  const badge = document.getElementById("notif-badge");
+  const popover = document.getElementById("notif-popover");
+  const listaEl = document.getElementById("notif-lista");
+  const btnMarcarTodas = document.getElementById("btn-notif-marcar-todas");
+  if (!wrap || !btn || !badge || !popover || !listaEl || !session?.user?.id) return;
+
+  const uid = session.user.id;
+  let items = [];
+  let tablaDisponible = true;
+
+  const esNoLeida = (n) => !Array.isArray(n.leida_por) || !n.leida_por.includes(uid);
+
+  const iconoPorTipo = (tipo) => {
+    const mapa = {
+      nuevo_proyecto: "rocket_launch",
+      corte_facturado: "receipt_long",
+      compra: "shopping_cart",
+      oferta: "assignment",
+      alerta: "warning",
+    };
+    return mapa[tipo] || "notifications";
+  };
+
+  const pintar = () => {
+    const noLeidas = items.filter(esNoLeida).length;
+    if (noLeidas > 0) {
+      badge.textContent = noLeidas > 9 ? "9+" : String(noLeidas);
+      badge.classList.remove("hidden");
+    } else {
+      badge.textContent = "0";
+      badge.classList.add("hidden");
+    }
+
+    if (!items.length) {
+      listaEl.innerHTML = `<p class="px-4 py-6 text-center text-xs text-gray-400">No tienes notificaciones por ahora.</p>`;
+      return;
+    }
+
+    listaEl.innerHTML = items
+      .map((n) => {
+        const unread = esNoLeida(n);
+        const href = sanitizarUrlNotif(n.url);
+        return `
+          <div data-notif-id="${escapeHtml(n.id)}" data-notif-url="${escapeHtml(href)}"
+            class="flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors ${unread ? "bg-blue-50/60 hover:bg-blue-50" : "bg-white hover:bg-gray-50"}">
+            <div class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${unread ? "bg-primary text-white" : "bg-gray-100 text-gray-500"}">
+              <span class="material-symbols-outlined text-[15px]" aria-hidden="true">${iconoPorTipo(n.tipo)}</span>
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center justify-between gap-2">
+                <p class="text-xs font-semibold text-gray-900 truncate">${escapeHtml(n.titulo || "Notificación")}</p>
+                ${unread ? `<span class="h-2 w-2 shrink-0 rounded-full bg-primary" title="No leída"></span>` : ""}
+              </div>
+              ${n.mensaje ? `<p class="mt-0.5 text-[11px] text-gray-600 line-clamp-2">${escapeHtml(n.mensaje)}</p>` : ""}
+              <p class="mt-1 text-[10px] text-gray-400">${escapeHtml(tiempoRelativoNotif(n.created_at))}</p>
+            </div>
+          </div>`;
+      })
+      .join("");
+  };
+
+  const cargar = async () => {
+    if (!tablaDisponible) return;
+    try {
+      const { data, error } = await window.sb
+        .from("notificaciones")
+        .select("id, created_at, tipo, titulo, mensaje, url, rol_destino, usuario_destino, proyecto_id, leida_por, creado_por")
+        .order("created_at", { ascending: false })
+        .limit(30);
+      if (error) {
+        tablaDisponible = false;
+        items = [];
+        pintar();
+        return;
+      }
+      const raw = data || [];
+      items = raw
+        .filter((n) => {
+          const roles = Array.isArray(n.rol_destino) ? n.rol_destino : [];
+          if (n.usuario_destino && n.usuario_destino === uid) return true;
+          if (roles.length && (roles.includes(rolNorm) || (rolNorm === "super_usuario" && roles.includes("admin")))) return true;
+          return !n.usuario_destino && roles.length === 0;
+        })
+        .slice(0, 20);
+      pintar();
+    } catch (e) {
+      tablaDisponible = false;
+      items = [];
+      pintar();
+    }
+  };
+
+  const marcarLeida = async (notif) => {
+    if (!notif || !esNoLeida(notif) || !tablaDisponible) return;
+    const nuevoArr = Array.from(new Set([...(Array.isArray(notif.leida_por) ? notif.leida_por : []), uid]));
+    notif.leida_por = nuevoArr;
+    pintar();
+    try {
+      if (typeof window.sb?.rpc === "function") {
+        const { error: rpcErr } = await window.sb.rpc("rpc_marcar_notificacion_leida", { p_id: notif.id });
+        if (!rpcErr) return;
+      }
+      await window.sb.from("notificaciones").update({ leida_por: nuevoArr }).eq("id", notif.id);
+    } catch (e) {
+      /* silencioso */
+    }
+  };
+
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const abierto = popover.classList.toggle("hidden") === false;
+    btn.setAttribute("aria-expanded", abierto ? "true" : "false");
+    if (abierto) cargar();
+  });
+
+  btnMarcarTodas?.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const pendientes = items.filter(esNoLeida);
+    if (!pendientes.length || !tablaDisponible) return;
+    const actualizaciones = pendientes.map((n) => {
+      const nuevoArr = Array.from(new Set([...(Array.isArray(n.leida_por) ? n.leida_por : []), uid]));
+      n.leida_por = nuevoArr;
+      return { id: n.id, leida_por: nuevoArr };
+    });
+    pintar();
+    try {
+      if (typeof window.sb?.rpc === "function") {
+        const { error: rpcErr } = await window.sb.rpc("rpc_marcar_todas_notificaciones_leidas");
+        if (!rpcErr) return;
+      }
+      await Promise.all(
+        actualizaciones.map((a) => window.sb.from("notificaciones").update({ leida_por: a.leida_por }).eq("id", a.id))
+      );
+    } catch (err) {
+      /* silencioso */
+    }
+  });
+
+  listaEl.addEventListener("click", async (e) => {
+    const row = e.target.closest("[data-notif-id]");
+    if (!row) return;
+    const notif = items.find((x) => String(x.id) === String(row.dataset.notifId));
+    const url = row.dataset.notifUrl;
+    if (notif) await marcarLeida(notif);
+    popover.classList.add("hidden");
+    btn.setAttribute("aria-expanded", "false");
+    if (url) window.location.href = url;
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!popover.classList.contains("hidden") && !wrap.contains(e.target)) {
+      popover.classList.add("hidden");
+      btn.setAttribute("aria-expanded", "false");
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !popover.classList.contains("hidden")) {
+      popover.classList.add("hidden");
+      btn.setAttribute("aria-expanded", "false");
+    }
+  });
+
+  cargar();
 }
 
 async function inicializarApp() {
@@ -373,6 +614,7 @@ async function inicializarApp() {
   }
 
   if (session && page !== "login" && page !== "index") {
+    inicializarNotificaciones({ session, rolNorm });
     montarBurbujaFeedback({ session, profile, page, title: titulo, rolNorm });
   }
 

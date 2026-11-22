@@ -30,6 +30,7 @@
     cu_material: { l: "C.U. material (sin IVA)", f: "cu_material", t: "money", w: "w-28", nullable: true },
     cu_mat_iva: { l: "C.U. material (con IVA)", calc: (c) => c.cuMatIva, fmt: "money" },
     costo_total: { l: "Costo total", calc: (c) => c.costoTotal, fmt: "money" },
+    costo_real_estimado_total: { l: "Costo Real Est.", f: "costo_real_estimado_total", t: "money", w: "w-32", nullable: true },
     margen: { l: "Margen $", calc: (c) => c.margen, fmt: "money" },
     margen_pct: { l: "Margen %", calc: (c) => c.margenPct, fmt: "pct" },
     es_adicional: { l: "Adic.", f: "es_adicional", t: "check", w: "w-12" },
@@ -51,7 +52,7 @@
       vistas: {
         costos: {
           etiqueta: "Costos",
-          cols: ["codigo", "descripcion", "unidad", "cantidad", "total_venta", "cu_material", "cu_mat_iva", "costo_total", "margen", "margen_pct"],
+          cols: ["codigo", "descripcion", "unidad", "cantidad", "total_venta", "cu_material", "cu_mat_iva", "costo_total", "costo_real_estimado_total", "margen", "margen_pct"],
           resumen: "costo_total",
         },
       },
@@ -126,6 +127,7 @@
     root.innerHTML = `
       <div class="space-y-4">
         <div id="pres-kpis" class="${PCT.CLASE_PANEL_KPIS}"></div>
+        ${esCostos ? `<div id="pres-papel-real" class="rounded-xl border border-indigo-200 bg-indigo-50/40 p-4 space-y-3"></div>` : ""}
 
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div id="pres-vistas" class="flex flex-wrap gap-1.5"></div>
@@ -148,9 +150,128 @@
     const tfoot = root.querySelector("tfoot");
 
     // ------------------------------------------------------------------
-    // KPIs
+    // KPIs + Resumen En Papel vs. Real (Caja Requerida)
     // ------------------------------------------------------------------
     const tarjeta = (titulo, valor, sub = "") => PCT.tarjetaKpi(titulo, valor, sub);
+
+    const pintarPapelVsReal = () => {
+      if (!esCostos) return;
+      const box = root.querySelector("#pres-papel-real");
+      if (!box) return;
+      const p = PCT.estado.proyecto || {};
+      const pr = PCT.calcPapelVsReal(PCT.estado.items, PCT.estado.finanzas?.gastado, p);
+      const colorAhorro =
+        pr.ahorroProyectado > 0 ? "text-emerald-700" : pr.ahorroProyectado < 0 ? "text-red-600" : "text-gray-900";
+      const trmTxt = PCT.num(p.trm_cotizacion) > 0 ? `TRM cotización: ${formatoMoneda(p.trm_cotizacion)}` : "";
+      box.innerHTML = `
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 class="text-xs font-bold uppercase tracking-wide text-indigo-950 flex items-center gap-1.5">
+              <span class="material-symbols-outlined text-[16px] text-indigo-600" aria-hidden="true">account_balance_wallet</span>
+              En Papel vs. Real (Caja Requerida)
+              ${pr.tieneOverride ? `<span class="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-800">Ajuste manual activo</span>` : ""}
+              ${trmTxt ? `<span class="rounded-full bg-white border border-indigo-200 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">${escapeHtml(trmTxt)}</span>` : ""}
+            </h3>
+            ${p.nota_falta_real ? `<p class="mt-0.5 text-[11px] text-indigo-800/80">Nota: ${escapeHtml(p.nota_falta_real)}</p>` : `<p class="mt-0.5 text-[11px] text-indigo-800/70">Compara el costo presupuestado en papel contra lo que realmente hace falta en caja para terminar la obra.</p>`}
+          </div>
+          <button type="button" id="btn-ajustar-falta-real"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-indigo-300 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-800 hover:bg-indigo-50 shadow-sm">
+            <span class="material-symbols-outlined text-[15px]" aria-hidden="true">tune</span>
+            Ajustar Falta Real del Proyecto
+          </button>
+        </div>
+        <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
+          <div class="rounded-lg border border-gray-200 bg-white px-3 py-2.5">
+            <p class="text-[10px] font-semibold uppercase text-gray-500">Ppto. Base (En papel)</p>
+            <p class="mt-0.5 text-sm font-bold tabular-nums text-gray-900">${formatoMoneda(pr.pptoPapel)}</p>
+          </div>
+          <div class="rounded-lg border border-gray-200 bg-white px-3 py-2.5">
+            <p class="text-[10px] font-semibold uppercase text-gray-500">Gastado real</p>
+            <p class="mt-0.5 text-sm font-bold tabular-nums text-gray-900">${formatoMoneda(pr.gastadoReal)}</p>
+          </div>
+          <div class="rounded-lg border border-gray-200 bg-white px-3 py-2.5">
+            <p class="text-[10px] font-semibold uppercase text-gray-500">Falta en papel</p>
+            <p class="mt-0.5 text-sm font-bold tabular-nums text-gray-700">${formatoMoneda(pr.faltaPapel)}</p>
+          </div>
+          <div class="rounded-lg border border-indigo-200 bg-white px-3 py-2.5 ring-1 ring-indigo-100">
+            <p class="text-[10px] font-semibold uppercase text-indigo-700">Falta real (caja)</p>
+            <p class="mt-0.5 text-sm font-bold tabular-nums text-indigo-900">${formatoMoneda(pr.faltaReal)}</p>
+          </div>
+          <div class="rounded-lg border border-gray-200 bg-white px-3 py-2.5">
+            <p class="text-[10px] font-semibold uppercase text-gray-500">Ahorro proyectado</p>
+            <p class="mt-0.5 text-sm font-bold tabular-nums ${colorAhorro}">${formatoMoneda(pr.ahorroProyectado)}</p>
+          </div>
+        </div>`;
+
+      box.querySelector("#btn-ajustar-falta-real")?.addEventListener("click", () => {
+        const proy = PCT.estado.proyecto || {};
+        const prActual = PCT.calcPapelVsReal(PCT.estado.items, PCT.estado.finanzas?.gastado, proy);
+        const modal = PCT.modal({
+          titulo: "Ajustar Falta Real del Proyecto (Caja)",
+          ancho: "max-w-md",
+          html: `
+            <div class="space-y-3 text-xs">
+              <p class="text-gray-600">
+                Calculado por ítems: <b>${formatoMoneda(Math.max(0, prActual.costoEstimadoReal - prActual.gastadoReal))}</b>.
+                Deja el campo vacío para volver al cálculo automático por ítem.
+              </p>
+              <div>
+                <label class="mb-1 block font-medium text-gray-700">Falta real manual (COP)</label>
+                <input id="adj-falta-real" type="text" inputmode="decimal" placeholder="Automático por ítems"
+                  class="input-moneda w-full rounded-lg border-gray-300 text-sm font-semibold focus:border-primary focus:ring-primary" />
+              </div>
+              <div>
+                <label class="mb-1 block font-medium text-gray-700">TRM de cotización (opcional)</label>
+                <input id="adj-trm" type="number" step="0.01" min="0" value="${proy.trm_cotizacion ?? ""}" placeholder="Ej. 4200"
+                  class="w-full rounded-lg border-gray-300 text-sm focus:border-primary focus:ring-primary" />
+              </div>
+              <div>
+                <label class="mb-1 block font-medium text-gray-700">Nota de ajuste real</label>
+                <textarea id="adj-nota" rows="2" placeholder="Ej. Cableado y equipos críticos ya en bodega..."
+                  class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">${escapeHtml(proy.nota_falta_real || "")}</textarea>
+              </div>
+            </div>`,
+          botones: [
+            { texto: "Cancelar" },
+            {
+              texto: "Guardar ajuste",
+              clase: PCT.BTN_PRIMARIO,
+              onClick: async ({ el }) => {
+                const rawFalta = el.querySelector("#adj-falta-real").value.trim();
+                const faltaOverride = rawFalta === "" ? null : valorMoneda(el.querySelector("#adj-falta-real"));
+                const rawTrm = el.querySelector("#adj-trm").value.trim();
+                const trmVal = rawTrm === "" ? null : PCT.num(rawTrm);
+                const notaVal = el.querySelector("#adj-nota").value.trim() || null;
+
+                const patch = {
+                  falta_real_override: faltaOverride,
+                  nota_falta_real: notaVal,
+                  trm_cotizacion: trmVal,
+                };
+                const { error } = await window.sb.from("proyectos").update(patch).eq("id", proy.id);
+                if (error) {
+                  const msg = String(error.message || "");
+                  if (error.code === "42703" || error.code === "PGRST204" || /falta_real_override|nota_falta_real|trm_cotizacion/i.test(msg)) {
+                    mostrarAviso("Aún falta ejecutar la migración SQL (migracion_2026-11_comite_mejoras.sql) en Supabase para guardar el ajuste real.", "error");
+                    return false;
+                  }
+                  manejarError(error, "No se pudo guardar el ajuste");
+                  return false;
+                }
+                Object.assign(PCT.estado.proyecto, patch);
+                pintarPapelVsReal();
+                PCT.emit("proyecto");
+                mostrarAviso("Ajuste de caja real guardado.", "exito");
+              },
+            },
+          ],
+        });
+        activarCamposMoneda(".input-moneda", modal.el);
+        if (proy.falta_real_override !== null && proy.falta_real_override !== undefined) {
+          establecerValorMoneda(modal.el.querySelector("#adj-falta-real"), proy.falta_real_override);
+        }
+      });
+    };
 
     const pintarKpis = () => {
       const { base, adic } = PCT.resumenPresupuesto();
@@ -178,6 +299,7 @@
           tarjeta("Ítems sin costo", String(sinCosto), sinCosto ? "Faltan costos por llenar" : "Todos tienen costo");
       }
       root.querySelector("#pres-kpis").innerHTML = html;
+      pintarPapelVsReal();
     };
 
     // ------------------------------------------------------------------
@@ -243,12 +365,52 @@
       return PCT.estado.items.filter((i) => i.tipo === "item" && i.es_adicional);
     };
 
+    const obtenerSeleccionables = () => {
+      if (!esCostos) return [];
+      const items = filasVisibles();
+      const res = [];
+      let capCol = false;
+      let subCol = false;
+      for (const item of items) {
+        if (item.tipo !== "item") {
+          if (item.tipo === "capitulo") {
+            capCol = capitulosColapsados.has(item.id);
+            subCol = false;
+          } else {
+            subCol = capitulosColapsados.has(item.id);
+          }
+          continue;
+        }
+        if (capCol || subCol) continue;
+        const cantPend = Math.max(0, PCT.num(item.cantidad) - (cantCompradaMap.get(item.id) || 0));
+        if (cantPend > 0) res.push(item);
+      }
+      return res;
+    };
+
+    const actualizarContadorCompra = () => {
+      const el = root.querySelector("#pres-sel-count");
+      if (el) el.textContent = String(seleccionadosCompra.size);
+    };
+
+    const sincronizarSelectAll = () => {
+      if (!esCostos) return;
+      const chkAll = thead.querySelector("#pres-sel-todos");
+      if (!chkAll) return;
+      const seleccionables = obtenerSeleccionables();
+      const marcados = seleccionables.filter((i) => seleccionadosCompra.has(i.id)).length;
+      chkAll.disabled = seleccionables.length === 0;
+      chkAll.checked = seleccionables.length > 0 && marcados === seleccionables.length;
+      chkAll.indeterminate = marcados > 0 && marcados < seleccionables.length;
+      actualizarContadorCompra();
+    };
+
     const pintarTabla = () => {
       const v = VISTAS[vista];
       const cols = v.cols.map((k) => COL[k]);
       const extraCols = esCostos ? 4 : 0;
       thead.innerHTML = `<tr>
-        ${esCostos ? `<th class="w-8 px-2 py-2 text-center"><input type="checkbox" id="pres-sel-todos" title="Seleccionar todos" class="rounded border-gray-300 text-primary focus:ring-primary" /></th>` : ""}
+        ${esCostos ? `<th class="w-8 px-2 py-2 text-center"><input type="checkbox" id="pres-sel-todos" title="Seleccionar todos los ítems pendientes" class="rounded border-gray-300 text-primary focus:ring-primary" /></th>` : ""}
         ${cols.map((c) => `<th class="px-2 py-2 ${c.w || ""} ${c.calc || c.t === "money" || c.t === "num" ? "text-right" : ""}">${c.l}</th>`).join("")}
         ${esCostos ? `<th class="w-20 px-2 py-2 text-right">Comprado</th><th class="w-20 px-2 py-2 text-right">Pendiente</th><th class="w-24 px-2 py-2 text-right">Cant. a comprar</th>` : ""}
         ${M.editaFilas ? `<th class="w-28"></th>` : ""}
@@ -265,6 +427,7 @@
         }</td></tr>`;
         tfoot.innerHTML = "";
         pintarKpis();
+        sincronizarSelectAll();
         return;
       }
 
@@ -302,10 +465,13 @@
               </tr>`;
           }
           const oculto = capColapsado || subColapsado;
-          const checked = seleccionadosCompra.has(item.id);
           const cantPresup = PCT.num(item.cantidad);
           const cantComprada = cantCompradaMap.get(item.id) || 0;
           const cantPendiente = Math.max(0, cantPresup - cantComprada);
+          if (cantPendiente <= 0 && seleccionadosCompra.has(item.id)) {
+            seleccionadosCompra.delete(item.id);
+          }
+          const checked = cantPendiente > 0 && seleccionadosCompra.has(item.id);
           const clasePendiente =
             cantPendiente === 0
               ? "text-green-600 font-semibold"
@@ -317,7 +483,7 @@
             <tr data-id="${item.id}" class="border-t border-gray-100 ${item.es_adicional ? "bg-amber-50/60" : ""} ${oculto ? "hidden" : ""}">
               ${
                 esCostos
-                  ? `<td class="px-2 text-center"><input type="checkbox" class="pres-chk-compra rounded border-gray-300 text-primary focus:ring-primary" data-item-id="${item.id}" ${checked ? "checked" : ""} /></td>`
+                  ? `<td class="px-2 text-center"><input type="checkbox" class="pres-chk-compra rounded border-gray-300 text-primary focus:ring-primary disabled:opacity-40" data-item-id="${item.id}" ${checked ? "checked" : ""} ${cantPendiente <= 0 ? 'disabled title="Ya comprado completamente"' : ""} /></td>`
                   : ""
               }
               ${v.cols
@@ -340,6 +506,7 @@
         .join("");
       activarCamposMoneda(".input-moneda", tbody);
       actualizarCalculos();
+      sincronizarSelectAll();
     };
 
     // Actualiza celdas calculadas, subtotales de capítulo y totales SIN
@@ -352,15 +519,31 @@
         const item = porId.get(tr.dataset.id);
         if (!item || item.tipo !== "item") return;
         const c = PCT.calcItem(item, p);
+        const tieneRealDistinto =
+          item.costo_real_estimado_total !== null &&
+          item.costo_real_estimado_total !== undefined &&
+          item.costo_real_estimado_total !== "" &&
+          Number.isFinite(Number(item.costo_real_estimado_total)) &&
+          Math.abs(Number(item.costo_real_estimado_total) - c.costoTotal) > 0.01;
         tr.querySelectorAll("[data-calc]").forEach((td) => {
           const col = COL[td.dataset.calc];
           const num = col.calc(c);
           td.textContent = fmtCalc(num, col.fmt);
+          if (td.dataset.calc === "costo_total") {
+            td.classList.toggle("line-through", tieneRealDistinto);
+            td.classList.toggle("text-gray-400", tieneRealDistinto);
+          }
           if (["margen", "margen_pct"].includes(td.dataset.calc)) {
             td.classList.toggle("text-red-600", typeof num === "number" && num < 0);
             td.classList.toggle("text-green-600", typeof num === "number" && num > 0);
           }
         });
+        const inpReal = tr.querySelector('[data-f="costo_real_estimado_total"]');
+        if (inpReal) {
+          inpReal.classList.toggle("text-emerald-700", tieneRealDistinto && Number(item.costo_real_estimado_total) < c.costoTotal);
+          inpReal.classList.toggle("text-amber-700", tieneRealDistinto && Number(item.costo_real_estimado_total) > c.costoTotal);
+          inpReal.classList.toggle("font-semibold", tieneRealDistinto);
+        }
       });
 
       // Subtotales por capítulo/subcapítulo (según la vista activa)
@@ -436,7 +619,14 @@
       }
       if (CAMPOS_TEXTO_OPCIONAL.includes(campo)) valor = valor || null;
       const { error } = await window.sb.from("presupuesto_items").update({ [campo]: valor }).eq("id", item.id);
-      if (error) return manejarError(error, "No se pudo guardar el cambio");
+      if (error) {
+        const msg = String(error.message || "");
+        if (campo === "costo_real_estimado_total" && (error.code === "42703" || error.code === "PGRST204" || /costo_real_estimado_total/i.test(msg))) {
+          inp.value = item[campo] === null || item[campo] === undefined ? "" : formatearMiles(item[campo]);
+          return mostrarAviso("Aún falta ejecutar la migración SQL (migracion_2026-11_comite_mejoras.sql) en Supabase para editar Costo Real Est.", "error");
+        }
+        return manejarError(error, "No se pudo guardar el cambio");
+      }
       item[campo] = valor;
       if (campo === "es_adicional") pintarTabla();
       else actualizarCalculos();
@@ -604,6 +794,11 @@
             }
             const desde = reemplazar ? 0 : Math.ceil(ordenFinal() - 1);
             await PCT.insertarItems(PCT.estado.proyecto.id, items, desde);
+            if (resultado.trm_cotizacion) {
+              try {
+                await window.sb.from("proyectos").update({ trm_cotizacion: resultado.trm_cotizacion }).eq("id", PCT.estado.proyecto.id);
+              } catch (e) { /* silencioso si la columna aún no existe */ }
+            }
             await PCT.recargarItems();
             await PCT.recargarEjec();
             pintarTabla();
@@ -630,24 +825,19 @@
     } else {
       // Exportar costos (la plantilla con los ítems y la columna C.U. material)
       // → llenar en Excel → importar costos. Se cruzan por # y descripción.
-      const actualizarContadorCompra = () => {
-        const el = root.querySelector("#pres-sel-count");
-        if (el) el.textContent = String(seleccionadosCompra.size);
-      };
-
       thead.addEventListener("change", (e) => {
         if (e.target.id !== "pres-sel-todos") return;
         const marcar = e.target.checked;
-        PCT.estado.items
-          .filter((i) => i.tipo === "item")
-          .forEach((i) => {
-            if (marcar) seleccionadosCompra.add(i.id);
-            else seleccionadosCompra.delete(i.id);
-          });
-        tbody.querySelectorAll(".pres-chk-compra").forEach((chk) => {
-          chk.checked = marcar;
+        const seleccionables = obtenerSeleccionables();
+        const idsSel = new Set(seleccionables.map((i) => i.id));
+        seleccionables.forEach((i) => {
+          if (marcar) seleccionadosCompra.add(i.id);
+          else seleccionadosCompra.delete(i.id);
         });
-        actualizarContadorCompra();
+        tbody.querySelectorAll(".pres-chk-compra").forEach((chk) => {
+          if (idsSel.has(chk.dataset.itemId)) chk.checked = marcar;
+        });
+        sincronizarSelectAll();
       });
 
       tbody.addEventListener("change", (e) => {
@@ -655,7 +845,7 @@
           const id = e.target.dataset.itemId;
           if (e.target.checked) seleccionadosCompra.add(id);
           else seleccionadosCompra.delete(id);
-          actualizarContadorCompra();
+          sincronizarSelectAll();
         } else if (e.target.classList.contains("pres-cant-compra")) {
           cantCompraMap.set(e.target.dataset.itemId, PCT.num(e.target.value));
         }
@@ -687,7 +877,13 @@
           const {
             data: { user },
           } = await window.sb.auth.getUser();
-          const numero = `SOL-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+          let numero = `SOL-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+          if (typeof window.sb?.rpc === "function") {
+            try {
+              const { data: seqNum, error: seqErr } = await window.sb.rpc("rpc_siguiente_consecutivo", { p_tipo: "solicitud" });
+              if (!seqErr && seqNum) numero = String(seqNum);
+            } catch (e) { /* fallback al consecutivo local */ }
+          }
           const { data: sol, error } = await window.sb
             .from("compras_solicitudes")
             .insert({
@@ -719,11 +915,22 @@
           const { error: errIt } = await window.sb.from("compras_solicitud_items").insert(rows);
           if (errIt) throw errIt;
 
+          if (typeof window.PCT_NOTIFICAR === "function") {
+            window.PCT_NOTIFICAR({
+              tipo: "compra",
+              titulo: `Nueva solicitud de compra ${numero}`,
+              mensaje: `${p.nombre} · ${rows.length} ítem(s) solicitados desde Presupuesto de costos.`,
+              url: "compras.html",
+              rol_destino: ["super_usuario", "directivo", "compras"],
+              proyecto_id: p.id,
+            });
+          }
+
           seleccionadosCompra.clear();
           cantCompraMap.clear();
           await cargarComprado();
           pintarTabla();
-          actualizarContadorCompra();
+          sincronizarSelectAll();
 
           PCT.modal({
             titulo: "Solicitud enviada a Compras",

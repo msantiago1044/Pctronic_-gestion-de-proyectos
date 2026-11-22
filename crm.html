@@ -29,6 +29,7 @@
   <link rel="stylesheet" href="assets/css/tailwind.min.css?v=2.3" />
 <link rel="stylesheet" href="assets/css/styles.css" />
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.1/dist/umd/supabase.min.js" integrity="sha384-YieCqqg9gQufX7+5HcFvCEg/n3KUEdl8/Jb+A6J0npf1mB740VayvwKjTrtCeUoy" crossorigin="anonymous"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
 <script defer src="assets/js/config.js"></script>
 <script defer src="assets/js/supabaseClient.js"></script>
 <script defer src="assets/js/util.js?v=2.3"></script>
@@ -609,7 +610,124 @@
   </div>
 </div>
 
+<!-- ======================================================================== -->
+<!-- MODAL PUENTE DE CIERRE GANADO → NUEVO PROYECTO                           -->
+<!-- ======================================================================== -->
+<div id="modal-puente-proyecto" role="dialog" aria-modal="true" aria-labelledby="modal-puente-titulo"
+  class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
+  <div class="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl space-y-4">
+    <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+      <h2 id="modal-puente-titulo" class="text-base font-bold text-gray-900 flex items-center gap-2">
+        <span class="material-symbols-outlined text-emerald-600" aria-hidden="true">rocket_launch</span>
+        Puente de Cierre Ganado → Nuevo Proyecto
+      </h2>
+      <button id="btn-puente-cerrar" type="button" aria-label="Cerrar" class="text-gray-500 hover:text-gray-700">
+        <span class="material-symbols-outlined text-[20px]" aria-hidden="true">close</span>
+      </button>
+    </div>
+
+    <div id="puente-oferta-banner" class="hidden rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900"></div>
+
+    <form id="form-puente-proyecto" class="space-y-4 text-xs">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div class="sm:col-span-2">
+          <label for="puente-nombre" class="block font-semibold text-gray-700 mb-1">Nombre del Proyecto *</label>
+          <input id="puente-nombre" type="text" required class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary" />
+        </div>
+        <div>
+          <label for="puente-cliente" class="block font-semibold text-gray-700 mb-1">Cliente</label>
+          <select id="puente-cliente" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
+            <option value="">Selecciona cliente...</option>
+          </select>
+        </div>
+        <div>
+          <label for="puente-empresa" class="block font-semibold text-gray-700 mb-1">Empresa ejecutora</label>
+          <select id="puente-empresa" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
+            <option value="">Selecciona empresa...</option>
+          </select>
+        </div>
+        <div>
+          <label for="puente-valor" class="block font-semibold text-gray-700 mb-1">Valor estimado sin IVA (COP)</label>
+          <input id="puente-valor" type="text" inputmode="decimal" placeholder="0"
+            class="input-moneda w-full rounded-lg border-gray-300 text-xs font-semibold focus:border-primary focus:ring-primary" />
+        </div>
+        <div>
+          <label for="puente-trm" class="block font-semibold text-gray-700 mb-1">TRM de cotización (opcional)</label>
+          <input id="puente-trm" type="number" step="0.01" min="0" placeholder="Ej. 4200"
+            class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary" />
+        </div>
+        <div>
+          <label for="puente-tipo-contrato" class="block font-semibold text-gray-700 mb-1">Tipo de contrato</label>
+          <select id="puente-tipo-contrato" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
+            <option value="aiu">AIU (Instalación / Obra)</option>
+            <option value="iva">IVA pleno (Suministros / Servicio)</option>
+          </select>
+        </div>
+        <div>
+          <label for="puente-categoria" class="block font-semibold text-gray-700 mb-1">Categoría</label>
+          <select id="puente-categoria" class="w-full rounded-lg border-gray-300 text-xs focus:border-primary focus:ring-primary">
+            <option value="Instalación / Proyecto">Instalación / Proyecto</option>
+            <option value="Mantenimiento / Servicio">Mantenimiento / Servicio</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Plantilla / Cotización Excel -->
+      <div class="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3.5 space-y-2">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p class="font-bold text-indigo-950">Plantilla / Cotización Excel (.xlsx)</p>
+            <p class="text-[11px] text-indigo-800">Importa Cotización + Presupuesto de costos (y TRM) en 1 solo paso.</p>
+          </div>
+          <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700">
+            <span class="material-symbols-outlined text-[15px]" aria-hidden="true">upload_file</span> Cargar / Reemplazar Excel
+            <input id="puente-excel" type="file" accept=".xlsx,.xls" class="sr-only" />
+          </label>
+        </div>
+        <div id="puente-excel-preview" class="hidden rounded-lg border border-indigo-200 bg-white p-2.5 text-[11px] text-gray-700"></div>
+      </div>
+
+      <!-- Documentos de cierre -->
+      <div class="rounded-xl border border-gray-200 bg-gray-50/70 p-3.5 space-y-2">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p class="font-bold text-gray-900">Documentos de cierre (OC, Contrato, Planos, Pólizas)</p>
+            <p class="text-[11px] text-gray-500">Se suben directamente a la carpeta de Documentos del nuevo proyecto.</p>
+          </div>
+          <select id="puente-docs-categoria" aria-label="Categoría de documentos" class="rounded-lg border-gray-300 bg-white text-xs">
+            <option value="orden_compra">Orden de compra</option>
+            <option value="contrato">Contrato</option>
+            <option value="planos">Planos</option>
+            <option value="polizas">Pólizas</option>
+            <option value="cotizacion">Cotización</option>
+            <option value="otro">Otro</option>
+          </select>
+        </div>
+        <input id="puente-docs" type="file" multiple class="block w-full text-xs text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-gray-900 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-gray-700" />
+        <div id="puente-docs-lista" class="text-[11px] text-gray-600"></div>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-gray-100">
+        <span class="text-[11px] text-gray-500">Al crear el proyecto se notificará al equipo de Proyectos y Dirección.</span>
+        <div class="flex items-center gap-2">
+          <button id="btn-puente-cancelar" type="button"
+            class="rounded-lg border border-gray-300 px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+            Cerrar (crear después)
+          </button>
+          <button id="btn-puente-submit" type="submit"
+            class="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 shadow-sm disabled:opacity-60">
+            <span class="material-symbols-outlined text-[16px]" aria-hidden="true">rocket_launch</span>
+            Crear Proyecto en 1 Paso
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
 <script defer src="assets/js/layout.js?v=2.3"></script>
-<script defer src="assets/js/crm.js?v=2.2"></script>
+<script defer src="assets/js/proy/core.js"></script>
+<script defer src="assets/js/proy/importar.js"></script>
+<script defer src="assets/js/crm.js?v=2.3"></script>
 </body>
 </html>

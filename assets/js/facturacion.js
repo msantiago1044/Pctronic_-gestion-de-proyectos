@@ -43,6 +43,9 @@
     });
     ultimasFiltradas = filtradas;
 
+    const hayFiltroActivo = Boolean(texto || estado || empresaId || mes);
+    document.getElementById("btn-limpiar-filtros")?.classList.toggle("hidden", !hayFiltroActivo);
+
     const total = filtradas
       .filter((f) => f.estado !== "anulada")
       .reduce((a, f) => a + Number(f.valor || 0), 0);
@@ -56,6 +59,15 @@
     document.getElementById("kpi-pagado").textContent = formatoMoneda(pagado);
     document.getElementById("kpi-pendiente").textContent = formatoMoneda(pendiente);
 
+    const stripCount = document.getElementById("strip-count");
+    const stripTotal = document.getElementById("strip-total");
+    const stripPagado = document.getElementById("strip-pagado");
+    const stripPendiente = document.getElementById("strip-pendiente");
+    if (stripCount) stripCount.textContent = String(filtradas.length);
+    if (stripTotal) stripTotal.textContent = formatoMoneda(total);
+    if (stripPagado) stripPagado.textContent = formatoMoneda(pagado);
+    if (stripPendiente) stripPendiente.textContent = formatoMoneda(pendiente);
+
     const tbody = document.getElementById("tabla-facturas");
     tbody.innerHTML = filtradas.length
       ? filtradas
@@ -64,7 +76,7 @@
         <tr class="border-b border-gray-50 last:border-0 hover:bg-gray-50">
           <td class="px-4 py-3 text-gray-600">${escapeHtml(f.proyectos?.empresas?.nombre || "—")}</td>
           <td class="px-4 py-3">
-            <a href="proyecto-detalle.html?id=${f.proyectos?.id}&tab=facturacion" class="font-medium text-gray-900 hover:text-primary">
+            <a href="proyecto-detalle.html?id=${f.proyectos?.id}&tab=cortes" class="font-medium text-gray-900 hover:text-primary">
               ${escapeHtml(f.proyectos?.nombre || "—")}
             </a>
           </td>
@@ -83,6 +95,13 @@
   document.getElementById("filtro-estado").addEventListener("change", render);
   document.getElementById("filtro-empresa").addEventListener("change", render);
   document.getElementById("filtro-mes").addEventListener("change", render);
+  document.getElementById("btn-limpiar-filtros")?.addEventListener("click", () => {
+    document.getElementById("filtro-busqueda").value = "";
+    document.getElementById("filtro-estado").value = "";
+    document.getElementById("filtro-empresa").value = "";
+    document.getElementById("filtro-mes").value = "";
+    render();
+  });
 
   const COLUMNAS_EXPORT = ["Empresa", "Proyecto", "N° Factura", "Emisión", "Vencimiento", "Valor", "Estado"];
   function filasExport() {

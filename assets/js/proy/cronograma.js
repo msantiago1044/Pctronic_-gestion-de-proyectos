@@ -176,6 +176,8 @@
       const fechasIni = tareas.map((t) => t.fecha_inicio).filter(Boolean).sort();
       const fechasFin = tareas.map((t) => t.fecha_fin).filter(Boolean).sort();
       const rango = fechasIni.length && fechasFin.length ? `${formatoFecha(fechasIni[0])} → ${formatoFecha(fechasFin[fechasFin.length - 1])}` : "Sin fechas";
+      const hitosFact = tareas.filter((t) => t.es_hito_facturacion && !t.hito_facturado);
+      const montoHitos = hitosFact.reduce((s, t) => s + PCT.num(t.monto_facturacion_estimado), 0);
 
       const card = (lbl, val, sub = "") => `
         <div class="rounded-xl border border-gray-200 bg-white p-3.5">
@@ -187,7 +189,7 @@
       root.querySelector("#crono-resumen").innerHTML =
         card("Actividades", total, `${completadas} completada${completadas === 1 ? "" : "s"}`) +
         card("Avance Cronograma", `${promedio}%`, `<div class="barra-progreso mt-1"><span style="width:${promedio}%"></span></div>`) +
-        card("Rango Programado", `<span class="text-sm">${rango}</span>`) +
+        card("Rango Programado", `<span class="text-sm">${rango}</span>`, hitosFact.length ? `💰 ${hitosFact.length} hito(s) de cobro · ${formatoMoneda(montoHitos)}` : "") +
         card("Fin Contractual", p.fecha_fin_estimada ? formatoFecha(p.fecha_fin_estimada) : "—");
     };
 
@@ -217,6 +219,7 @@
                 <th class="px-3 py-3 text-center whitespace-nowrap">Duración (días)</th>
                 <th class="px-3 py-3 w-28">Avance (%)</th>
                 <th class="px-3 py-3">Estado</th>
+                <th class="px-3 py-3 whitespace-nowrap">Hito facturación</th>
                 <th class="px-3 py-3"></th>
               </tr>
             </thead>
@@ -225,8 +228,10 @@
                 .map((t, idx) => {
                   const f = FASES[t.fase] || FASES.ejecucion;
                   const dur = calcularDuracion(t.fecha_inicio, t.fecha_fin);
+                  const esHito = Boolean(t.es_hito_facturacion);
+                  const montoEst = PCT.num(t.monto_facturacion_estimado);
                   return `
-                    <tr class="hover:bg-gray-50/70" data-tarea-id="${t.id}">
+                    <tr class="hover:bg-gray-50/70 ${esHito ? "bg-amber-50/40" : ""}" data-tarea-id="${t.id}">
                       <td class="px-3 py-2 text-center">
                         <input type="text" data-campo="edt" value="${escapeHtml(t.edt || "")}" placeholder="${idx + 1}"
                           class="w-16 rounded-md border-gray-200 py-1 px-1.5 text-center font-mono text-xs font-semibold text-gray-700 focus:border-primary focus:ring-primary" />
@@ -234,7 +239,14 @@
                       <td class="px-3 py-2 whitespace-nowrap">
                         <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold ${f.badge}">${f.label}</span>
                       </td>
-                      <td class="px-3 py-2 font-semibold text-gray-900 min-w-[180px]">${escapeHtml(t.titulo)}</td>
+                      <td class="px-3 py-2 font-semibold text-gray-900 min-w-[190px]">
+                        <div>${escapeHtml(t.titulo)}</div>
+                        ${
+                          esHito
+                            ? `<span class="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-100 border border-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-900">💰 Hito facturación${montoEst > 0 ? ` · ${formatoMoneda(montoEst)}` : ""}${t.hito_facturado ? " · Facturado" : ""}</span>`
+                            : ""
+                        }
+                      </td>
                       <td class="px-3 py-2">
                         <input type="text" data-campo="responsable" value="${escapeHtml(t.responsable || "")}" placeholder="Asignar..."
                           class="w-36 rounded-md border-gray-200 py-1 px-2 text-xs focus:border-primary focus:ring-primary" />
@@ -264,6 +276,20 @@
                             .join("")}
                         </select>
                       </td>
+                      <td class="px-3 py-2 whitespace-nowrap">
+                        <div class="flex items-center gap-2">
+                          <label class="inline-flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${esHito ? "border-amber-300 bg-amber-100 text-amber-900" : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50"}">
+                            <input type="checkbox" data-campo="es_hito_facturacion" ${esHito ? "checked" : ""} class="rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
+                            <span>💰</span>
+                          </label>
+                          ${
+                            esHito
+                              ? `<input type="text" inputmode="decimal" data-campo="monto_facturacion_estimado" value="${montoEst > 0 ? formatearMiles(montoEst) : ""}" placeholder="Monto est."
+                                  class="input-moneda w-28 rounded-md border-amber-300 bg-white py-1 px-2 text-right text-xs tabular-nums focus:border-primary focus:ring-primary" />`
+                              : `<span class="text-[11px] text-gray-300">—</span>`
+                          }
+                        </div>
+                      </td>
                       <td class="px-3 py-2 text-right">
                         <button type="button" data-borrar-tarea class="text-gray-400 hover:text-red-600" title="Eliminar actividad">
                           <span class="material-symbols-outlined text-[18px]">delete</span>
@@ -275,6 +301,7 @@
             </tbody>
           </table>
         </div>`;
+      activarCamposMoneda(".input-moneda", cont);
     };
 
     const pintarGantt = () => {
@@ -358,6 +385,9 @@
               const tieneFechas = Boolean(t.fecha_inicio && t.fecha_fin);
               const dur = calcularDuracion(t.fecha_inicio, t.fecha_fin);
 
+              const esHito = Boolean(t.es_hito_facturacion);
+              const montoHito = PCT.num(t.monto_facturacion_estimado);
+
               let barraHtml = `<span class="px-3 text-[10px] italic text-gray-400">Sin fechas asignadas</span>`;
               if (tieneFechas) {
                 const startPos = fechaAPosSemana(t.fecha_inicio, meses, false);
@@ -368,31 +398,34 @@
 
                 barraHtml = `
                   <div class="relative z-10 w-full h-6 flex items-center">
-                    <div class="absolute top-0.5 bottom-0.5 rounded-md ${est.bar} shadow-sm overflow-hidden flex items-center"
+                    <div class="absolute top-0.5 bottom-0.5 rounded-md ${esHito ? "bg-amber-500 ring-2 ring-amber-300" : est.bar} shadow-sm overflow-hidden flex items-center"
                       style="left:${leftPct.toFixed(2)}%; width:${widthPct.toFixed(2)}%;"
-                      title="${edtLabel} · ${escapeHtml(t.titulo)}: ${formatoFecha(t.fecha_inicio)} → ${formatoFecha(t.fecha_fin)} (${dur}d · ${prog}%)">
+                      title="${edtLabel} · ${escapeHtml(t.titulo)}: ${formatoFecha(t.fecha_inicio)} → ${formatoFecha(t.fecha_fin)} (${dur}d · ${prog}%)${esHito ? ` · 💰 Hito facturación${montoHito > 0 ? " " + formatoMoneda(montoHito) : ""}` : ""}">
                       <div class="h-full bg-black/20 transition-all" style="width:${prog}%"></div>
                       ${
                         barraAngosta
                           ? ""
-                          : `<span class="relative z-10 px-2 text-[10px] font-bold text-white whitespace-nowrap drop-shadow-sm">${prog}%</span>`
+                          : `<span class="relative z-10 px-2 text-[10px] font-bold text-white whitespace-nowrap drop-shadow-sm">${esHito ? "💰 " : ""}${prog}%</span>`
                       }
                     </div>
                     ${
                       barraAngosta
-                        ? `<span class="absolute text-[10px] font-bold text-gray-700 whitespace-nowrap" style="left:calc(${(leftPct + widthPct).toFixed(2)}% + 4px);">${prog}%</span>`
+                        ? `<span class="absolute text-[10px] font-bold text-gray-700 whitespace-nowrap" style="left:calc(${(leftPct + widthPct).toFixed(2)}% + 4px);">${esHito ? "💰 " : ""}${prog}%</span>`
                         : ""
                     }
                   </div>`;
               }
 
               return `
-                <div class="flex items-stretch border-t border-gray-100 hover:bg-gray-50/80">
+                <div class="flex items-stretch border-t border-gray-100 hover:bg-gray-50/80 ${esHito ? "bg-amber-50/30" : ""}">
                   <div class="w-[300px] shrink-0 px-3 py-2 flex items-center gap-2">
                     <span class="inline-flex min-w-[34px] justify-center rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] font-bold text-gray-700">${edtLabel}</span>
                     <div class="min-w-0 flex-1">
-                      <p class="truncate text-xs font-semibold text-gray-800" title="${escapeHtml(t.titulo)}">${escapeHtml(t.titulo)}</p>
-                      <p class="truncate text-[10px] text-gray-400">${escapeHtml(t.responsable || "Sin responsable")}${dur ? ` · ${dur}d` : ""}</p>
+                      <div class="flex items-center gap-1.5">
+                        <p class="truncate text-xs font-semibold text-gray-800" title="${escapeHtml(t.titulo)}">${escapeHtml(t.titulo)}</p>
+                        ${esHito ? `<span class="shrink-0 rounded-full bg-amber-100 border border-amber-200 px-1.5 py-0.5 text-[9px] font-bold text-amber-900">💰 Hito facturación</span>` : ""}
+                      </div>
+                      <p class="truncate text-[10px] text-gray-400">${escapeHtml(t.responsable || "Sin responsable")}${dur ? ` · ${dur}d` : ""}${esHito && montoHito > 0 ? ` · ${formatoMoneda(montoHito)}` : ""}</p>
                     </div>
                   </div>
                   <div class="flex-1 relative flex items-center border-l border-gray-200 px-0 py-1.5" style="min-width:${anchoTimelinePx}px;">
@@ -429,6 +462,7 @@
             <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded bg-slate-400"></span> Pendiente</span>
             <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded bg-primary"></span> En curso</span>
             <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded bg-emerald-500"></span> Completada</span>
+            <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded bg-amber-500"></span> 💰 Hito facturación</span>
             <span class="ml-auto text-[10px]">Duración total del rango: ${totalDiasRango} días</span>
           </div>
         </div>`;
@@ -491,7 +525,7 @@
 
     const abrirModalNueva = () => {
       const edtInicial = sugerirEdt(tareas, "pre_inicio");
-      PCT.modal({
+      const m = PCT.modal({
         titulo: "Nueva actividad de cronograma",
         ancho: "max-w-md",
         html: `
@@ -526,22 +560,21 @@
                 <input type="date" id="cr-fin" value="${sumarDias(p.fecha_inicio || PCT.hoyISO(), 3)}" class="w-full rounded-lg border-gray-300 text-xs" />
               </div>
             </div>
+            <div class="rounded-lg border border-amber-200 bg-amber-50/60 p-3 space-y-2">
+              <label class="flex cursor-pointer items-center gap-2 font-semibold text-amber-900">
+                <input type="checkbox" id="cr-hito-fact" class="rounded border-amber-300 text-amber-600 focus:ring-amber-500" />
+                <span>💰 Marcar como Hito de facturación</span>
+              </label>
+              <div id="cr-monto-fact-wrap" class="hidden">
+                <label class="mb-1 block font-medium text-amber-900">Monto estimado a facturar (COP)</label>
+                <input type="text" inputmode="decimal" id="cr-monto-fact" placeholder="0" class="input-moneda w-full rounded-lg border-amber-300 bg-white text-xs font-semibold" />
+              </div>
+            </div>
             <div>
               <label class="mb-1 block font-medium text-gray-700">Notas</label>
               <textarea id="cr-notas" rows="2" class="w-full rounded-lg border-gray-300 text-xs"></textarea>
             </div>
           </div>`,
-        onOpen: ({ el }) => {
-          const edtInput = el.querySelector("#cr-edt");
-          const faseSel = el.querySelector("#cr-fase");
-          let edtEditado = false;
-          edtInput.addEventListener("input", () => {
-            edtEditado = true;
-          });
-          faseSel.addEventListener("change", () => {
-            if (!edtEditado) edtInput.value = sugerirEdt(tareas, faseSel.value);
-          });
-        },
         botones: [
           { texto: "Cancelar" },
           {
@@ -560,7 +593,9 @@
                 return false;
               }
               const orden = tareas.length ? Math.max(...tareas.map((t) => PCT.num(t.orden))) + 1 : 1;
-              const { error } = await window.sb.from("proyecto_cronograma").insert({
+              const esHito = Boolean(el.querySelector("#cr-hito-fact")?.checked);
+              const montoFact = esHito ? valorMoneda(el.querySelector("#cr-monto-fact")) : 0;
+              const basePayload = {
                 proyecto_id: pid,
                 orden,
                 edt: el.querySelector("#cr-edt").value.trim() || null,
@@ -572,7 +607,20 @@
                 notas: el.querySelector("#cr-notas").value.trim() || null,
                 progreso: 0,
                 estado: "pendiente",
-              });
+              };
+              const payloadConHito = esHito
+                ? { ...basePayload, es_hito_facturacion: true, monto_facturacion_estimado: montoFact || null }
+                : basePayload;
+              let { error } = await window.sb.from("proyecto_cronograma").insert(payloadConHito);
+              if (error && esHito && (error.code === "42703" || error.code === "PGRST204" || /es_hito_facturacion|monto_facturacion_estimado/i.test(String(error.message || "")))) {
+                const retry = await window.sb.from("proyecto_cronograma").insert(basePayload);
+                error = retry.error;
+                if (!error) {
+                  mostrarAviso("Actividad creada (falta ejecutar migración SQL para guardar Hito de facturación).", "info");
+                  await cargar();
+                  return;
+                }
+              }
               if (error) {
                 manejarError(error, "No se pudo crear la actividad");
                 return false;
@@ -582,6 +630,21 @@
             },
           },
         ],
+      });
+      activarCamposMoneda(".input-moneda", m.el);
+      const edtInput = m.el.querySelector("#cr-edt");
+      const faseSel = m.el.querySelector("#cr-fase");
+      let edtEditado = false;
+      edtInput?.addEventListener("input", () => {
+        edtEditado = true;
+      });
+      faseSel?.addEventListener("change", () => {
+        if (!edtEditado && edtInput) edtInput.value = sugerirEdt(tareas, faseSel.value);
+      });
+      const chkHito = m.el.querySelector("#cr-hito-fact");
+      const wrapMonto = m.el.querySelector("#cr-monto-fact-wrap");
+      chkHito?.addEventListener("change", () => {
+        wrapMonto?.classList.toggle("hidden", !chkHito.checked);
       });
     };
 
@@ -718,7 +781,11 @@
       const campo = input.dataset.campo;
       const t = tareas.find((x) => x.id === id);
       let valor = input.value;
-      if (campo === "progreso") {
+      if (campo === "es_hito_facturacion") {
+        valor = Boolean(input.checked);
+      } else if (campo === "monto_facturacion_estimado") {
+        valor = input.value.trim() === "" ? null : valorMoneda(input);
+      } else if (campo === "progreso") {
         valor = Math.max(0, Math.min(100, PCT.num(valor)));
         input.value = valor;
       } else if (campo === "edt") {
@@ -746,7 +813,18 @@
       }
 
       const { error } = await window.sb.from("proyecto_cronograma").update(patch).eq("id", id);
-      if (error) return manejarError(error, "No se pudo actualizar la actividad");
+      if (error) {
+        const msg = String(error.message || "");
+        if (
+          (campo === "es_hito_facturacion" || campo === "monto_facturacion_estimado") &&
+          (error.code === "42703" || error.code === "PGRST204" || /es_hito_facturacion|monto_facturacion_estimado/i.test(msg))
+        ) {
+          if (campo === "es_hito_facturacion") input.checked = Boolean(t?.es_hito_facturacion);
+          else input.value = t?.monto_facturacion_estimado ? formatearMiles(t.monto_facturacion_estimado) : "";
+          return mostrarAviso("Falta ejecutar la migración SQL (migracion_2026-11_comite_mejoras.sql) en Supabase para guardar Hitos de facturación.", "error");
+        }
+        return manejarError(error, "No se pudo actualizar la actividad");
+      }
 
       if (t) Object.assign(t, patch);
       pintarResumen();
@@ -754,7 +832,9 @@
         patch.progreso !== undefined ||
         patch.estado !== undefined ||
         patch.fecha_inicio !== undefined ||
-        patch.fecha_fin !== undefined
+        patch.fecha_fin !== undefined ||
+        patch.es_hito_facturacion !== undefined ||
+        patch.monto_facturacion_estimado !== undefined
       ) {
         pintarLista();
       }

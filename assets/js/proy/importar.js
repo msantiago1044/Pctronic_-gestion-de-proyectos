@@ -163,10 +163,30 @@ function evaluarAritmeticaSegura(expr) {
     ["pu_contratista", (h) => h.includes("contratista") && h.startsWith("pu")],
   ];
 
+  const COLUMNAS_INTERNAS = [
+    [
+      "costo_col",
+      (h) =>
+        h === "costo" ||
+        h === "costo unit" ||
+        h === "costo unit." ||
+        h === "costo unitario" ||
+        h === "costo usd" ||
+        h === "costo cop" ||
+        (h.startsWith("costo unit") && !h.includes("total")) ||
+        (h.startsWith("c.u. material") && !h.includes("con iva")),
+    ],
+    ["moneda_col", (h) => h === "moneda" || h === "divisa" || h === "currency"],
+    ["trm_col", (h) => h === "trm" || h.startsWith("trm ") || h === "tasa cambio" || h === "tasa de cambio"],
+    ["tipo_col", (h) => h === "tipo" || h === "categoria" || h === "tipo costo"],
+  ];
+
   // La tabla termina en la primera celda vacía después de "Descripción": así
   // las columnas internas que algunas cotizaciones traen a la derecha
-  // (Costo, Moneda, Tipo, Margen...) no se confunden con la tabla.
-  // `mapa._fin` = índice de la última columna de la tabla.
+  // (Costo, Moneda, Tipo, Margen, TRM...) no se confunden con la tabla de venta,
+  // pero se escanean en una segunda pasada (`mapa._internos`) para cargar
+  // Cotización + Presupuesto de costos en 1 solo paso.
+  // `mapa._fin` = índice de la última columna de la tabla de venta.
   function mapearEncabezados(fila) {
     const mapa = {};
     let fin = fila.length - 1;
@@ -186,8 +206,45 @@ function evaluarAritmeticaSegura(expr) {
         }
       }
     }
+    // Segunda pasada: columnas internas de costo a la derecha de `_fin`
+    const internos = {};
+    if (fin < fila.length - 1) {
+      for (let idx = fin + 1; idx < fila.length; idx++) {
+        const h = normEnc(fila[idx]);
+        if (!h) continue;
+        for (const [clave, pred] of COLUMNAS_INTERNAS) {
+          if (internos[clave] === undefined && pred(h)) {
+            internos[clave] = idx;
+            break;
+          }
+        }
+      }
+    }
     Object.defineProperty(mapa, "_fin", { value: fin, enumerable: false });
+    Object.defineProperty(mapa, "_internos", { value: internos, enumerable: false });
     return mapa;
+  }
+
+  // Detecta TRM global en la zona superior de la hoja (p. ej. "TRM: 4200" a la derecha de la cotización)
+  function detectarTrmGlobal(filas, hastaFila) {
+    const limite = Math.min(filas.length, Math.max(hastaFila + 1, 20));
+    for (let r = 0; r < limite; r++) {
+      const f = filas[r] || [];
+      for (let c = 0; c < f.length; c++) {
+        const h = normEnc(f[c]).replace(/[:.]+$/, "").trim();
+        if (h === "trm" || h === "trm cotizacion" || h === "tasa de cambio" || h === "tasa cambio" || h === "trm usd") {
+          for (let k = c + 1; k <= c + 4 && k < f.length; k++) {
+            const n = aNumero(f[k]);
+            if (n >= 500 && n <= 20000) return n;
+          }
+          if (r + 1 < filas.length) {
+            const abajo = aNumero(filas[r + 1][c]);
+            if (abajo >= 500 && abajo <= 20000) return abajo;
+          }
+        }
+      }
+    }
+    return null;
   }
 
   function filaEncabezado(filas, maxBuscar = 25) {
@@ -239,6 +296,9 @@ function evaluarAritmeticaSegura(expr) {
       );
     }
     const { fila: filaEnc, mapa } = enc;
+    const internos = mapa._internos || {};
+    let trmDetectada = detectarTrmGlobal(filas, filaEnc);
+    let costosInternosDetectados = 0;
 
     // PU contratista vive en la hoja MANO DE OBRA (alineada fila a fila con PRESUPUESTO)
     let puContratistaPorFila = null;
@@ -307,8 +367,49 @@ function evaluarAritmeticaSegura(expr) {
         pu_contratista = raw === "" || raw === null || raw === undefined ? null : aNumero(raw);
       }
 
+      // Costo interno (pasada única: columnas a la derecha de `_fin` si no vino `cu_material` en la tabla)
+      let cuMaterial = tipo === "item" ? aNumero(g("cu_material")) : 0;
+      let monedaCosto = undefined;
+      let costoOrigenUsd = undefined;
+
+      if (tipo === "item" && internos.trm_col !== undefined) {
+        const trmFilaRaw = aNumero(f[internos.trm_col]);
+        if (trmFilaRaw >= 500 && trmFilaRaw <= 20000 && !trmDetectada) {
+          trmDetectada = trmFilaRaw;
+        }
+      }
+
+      if (tipo === "item" && mapa.cu_material === undefined && internos.costo_col !== undefined) {
+        const rawCosto = f[internos.costo_col];
+        const costoNum = aNumero(rawCosto);
+        const rawMoneda = internos.moneda_col !== undefined ? String(f[internos.moneda_col] ?? "").trim().toUpperCase() : "";
+        const trmFila =
+          internos.trm_col !== undefined && aNumero(f[internos.trm_col]) >= 500 && aNumero(f[internos.trm_col]) <= 20000
+            ? aNumero(f[internos.trm_col])
+            : trmDetectada || 0;
+        const esUsd =
+          rawMoneda === "USD" ||
+          rawMoneda === "US$" ||
+          rawMoneda === "DOLARES" ||
+          rawMoneda === "DOLAR" ||
+          (typeof rawCosto === "string" && /USD|US\$/i.test(rawCosto));
+
+        if (costoNum > 0) {
+          costosInternosDetectados++;
+          if (esUsd) {
+            monedaCosto = "USD";
+            costoOrigenUsd = costoNum;
+            cuMaterial = trmFila > 0 ? Math.round(costoNum * trmFila) : costoNum;
+          } else {
+            monedaCosto = "COP";
+            costoOrigenUsd = null;
+            cuMaterial = costoNum;
+          }
+        }
+      }
+
       const txt = (k) => (tipo === "item" ? String(g(k) ?? "").trim() || null : null);
-      items.push({
+      const filaItem = {
         tipo,
         codigo: String(g("codigo") ?? "").trim() || null,
         referencia: txt("referencia"),
@@ -319,13 +420,16 @@ function evaluarAritmeticaSegura(expr) {
         tiempo_entrega: txt("tiempo_entrega"),
         observaciones: txt("observaciones"),
         pu_venta: tipo === "item" ? aNumero(g("pu_venta")) : 0,
-        cu_material: tipo === "item" ? aNumero(g("cu_material")) : 0,
+        cu_material: cuMaterial,
         cu_mano_obra: tipo === "item" ? aNumero(g("cu_mano_obra")) : 0,
         cu_transporte: tipo === "item" ? aNumero(g("cu_transporte")) : 0,
         concepto_alquiler: tipo === "item" ? String(g("concepto_alquiler") ?? "").trim() || null : null,
         cu_alquiler: tipo === "item" ? aNumero(g("cu_alquiler")) : 0,
         pu_contratista: tipo === "item" ? pu_contratista : null,
-      });
+      };
+      if (monedaCosto !== undefined) filaItem.moneda_costo = monedaCosto;
+      if (costoOrigenUsd !== undefined) filaItem.costo_origen_usd = costoOrigenUsd;
+      items.push(filaItem);
     }
     if (!items.some((i) => i.tipo === "item")) avisos.push("La hoja no tiene ítems todavía.");
     if (sinDescripcion.length) {
@@ -334,7 +438,16 @@ function evaluarAritmeticaSegura(expr) {
       );
     }
     if (puContratistaPorFila) avisos.push("Se leyeron también los precios del contratista de la hoja MANO DE OBRA.");
-    return { items, hoja: hojaNombre, avisos, columnas: Object.keys(mapa) };
+    if (costosInternosDetectados > 0) {
+      avisos.push(
+        `Se detectaron costos internos en ${costosInternosDetectados} ítem(s) en 1 solo paso${trmDetectada ? ` (TRM ${trmDetectada.toLocaleString("es-CO")})` : ""}.`
+      );
+    }
+    const columnas = Object.keys(mapa);
+    if (costosInternosDetectados > 0 && !columnas.includes("cu_material")) {
+      columnas.push("cu_material");
+    }
+    return { items, hoja: hojaNombre, avisos, columnas, trm_cotizacion: trmDetectada || null };
   };
 
   // --------------------------------------------------------------------
@@ -920,10 +1033,38 @@ function evaluarAritmeticaSegura(expr) {
   // --------------------------------------------------------------------
   // `desde` = número de orden a partir del cual numerar.
   PCT.insertarItems = async (proyectoId, items, desde = 0, extra = {}) => {
-    const filas = items.map((it, i) => ({ ...it, ...extra, proyecto_id: proyectoId, orden: desde + i + 1 }));
+    const limpiarExtra = (fila) => {
+      const copia = { ...fila };
+      delete copia.moneda_costo;
+      delete copia.costo_origen_usd;
+      return copia;
+    };
+    const filas = items.map((it, i) => {
+      const base = { ...it, ...extra, proyecto_id: proyectoId, orden: desde + i + 1 };
+      if (base.moneda_costo === undefined) delete base.moneda_costo;
+      if (base.costo_origen_usd === undefined) delete base.costo_origen_usd;
+      return base;
+    });
+    let usarSinColumnasNuevas = false;
     for (let i = 0; i < filas.length; i += 200) {
-      const { error } = await window.sb.from("presupuesto_items").insert(filas.slice(i, i + 200));
-      if (error) throw error;
+      const lote = filas.slice(i, i + 200);
+      const payload = usarSinColumnasNuevas ? lote.map(limpiarExtra) : lote;
+      const { error } = await window.sb.from("presupuesto_items").insert(payload);
+      if (error) {
+        const msg = String(error.message || "");
+        const faltaColumna =
+          !usarSinColumnasNuevas &&
+          (error.code === "42703" ||
+            error.code === "PGRST204" ||
+            /moneda_costo|costo_origen_usd|column/i.test(msg));
+        if (faltaColumna) {
+          usarSinColumnasNuevas = true;
+          const retry = await window.sb.from("presupuesto_items").insert(lote.map(limpiarExtra));
+          if (retry.error) throw retry.error;
+        } else {
+          throw error;
+        }
+      }
     }
     return filas.length;
   };

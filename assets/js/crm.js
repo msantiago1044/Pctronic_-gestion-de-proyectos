@@ -52,15 +52,27 @@
   // 2. Estado local
   let oportunidades = [];
   let clientes = [];
+  let empresas = [];
   let perfiles = [];
   let oportunidadActual = null;
+  let puenteOportunidad = null;
+  let puenteExcelData = null;
+  let puenteArchivoFile = null;
   const vistaGuardada = localStorage.getItem("pctronic_crm_vista");
   let vistaActual = ["tablero", "lista", "dashboard"].includes(vistaGuardada) ? vistaGuardada : "tablero";
 
   // 3. Cargar datos desde Supabase
+  async function cargarOfertasSeguras() {
+    const resExt = await window.sb
+      .from("crm_ofertas_preventa")
+      .select("id, oportunidad_id, estado, titulo, empresa_id, archivo_cotizacion_path, archivo_cotizacion_nombre, trm_oferta, adjuntos");
+    if (!resExt.error) return resExt;
+    return window.sb.from("crm_ofertas_preventa").select("id, oportunidad_id, estado, titulo, empresa_id, adjuntos");
+  }
+
   async function cargarDatos() {
     try {
-      const [resOps, resCli, resProf, resOfertas] = await Promise.all([
+      const [resOps, resCli, resEmp, resProf, resOfertas] = await Promise.all([
         window.sb
           .from("crm_oportunidades")
           .select(`
@@ -73,12 +85,14 @@
           `)
           .order("created_at", { ascending: false }),
         window.sb.from("clientes").select("id, nombre").order("nombre"),
+        window.sb.from("empresas").select("id, nombre").order("nombre"),
         window.sb.from("profiles").select("id, nombre_completo").order("nombre_completo"),
-        window.sb.from("crm_ofertas_preventa").select("id, oportunidad_id, estado, titulo"),
+        cargarOfertasSeguras(),
       ]);
 
       if (resOps.error) throw resOps.error;
       if (resCli.error) throw resCli.error;
+      if (resEmp.error) throw resEmp.error;
       if (resProf.error) throw resProf.error;
       if (resOfertas.error) throw resOfertas.error;
       const ofertas = resOfertas.data || [];
@@ -90,6 +104,7 @@
         _oferta: (op.oferta_preventa_id && ofertasPorId.get(op.oferta_preventa_id)) || ofertasPorOpId.get(op.id) || null,
       }));
       clientes = resCli.data || [];
+      empresas = resEmp.data || [];
       perfiles = resProf.data || [];
 
       poblarSelects();
@@ -100,15 +115,20 @@
     }
   }
 
-  // 4. Poblar desplegables de clientes y comerciales
+  // 4. Poblar desplegables de clientes, empresas y comerciales
   function poblarSelects() {
     const optsClientes = clientes.map((c) => `<option value="${c.id}">${escapeHtml(c.nombre)}</option>`).join("");
+    const optsEmpresas = empresas.map((e) => `<option value="${e.id}">${escapeHtml(e.nombre)}</option>`).join("");
     const optsPerfiles = perfiles.map((p) => `<option value="${p.id}">${escapeHtml(p.nombre_completo || "Usuario")}</option>`).join("");
 
     const selDrawerCli = document.getElementById("drawer-cliente");
     const selNuevoCli = document.getElementById("nuevo-cliente");
+    const selPuenteCli = document.getElementById("puente-cliente");
+    const selPuenteEmp = document.getElementById("puente-empresa");
     if (selDrawerCli) selDrawerCli.innerHTML = '<option value="">Sin cliente asignado</option>' + optsClientes;
     if (selNuevoCli) selNuevoCli.innerHTML = '<option value="">Selecciona cliente...</option>' + optsClientes;
+    if (selPuenteCli) selPuenteCli.innerHTML = '<option value="">Selecciona cliente...</option>' + optsClientes;
+    if (selPuenteEmp) selPuenteEmp.innerHTML = '<option value="">Selecciona empresa...</option>' + optsEmpresas;
 
     const selDrawerResp = document.getElementById("drawer-responsable");
     const selNuevoResp = document.getElementById("nuevo-responsable");
@@ -969,87 +989,367 @@
     }
   }
 
-  // 12. Convertir en Proyecto Operativo (1 clic)
-  async function convertirEnProyecto() {
-    if (!oportunidadActual) return;
+  // 12. Puente de Cierre Ganado → Nuevo Proyecto (1 solo paso con Excel + Documentos)
+  function obtenerExcelDeOfertaVinculada(oferta) {
+    if (!oferta) return { path: null, nombre: null };
+    if (oferta.archivo_cotizacion_path) {
+      return { path: oferta.archivo_cotizacion_path, nombre: oferta.archivo_cotizacion_nombre || "Cotizacion.xlsx" };
+    }
+    const adj = Array.isArray(oferta.adjuntos) ? oferta.adjuntos.find((a) => a && a.storage_path) : null;
+    if (adj) return { path: adj.storage_path, nombre: adj.nombre || "Cotizacion.xlsx" };
+    return { path: null, nombre: null };
+  }
 
-    const op = oportunidadActual;
-    const confirmar = confirm(
-      `¿Deseas crear un nuevo Proyecto en ejecución para "${op.titulo}" por valor de ${formatoMoneda(op.valor_estimado)}?`
-    );
-    if (!confirmar) return;
+  function mostrarPreviewPuente(parsed, archivoNombre) {
+    const prevEl = document.getElementById("puente-excel-preview");
+    if (!prevEl) return;
+    if (!parsed || !Array.isArray(parsed.items)) {
+      prevEl.classList.add("hidden");
+      prevEl.innerHTML = "";
+      return;
+    }
+    const soloItems = parsed.items.filter((i) => i.tipo === "item");
+    const caps = parsed.items.length - soloItems.length;
+    const totalVenta = soloItems.reduce((s, i) => s + Number(i.cantidad || 0) * Number(i.pu_venta || 0), 0);
+    const totalCosto = soloItems.reduce((s, i) => s + Number(i.cantidad || 0) * Number(i.cu_material || 0), 0);
+    const conCosto = soloItems.filter((i) => Number(i.cu_material || 0) > 0).length;
+    if (parsed.trm_cotizacion) {
+      const trmInp = document.getElementById("puente-trm");
+      if (trmInp) trmInp.value = parsed.trm_cotizacion;
+    }
+    if (totalVenta > 0) {
+      establecerValorMoneda(document.getElementById("puente-valor"), totalVenta);
+    }
+    if (parsed.inicio?.proyecto?.tipo_contrato) {
+      const tcSel = document.getElementById("puente-tipo-contrato");
+      if (tcSel) tcSel.value = parsed.inicio.proyecto.tipo_contrato;
+    }
+    prevEl.classList.remove("hidden");
+    prevEl.innerHTML = `
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <span class="font-bold text-indigo-950">📄 ${escapeHtml(archivoNombre || "Excel cargado")}</span>
+        <span class="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">${soloItems.length} ítem(s) · ${caps} cap.</span>
+      </div>
+      <div class="mt-1.5 grid grid-cols-3 gap-2 text-[11px]">
+        <div><span class="text-gray-500">Venta (CD):</span> <strong class="text-gray-900">${formatoMoneda(totalVenta)}</strong></div>
+        <div><span class="text-gray-500">Costos (${conCosto}):</span> <strong class="text-gray-900">${formatoMoneda(totalCosto)}</strong></div>
+        <div><span class="text-gray-500">TRM:</span> <strong class="text-indigo-700">${parsed.trm_cotizacion ? formatoMoneda(parsed.trm_cotizacion) : "No detectada"}</strong></div>
+      </div>`;
+  }
 
-    const btn = document.getElementById("btn-convertir-proyecto");
-    const textoOrig = btn ? btn.textContent : "";
+  async function parsearExcelFilePuente(file) {
+    if (!file || !window.PCT?.leerLibroExcel || !window.PCT?.parsearPresupuesto) return null;
+    const libro = await window.PCT.leerLibroExcel(file);
+    const inicio = window.PCT.parsearInicio?.(libro) || window.PCT.parsearEncabezadoCotizacion?.(libro) || null;
+    const pres = window.PCT.parsearPresupuesto(libro);
+    return { ...pres, inicio, archivoNombre: file.name };
+  }
+
+  async function abrirModalPuenteProyecto(op) {
+    if (!op) return;
+    if (op.proyecto_id) {
+      mostrarAviso("Esta oportunidad ya tiene un proyecto vinculado.", "info");
+      return;
+    }
+    puenteOportunidad = op;
+    puenteExcelData = null;
+    puenteArchivoFile = null;
+
+    const inpExcel = document.getElementById("puente-excel");
+    const inpDocs = document.getElementById("puente-docs");
+    const docsLista = document.getElementById("puente-docs-lista");
+    const prevEl = document.getElementById("puente-excel-preview");
+    if (inpExcel) inpExcel.value = "";
+    if (inpDocs) inpDocs.value = "";
+    if (docsLista) docsLista.textContent = "";
+    if (prevEl) {
+      prevEl.classList.add("hidden");
+      prevEl.innerHTML = "";
+    }
+
+    const esDesdeDrawer = oportunidadActual && oportunidadActual.id === op.id;
+    const nombreBase = (esDesdeDrawer ? document.getElementById("drawer-titulo")?.value.trim() : "") || op.titulo || "";
+    const clienteBase = (esDesdeDrawer ? document.getElementById("drawer-cliente")?.value : "") || op.cliente_id || "";
+    const empresaBase = op.empresa_id || op._oferta?.empresa_id || "";
+    const valorBase =
+      (esDesdeDrawer ? valorMoneda(document.getElementById("drawer-valor")) : 0) ||
+      Number(op.valor_estimado || op.costo_estimado || 0);
+
+    document.getElementById("puente-nombre").value = nombreBase;
+    document.getElementById("puente-cliente").value = clienteBase;
+    document.getElementById("puente-empresa").value = empresaBase;
+    establecerValorMoneda(document.getElementById("puente-valor"), valorBase);
+    document.getElementById("puente-trm").value = op._oferta?.trm_oferta ?? "";
+    document.getElementById("puente-tipo-contrato").value = "aiu";
+    document.getElementById("puente-categoria").value = "Instalación / Proyecto";
+
+    const banner = document.getElementById("puente-oferta-banner");
+    const { path, nombre } = obtenerExcelDeOfertaVinculada(op._oferta);
+    if (path && banner) {
+      banner.classList.remove("hidden");
+      banner.textContent = `⏳ Descargando Excel adjunto desde Oferta Pre-venta (${nombre})...`;
+    } else if (banner) {
+      banner.classList.add("hidden");
+    }
+
+    document.getElementById("modal-puente-proyecto")?.classList.remove("hidden");
+
+    if (path) {
+      try {
+        const { data: blob, error } = await window.sb.storage.from("documentos").download(path);
+        if (error || !blob) throw error || new Error("No se pudo descargar");
+        const archivo = new File([blob], nombre || "Cotizacion.xlsx", {
+          type: blob.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        });
+        puenteArchivoFile = archivo;
+        puenteExcelData = await parsearExcelFilePuente(archivo);
+        if (banner) {
+          banner.innerHTML = `✅ <strong>Excel de Oferta Pre-venta cargado automáticamente:</strong> ${escapeHtml(nombre)}. Puedes reemplazarlo abajo si deseas.`;
+        }
+        mostrarPreviewPuente(puenteExcelData, nombre);
+      } catch (err) {
+        if (banner) {
+          banner.textContent = `ℹ️ La oferta vinculada tiene "${nombre}", pero no se pudo descargar automáticamente. Puedes cargarlo manualmente abajo.`;
+        }
+      }
+    }
+  }
+
+  function cerrarModalPuente() {
+    document.getElementById("modal-puente-proyecto")?.classList.add("hidden");
+    puenteOportunidad = null;
+    puenteExcelData = null;
+    puenteArchivoFile = null;
+  }
+
+  async function ejecutarPuenteProyecto(e) {
+    e.preventDefault();
+    const op = puenteOportunidad;
+    if (!op) return;
+
+    const nombre = document.getElementById("puente-nombre").value.trim();
+    if (!nombre) return mostrarAviso("Escribe el nombre del proyecto.", "error");
+
+    const btn = document.getElementById("btn-puente-submit");
+    const textoOrig = btn ? btn.innerHTML : "";
     if (btn) {
       btn.disabled = true;
       btn.textContent = "Creando proyecto...";
     }
 
     try {
+      const clienteId = document.getElementById("puente-cliente").value || op.cliente_id || null;
+      const empresaId = document.getElementById("puente-empresa").value || op.empresa_id || null;
+      const valorBase = valorMoneda(document.getElementById("puente-valor"));
+      const trmRaw = document.getElementById("puente-trm").value.trim();
+      const trmVal = trmRaw === "" ? null : Number(trmRaw);
+      const tipoContrato = document.getElementById("puente-tipo-contrato").value || "aiu";
+      const categoria = document.getElementById("puente-categoria").value || "Instalación / Proyecto";
       const hoyLocal = (() => {
         if (typeof fechaLocalISO === "function") return fechaLocalISO();
         const d = new Date();
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       })();
 
-      // 1. Insertar el proyecto operativo (NO enviar valor_total: es columna GENERATED)
-      const { data: nuevoProyecto, error: errProy } = await window.sb
-        .from("proyectos")
-        .insert({
-          nombre: op.titulo,
-          cliente_id: op.cliente_id,
-          empresa_id: op.empresa_id || null,
-          valor_antes_impuestos: op.valor_estimado || op.costo_estimado || 0,
-          estado: "sin_iniciar",
-          fecha_inicio: hoyLocal,
-          fecha_fin_estimada: op.fecha_cierre_estimada || null,
-          created_by: usuarioActualId || null,
-          tipo_contrato: "aiu",
-        })
-        .select()
-        .single();
+      let proyectoId = null;
+      let creadoPorRpc = false;
+      let yaExistia = false;
 
-      if (errProy) throw errProy;
+      // 1. Crear proyecto (RPC transaccional primero, con fallback a insert directo)
+      if (typeof window.sb?.rpc === "function") {
+        try {
+          const { data: rpcRes, error: rpcErr } = await window.sb.rpc("rpc_convertir_oportunidad_a_proyecto", {
+            p_oportunidad_id: op.id,
+            p_nombre: nombre,
+            p_codigo: null,
+          });
+          if (!rpcErr && rpcRes?.proyecto_id) {
+            proyectoId = rpcRes.proyecto_id;
+            creadoPorRpc = true;
+            yaExistia = rpcRes.ya_existia === true;
+          }
+        } catch (errRpc) { /* fallback */ }
+      }
 
-      // 2. Asociar el proyecto creado a la oportunidad
-      const { error: errUpdOp } = await window.sb
-        .from("crm_oportunidades")
-        .update({
-          proyecto_id: nuevoProyecto.id,
-          etapa: "ganada",
-          probabilidad: 100,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", op.id);
-      if (errUpdOp) throw errUpdOp;
+      if (yaExistia && proyectoId) {
+        cerrarModalPuente();
+        if (oportunidadActual) cerrarDrawer();
+        await cargarDatos();
+        mostrarAviso("Esta oportunidad ya había sido convertida en proyecto. Abriendo proyecto existente...", "info");
+        if (window.PCT?.modal) {
+          window.PCT.modal({
+            titulo: "Proyecto ya existente",
+            html: `<p class="text-sm text-gray-700">Esta oportunidad ya había sido convertida previamente en un proyecto operativo. No se modificó ni se duplicó su presupuesto.</p>`,
+            botones: [
+              { texto: "Cerrar" },
+              {
+                texto: "Abrir Proyecto →",
+                clase: window.PCT.BTN_PRIMARIO,
+                onClick: () => {
+                  window.location.href = `proyecto-detalle.html?id=${proyectoId}`;
+                },
+              },
+            ],
+          });
+        } else {
+          window.location.href = `proyecto-detalle.html?id=${proyectoId}`;
+        }
+        return;
+      }
 
-      // 3. Registrar actividad en la bitácora
-      const { error: errAct } = await window.sb.from("crm_actividades").insert({
-        oportunidad_id: op.id,
-        tipo: "tarea",
-        titulo: "🚀 Convertida en Proyecto Operativo",
-        descripcion: `Se inició el proyecto en la plataforma con ID: ${nuevoProyecto.id}. Listo para carga de cotización y ejecución.`,
-        creado_por: usuarioActualId || null,
-      });
-      if (errAct) throw errAct;
+      const extraInicio = puenteExcelData?.inicio?.proyecto || {};
+      const datosProyecto = {
+        nombre,
+        cliente_id: clienteId,
+        empresa_id: empresaId,
+        valor_antes_impuestos: valorBase,
+        tipo_contrato: tipoContrato,
+        tipo_proyecto: [categoria],
+        estado: "sin_iniciar",
+        fecha_inicio: hoyLocal,
+        fecha_fin_estimada: op.fecha_cierre_estimada || null,
+        created_by: usuarioActualId || null,
+      };
+      if (tipoContrato === "aiu") {
+        if (extraInicio.administracion_porcentaje !== undefined) datosProyecto.administracion_porcentaje = extraInicio.administracion_porcentaje;
+        if (extraInicio.imprevistos_porcentaje !== undefined) datosProyecto.imprevistos_porcentaje = extraInicio.imprevistos_porcentaje;
+        if (extraInicio.utilidad_porcentaje !== undefined) datosProyecto.utilidad_porcentaje = extraInicio.utilidad_porcentaje;
+      }
+      if (extraInicio.iva_porcentaje !== undefined) datosProyecto.iva_porcentaje = extraInicio.iva_porcentaje;
+      if (extraInicio.anticipo_porcentaje !== undefined) datosProyecto.anticipo_porcentaje = extraInicio.anticipo_porcentaje;
+      if (extraInicio.numero_cotizacion) datosProyecto.numero_cotizacion = extraInicio.numero_cotizacion;
 
-      mostrarAviso("¡Proyecto creado exitosamente!", "exito");
-      cerrarDrawer();
+      if (!proyectoId) {
+        const { data: nuevoProyecto, error: errProy } = await window.sb
+          .from("proyectos")
+          .insert(datosProyecto)
+          .select()
+          .single();
+        if (errProy) throw errProy;
+        proyectoId = nuevoProyecto.id;
+
+        const { error: errUpdOp } = await window.sb
+          .from("crm_oportunidades")
+          .update({
+            proyecto_id: proyectoId,
+            etapa: "ganada",
+            probabilidad: 100,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", op.id);
+        if (errUpdOp) throw errUpdOp;
+
+        await window.sb.from("crm_actividades").insert({
+          oportunidad_id: op.id,
+          tipo: "tarea",
+          titulo: "🚀 Convertida en Proyecto Operativo",
+          descripcion: `Se inició el proyecto "${nombre}" (ID: ${proyectoId}).`,
+          creado_por: usuarioActualId || null,
+        });
+      } else {
+        const { error: errUpd } = await window.sb.from("proyectos").update(datosProyecto).eq("id", proyectoId);
+        if (errUpd) {
+          const esColumnaFaltante =
+            errUpd.code === "42703" ||
+            errUpd.code === "PGRST204" ||
+            /column|schema cache/i.test(String(errUpd.message || ""));
+          if (esColumnaFaltante) {
+            console.warn("Algunas columnas opcionales del proyecto aún no están migradas:", errUpd);
+          } else {
+            console.warn("No se pudieron actualizar todos los datos iniciales del proyecto:", errUpd);
+            mostrarAviso("El proyecto se creó, pero no se pudieron guardar todos los datos iniciales.", "info");
+          }
+        }
+      }
+
+      if (trmVal && Number.isFinite(trmVal)) {
+        try {
+          const { error: errTrm } = await window.sb.from("proyectos").update({ trm_cotizacion: trmVal }).eq("id", proyectoId);
+          if (errTrm && errTrm.code !== "42703" && errTrm.code !== "PGRST204" && !/trm_cotizacion|column/i.test(String(errTrm.message || ""))) {
+            console.warn("No se pudo guardar la TRM de cotización del proyecto:", errTrm);
+          }
+        } catch (eTrm) { /* silencioso si la columna trm_cotizacion no ha sido migrada */ }
+      }
+
+      // 2. Importar Cotización + Presupuesto de costos en 1 solo paso si se cargó Excel
+      let itemsImportados = 0;
+      if (puenteExcelData?.items?.length && window.PCT?.insertarItems) {
+        itemsImportados = await window.PCT.insertarItems(proyectoId, puenteExcelData.items, 0);
+      }
+
+      // 3. Subir documentos de cierre + Excel cotización a Storage y tabla documentos
+      const docsInput = document.getElementById("puente-docs");
+      const docsCat = document.getElementById("puente-docs-categoria")?.value || "orden_compra";
+      const archivosSubir = [...(docsInput?.files || [])].map((f) => ({ file: f, categoria: docsCat }));
+      if (puenteArchivoFile) {
+        archivosSubir.push({ file: puenteArchivoFile, categoria: "cotizacion" });
+      }
+      let docsSubidos = 0;
+      for (const { file, categoria: cat } of archivosSubir) {
+        try {
+          const ruta = `${proyectoId}/cierre/${Date.now()}_${file.name.replace(/[^\w.\-]+/g, "_")}`;
+          const { error: errUp } = await window.sb.storage.from("documentos").upload(ruta, file, { upsert: true });
+          if (errUp) continue;
+          const url = window.sb.storage.from("documentos").getPublicUrl(ruta).data.publicUrl;
+          const { error: errDocIns } = await window.sb.from("documentos").insert({
+            proyecto_id: proyectoId,
+            categoria: cat,
+            nombre_archivo: file.name,
+            url,
+            subido_por: usuarioActualId || null,
+          });
+          if (!errDocIns) docsSubidos++;
+        } catch (errDoc) {
+          console.warn("No se pudo adjuntar documento de cierre:", errDoc);
+        }
+      }
+
+      // 4. Notificación al equipo de Proyectos y Dirección
+      if (typeof window.PCT_NOTIFICAR === "function") {
+        await window.PCT_NOTIFICAR({
+          tipo: "nuevo_proyecto",
+          titulo: `Nuevo proyecto ganado: ${nombre}`,
+          mensaje: `Creado desde CRM Comercial${itemsImportados ? ` · ${itemsImportados} filas cargadas` : ""}${docsSubidos ? ` · ${docsSubidos} documento(s)` : ""}.`,
+          url: `proyecto-detalle.html?id=${proyectoId}`,
+          rol_destino: ["super_usuario", "directivo", "proyectos"],
+          proyecto_id: proyectoId,
+        });
+      }
+
+      cerrarModalPuente();
+      if (oportunidadActual) cerrarDrawer();
       await cargarDatos();
+      mostrarAviso(`¡Proyecto "${nombre}" creado${creadoPorRpc ? "" : " con éxito"}!`, "exito");
 
-      // Preguntar si desea ir al proyecto
-      if (confirm("¡Oportunidad convertida con éxito! ¿Deseas abrir la ficha del Proyecto ahora?")) {
-        window.location.href = `proyecto-detalle.html?id=${nuevoProyecto.id}`;
+      if (window.PCT?.modal) {
+        window.PCT.modal({
+          titulo: "¡Proyecto creado en 1 paso!",
+          html: `<p class="text-sm text-gray-700">El proyecto <strong>${escapeHtml(nombre)}</strong> está listo para ejecución${itemsImportados ? ` con <strong>${itemsImportados}</strong> filas de Cotización y Presupuesto de costos` : ""}${docsSubidos ? ` y <strong>${docsSubidos}</strong> documento(s) adjuntos` : ""}.</p>`,
+          botones: [
+            { texto: "Quedarme en CRM" },
+            {
+              texto: "Abrir Proyecto →",
+              clase: window.PCT.BTN_PRIMARIO,
+              onClick: () => {
+                window.location.href = `proyecto-detalle.html?id=${proyectoId}`;
+              },
+            },
+          ],
+        });
       }
     } catch (err) {
       manejarError(err, "Error al convertir la oportunidad en proyecto");
     } finally {
       if (btn) {
         btn.disabled = false;
-        btn.textContent = textoOrig;
+        btn.innerHTML = textoOrig;
       }
     }
+  }
+
+  function convertirEnProyecto() {
+    if (!oportunidadActual) return;
+    abrirModalPuenteProyecto(oportunidadActual);
   }
 
   // 13. Eliminar oportunidad
@@ -1111,6 +1411,9 @@
       if (errAct) throw errAct;
 
       mostrarAviso(`Oportunidad movida a ${etapaNombre}`, "exito");
+      if (nuevaEtapa === "ganada" && !op.proyecto_id) {
+        abrirModalPuenteProyecto(op);
+      }
     } catch (err) {
       // Revertir en memoria
       op.etapa = etapaAnterior;
@@ -1233,12 +1536,42 @@
     document.getElementById("btn-convertir-proyecto")?.addEventListener("click", convertirEnProyecto);
     document.getElementById("btn-enviar-preventa")?.addEventListener("click", enviarAOfertasPreventa);
 
+    // Modal Puente de Cierre Ganado → Nuevo Proyecto
+    document.getElementById("btn-puente-cerrar")?.addEventListener("click", cerrarModalPuente);
+    document.getElementById("btn-puente-cancelar")?.addEventListener("click", cerrarModalPuente);
+    document.getElementById("form-puente-proyecto")?.addEventListener("submit", ejecutarPuenteProyecto);
+    document.getElementById("puente-excel")?.addEventListener("change", async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        puenteArchivoFile = file;
+        puenteExcelData = await parsearExcelFilePuente(file);
+        mostrarPreviewPuente(puenteExcelData, file.name);
+      } catch (err) {
+        puenteExcelData = null;
+        puenteArchivoFile = null;
+        mostrarAviso(err.message || "No se pudo leer el archivo Excel", "error");
+      }
+    });
+    document.getElementById("puente-docs")?.addEventListener("change", (e) => {
+      const files = [...(e.target.files || [])];
+      const listaEl = document.getElementById("puente-docs-lista");
+      if (listaEl) {
+        listaEl.textContent = files.length
+          ? `${files.length} archivo(s) seleccionado(s): ${files.map((f) => f.name).join(", ")}`
+          : "";
+      }
+    });
+
     // Botones rápidos Ganada / Perdida en Drawer
     document.getElementById("btn-drawer-ganada")?.addEventListener("click", () => {
       document.getElementById("drawer-etapa").value = "ganada";
       document.getElementById("drawer-probabilidad").value = 100;
       document.getElementById("drawer-probabilidad-badge").textContent = "100%";
       actualizarEstadoBanners({ ...(oportunidadActual || {}), etapa: "ganada" });
+      if (oportunidadActual && !oportunidadActual.proyecto_id) {
+        abrirModalPuenteProyecto(oportunidadActual);
+      }
     });
 
     document.getElementById("btn-drawer-perdida")?.addEventListener("click", () => {
@@ -1249,7 +1582,13 @@
     });
 
     document.getElementById("drawer-etapa")?.addEventListener("change", (e) => {
-      actualizarEstadoBanners({ ...(oportunidadActual || {}), etapa: e.target.value });
+      const nueva = e.target.value;
+      actualizarEstadoBanners({ ...(oportunidadActual || {}), etapa: nueva });
+      if (nueva === "ganada" && oportunidadActual && !oportunidadActual.proyecto_id) {
+        document.getElementById("drawer-probabilidad").value = 100;
+        document.getElementById("drawer-probabilidad-badge").textContent = "100%";
+        abrirModalPuenteProyecto(oportunidadActual);
+      }
     });
 
     document.getElementById("drawer-valor")?.addEventListener("input", actualizarMargenLabel);

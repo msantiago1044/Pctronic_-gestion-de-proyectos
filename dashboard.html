@@ -29,13 +29,52 @@
   <link rel="stylesheet" href="assets/css/tailwind.min.css?v=2.3" />
 <link rel="stylesheet" href="assets/css/styles.css" />
 <style>
-  .comite-bg-navy { background-color: #0A2240; color: #FFFFFF; }
-  .comite-bg-cyan { background-color: #0095D9; color: #FFFFFF; }
-  .comite-text-navy { color: #0A2240; }
-  .comite-text-cyan { color: #0095D9; }
-  .comite-border-navy { border-color: #0A2240; }
-  .comite-border-cyan { border-color: #0095D9; }
+  .comite-bg-navy { background-color: #0B2545; color: #FFFFFF; }
+  .comite-bg-cyan { background-color: #169AD6; color: #FFFFFF; }
+  .comite-bg-canvas { background-color: #F4F7FA; }
+  .comite-bg-diff { background-color: #CBD5E1; }
+  .comite-text-navy { color: #0B2545; }
+  .comite-text-cyan { color: #169AD6; }
+  .comite-border-navy { border-color: #0B2545; }
+  .comite-border-cyan { border-color: #169AD6; }
+  .comite-th-cyan { background-color: #169AD6 !important; color: #FFFFFF !important; }
+  .comite-td-cyan { color: #169AD6 !important; font-weight: 700; background-color: #F0F9FF; }
+  .comite-strike { text-decoration: line-through; color: #94A3B8; }
+  .comite-pill-critico { background-color: #DC2626; color: #FFFFFF; }
+  .comite-pill-seguimiento { background-color: #D97706; color: #FFFFFF; }
+  .comite-pill-aldia { background-color: #059669; color: #FFFFFF; }
+  .comite-slide-card {
+    width: 100%;
+    max-width: 1240px;
+    margin: 0 auto;
+    min-height: 600px;
+  }
+  .comite-floating-bar {
+    background-color: rgba(11, 37, 69, 0.96);
+    color: #FFFFFF;
+    box-shadow: 0 12px 32px rgba(11, 37, 69, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+  }
+  .comite-floating-select {
+    background-color: rgba(255, 255, 255, 0.12);
+    color: #FFFFFF;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+  }
+  .comite-floating-select option {
+    background-color: #0B2545;
+    color: #FFFFFF;
+  }
+  .btn-modo-comite-cta {
+    background-color: #0B2545;
+    color: #FFFFFF;
+    border: 1px solid #169AD6;
+    box-shadow: 0 4px 12px rgba(11, 37, 69, 0.2);
+  }
+  .btn-modo-comite-cta:hover {
+    background-color: #133663;
+  }
   @media print {
+    @page { size: landscape; margin: 8mm; }
     body > *:not(#modo-comite) { display: none !important; }
     #modo-comite {
       position: static !important;
@@ -53,11 +92,16 @@
     .comite-print-slide {
       page-break-after: always;
       break-after: page;
-      padding: 16px;
+      padding: 8px;
     }
     .comite-print-slide:last-child {
       page-break-after: auto;
       break-after: auto;
+    }
+    .comite-slide-card {
+      max-width: 100% !important;
+      min-height: 175mm !important;
+      box-shadow: none !important;
     }
   }
 </style>
@@ -73,17 +117,25 @@
   <div id="app-topbar"></div>
 
   <main class="p-6 space-y-6">
-    <div class="flex flex-wrap items-center justify-end gap-2">
-      <select id="filtro-empresa-dashboard" aria-label="Filtrar por empresa"
-        class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 shadow-sm focus:border-primary focus:ring-primary">
-        <option value="">Todas las empresas</option>
-      </select>
-      <button id="btn-personalizar" class="flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
-        <span class="material-symbols-outlined text-[16px]" aria-hidden="true">tune</span> Personalizar tarjetas
-      </button>
-      <button id="btn-modo-comite" class="flex items-center gap-1 rounded-lg bg-gray-900 px-3 py-2 text-xs font-semibold text-white hover:bg-gray-700">
-        <span class="material-symbols-outlined text-[16px]" aria-hidden="true">present_to_all</span> Modo Comité de Gerencia
-      </button>
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h1 class="text-lg font-bold text-gray-900">Panel Ejecutivo</h1>
+        <p class="text-xs text-gray-500">Consolidado operativo, financiero y presentación de Comité</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <select id="filtro-empresa-dashboard" aria-label="Filtrar por empresa"
+          class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 shadow-sm focus:border-primary focus:ring-primary">
+          <option value="">Todas las empresas</option>
+        </select>
+        <button id="btn-personalizar" type="button" class="flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+          <span class="material-symbols-outlined text-[16px]" aria-hidden="true">tune</span> Personalizar tarjetas
+        </button>
+        <button id="btn-modo-comite" type="button" class="btn-modo-comite-cta inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-colors">
+          <span class="material-symbols-outlined text-[18px] comite-text-cyan" aria-hidden="true">present_to_all</span>
+          <span>Modo Comité / Presentación</span>
+          <span class="rounded-full comite-bg-cyan px-2 py-0.5 text-[10px] font-bold">11 slides</span>
+        </button>
+      </div>
     </div>
 
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" id="kpi-cards">
@@ -104,7 +156,8 @@
           <p class="text-xs text-gray-500" id="comite-mes-subtitulo">Indicadores consolidados del mes actual</p>
         </div>
       </div>
-      <div id="resumen-comite-grid" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div id="resumen-comite-grid" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div class="h-20 rounded-lg bg-gray-50 skeleton"></div>
         <div class="h-20 rounded-lg bg-gray-50 skeleton"></div>
         <div class="h-20 rounded-lg bg-gray-50 skeleton"></div>
         <div class="h-20 rounded-lg bg-gray-50 skeleton"></div>
@@ -168,12 +221,13 @@
             <tr>
               <th class="px-5 py-3">Proyecto</th>
               <th class="px-5 py-3">Estado</th>
+              <th class="px-5 py-3">Semáforo</th>
               <th class="px-5 py-3">Avance</th>
               <th class="px-5 py-3">Valor Total</th>
             </tr>
           </thead>
           <tbody id="tabla-proyectos-recientes">
-            <tr aria-live="polite"><td class="px-5 py-6 text-gray-500" colspan="4">Cargando…</td></tr>
+            <tr aria-live="polite"><td class="px-5 py-6 text-gray-500" colspan="5">Cargando…</td></tr>
           </tbody>
         </table>
       </div>
@@ -244,28 +298,49 @@
   </div>
 </div>
 
-<!-- Modo Comité de Gerencia: presentación de pantalla completa -->
-<div id="modo-comite" class="fixed inset-0 z-50 hidden flex-col bg-[#F4F7FA]">
-  <div class="comite-no-print flex items-center justify-between border-b border-gray-200 bg-white px-8 py-3">
-    <div class="flex items-center gap-3">
-      <span class="inline-flex h-2.5 w-2.5 rounded-full comite-bg-cyan"></span>
-      <p class="text-sm font-bold comite-text-navy">Comité de Proyectos · Pctronic + Grupo Integra</p>
-    </div>
-    <div class="flex items-center gap-2">
-      <button id="btn-imprimir-comite" type="button" class="inline-flex items-center gap-1.5 rounded-lg comite-bg-navy px-3.5 py-1.5 text-xs font-semibold text-white hover:opacity-90">
-        <span class="material-symbols-outlined text-[16px]" aria-hidden="true">print</span> Imprimir / Guardar PDF
-      </button>
-      <button id="btn-cerrar-comite" type="button" class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">
-        <span class="material-symbols-outlined align-middle text-[16px]" aria-hidden="true">close</span> Cerrar (Esc)
-      </button>
-    </div>
-  </div>
-  <div id="comite-contenido" class="flex-1 overflow-y-auto px-6 py-6 sm:px-10"></div>
+<!-- Modo Comité de Gerencia: presentación de pantalla completa (11 diapositivas) -->
+<div id="modo-comite" class="fixed inset-0 z-50 hidden flex-col comite-bg-canvas">
+  <div id="comite-contenido" class="flex-1 overflow-y-auto px-4 py-5 sm:px-8 pb-24"></div>
   <div id="comite-print-all" class="hidden"></div>
-  <div class="comite-no-print flex items-center justify-between border-t border-gray-200 bg-white px-8 py-3">
-    <button id="btn-comite-anterior" type="button" class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40">← Anterior</button>
-    <p class="text-xs font-semibold comite-text-navy" id="comite-indicador"></p>
-    <button id="btn-comite-siguiente" type="button" class="rounded-lg comite-bg-cyan px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-40">Siguiente →</button>
+
+  <!-- Barra flotante de presentación -->
+  <div class="comite-no-print fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[96%] max-w-4xl">
+    <div class="comite-floating-bar flex flex-wrap items-center justify-between gap-2 rounded-2xl px-4 py-2.5 backdrop-blur-sm">
+      <div class="flex items-center gap-2">
+        <button id="btn-comite-anterior" type="button"
+          class="rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20 disabled:opacity-40">
+          ← Anterior
+        </button>
+        <div class="flex items-center gap-2">
+          <select id="select-comite-slide" aria-label="Seleccionar diapositiva"
+            class="comite-floating-select rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none">
+          </select>
+          <span id="comite-indicador" class="sr-only"></span>
+        </div>
+        <button id="btn-comite-siguiente" type="button"
+          class="rounded-lg comite-bg-cyan px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-40">
+          Siguiente →
+        </button>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="btn-comite-fullscreen" type="button" title="Alternar pantalla completa (F)"
+          class="inline-flex items-center gap-1 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20">
+          <span id="comite-fs-icon" class="material-symbols-outlined text-[16px]" aria-hidden="true">fullscreen</span>
+          <span id="comite-fs-label">Pantalla completa</span>
+          <span class="hidden sm:inline rounded bg-white/15 px-1.5 py-0.5 text-[10px]">F</span>
+        </button>
+        <button id="btn-imprimir-comite" type="button"
+          class="inline-flex items-center gap-1 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20">
+          <span class="material-symbols-outlined text-[16px]" aria-hidden="true">print</span>
+          <span>Imprimir / PDF</span>
+        </button>
+        <button id="btn-cerrar-comite" type="button"
+          class="inline-flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-xs font-bold comite-text-navy hover:bg-gray-100">
+          <span class="material-symbols-outlined text-[16px]" aria-hidden="true">close</span>
+          <span>Esc Salir</span>
+        </button>
+      </div>
+    </div>
   </div>
 </div>
 

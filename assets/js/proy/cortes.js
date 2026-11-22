@@ -441,6 +441,169 @@
       docs = d.data || [];
     };
 
+    const sumarDiasISO = (iso, dias) => {
+      if (!iso) return null;
+      const d = new Date(`${String(iso).slice(0, 10)}T00:00:00`);
+      if (isNaN(d.getTime())) return null;
+      d.setDate(d.getDate() + dias);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    };
+
+    const esErrorColumnaCorteId = (err) =>
+      Boolean(
+        err &&
+          (err.code === "42703" ||
+            err.code === "PGRST204" ||
+            /corte_id|column/i.test(String(err.message || "")))
+      );
+
+    const anularFacturaDeCorte = async (corteId) => {
+      if (!corteId) return { ok: true, error: null };
+      try {
+        const resBuscar = await window.sb
+          .from("facturas")
+          .select("id, estado")
+          .eq("corte_id", corteId)
+          .maybeSingle();
+        if (resBuscar.error) {
+          if (esErrorColumnaCorteId(resBuscar.error)) return { ok: true, error: null };
+          console.warn("No se pudo consultar la factura asociada al corte:", resBuscar.error);
+          return { ok: false, error: resBuscar.error };
+        }
+        if (resBuscar.data?.id && resBuscar.data.estado !== "anulada") {
+          const { error: errAnular } = await window.sb
+            .from("facturas")
+            .update({ estado: "anulada" })
+            .eq("id", resBuscar.data.id);
+          if (errAnular) {
+            console.warn("No se pudo anular la factura asociada al corte:", errAnular);
+            return { ok: false, error: errAnular };
+          }
+        }
+        return { ok: true, error: null };
+      } catch (errAnul) {
+        console.warn("No se pudo anular la factura asociada al corte:", errAnul);
+        return { ok: false, error: errAnul };
+      }
+    };
+
+    const sincronizarCorteAFacturacion = async (corteActualizado, estadoAnterior, cdOverride = null) => {
+      if (!corteActualizado) return { ok: false, error: new Error("Corte inválido") };
+      if (!["facturado", "pagado"].includes(corteActualizado.estado)) {
+        return await anularFacturaDeCorte(corteActualizado.id);
+      }
+      try {
+        const proy = p();
+        const cd = cdOverride !== null ? cdOverride : cdDe(corteActualizado.id);
+        const acta = PCT.acta(cd, proy);
+        const numeroFactura = (corteActualizado.numero_factura || "").trim() || `CORTE-${corteActualizado.numero}`;
+        const fechaEmision =
+          corteActualizado.fecha_factura ||
+          corteActualizado.fecha ||
+          (typeof fechaLocalISO === "function" ? fechaLocalISO() : PCT.hoyISO());
+        const diasCredito = PCT.num(proy.dias_credito) > 0 ? PCT.num(proy.dias_credito) : 30;
+        const fechaVencimiento = sumarDiasISO(fechaEmision, diasCredito);
+        const valorFactura = Math.round((acta.neto > 0 ? acta.neto : acta.total) * 100) / 100;
+        const estadoFactura = corteActualizado.estado === "pagado" ? "pagada" : "pendiente";
+        const notasFactura = `Corte #${corteActualizado.numero} - ${proy.nombre || ""} | Subtotal: ${formatoMoneda(acta.ingreso)} · IVA: ${formatoMoneda(acta.iva)} · Total acta: ${formatoMoneda(acta.total)} · Neto: ${formatoMoneda(acta.neto)}`;
+
+        const payloadBase = {
+          proyecto_id: pid,
+          numero_factura: numeroFactura,
+          valor: valorFactura,
+          fecha_emision: fechaEmision,
+          fecha_vencimiento: fechaVencimiento,
+          estado: estadoFactura,
+          notas: notasFactura,
+        };
+
+        let synced = false;
+        let lastError = null;
+        const resBuscar = await window.sb.from("facturas").select("id").eq("corte_id", corteActualizado.id).maybeSingle();
+        const errCol = esErrorColumnaCorteId(resBuscar.error);
+
+        if (!errCol && !resBuscar.error) {
+          if (resBuscar.data?.id) {
+            const { error: errUpd } = await window.sb.from("facturas").update(payloadBase).eq("id", resBuscar.data.id);
+            if (!errUpd) {
+              synced = true;
+            } else {
+              lastError = errUpd;
+            }
+          } else {
+            const payloadConCorte = { ...payloadBase, corte_id: corteActualizado.id };
+            const { error: errUps } = await window.sb.from("facturas").upsert(payloadConCorte, { onConflict: "corte_id" });
+            if (!errUps) {
+              synced = true;
+            } else {
+              lastError = errUps;
+              const { error: errIns } = await window.sb.from("facturas").insert(payloadConCorte);
+              if (!errIns) {
+                synced = true;
+                lastError = null;
+              } else {
+                lastError = errIns;
+              }
+            }
+          }
+        } else if (!errCol && resBuscar.error) {
+          lastError = resBuscar.error;
+        }
+
+        if (!synced) {
+          const resFallback = await window.sb
+            .from("facturas")
+            .select("id")
+            .eq("proyecto_id", pid)
+            .eq("numero_factura", numeroFactura)
+            .maybeSingle();
+          if (resFallback.error) {
+            lastError = resFallback.error;
+          } else if (resFallback.data?.id) {
+            const { error: errFbUpd } = await window.sb
+              .from("facturas")
+              .update(payloadBase)
+              .eq("id", resFallback.data.id);
+            if (!errFbUpd) {
+              synced = true;
+              lastError = null;
+            } else {
+              lastError = errFbUpd;
+            }
+          } else {
+            const { error: errFbIns } = await window.sb.from("facturas").insert(payloadBase);
+            if (!errFbIns) {
+              synced = true;
+              lastError = null;
+            } else {
+              lastError = errFbIns;
+            }
+          }
+        }
+
+        if (!synced) {
+          console.warn("No se pudo sincronizar el corte con Facturación:", lastError);
+          return { ok: false, error: lastError || new Error("No se pudo sincronizar con Facturación") };
+        }
+
+        const esRecienFacturado = estadoAnterior !== "facturado" && estadoAnterior !== "pagado";
+        if (esRecienFacturado && typeof window.PCT_NOTIFICAR === "function") {
+          window.PCT_NOTIFICAR({
+            tipo: "corte_facturado",
+            titulo: `Corte #${corteActualizado.numero} facturado`,
+            mensaje: `${proy.nombre || "Proyecto"} · ${numeroFactura} (${formatoMoneda(valorFactura)})`,
+            url: `proyecto-detalle.html?id=${pid}&tab=cortes`,
+            rol_destino: ["super_usuario", "directivo", "proyectos"],
+            proyecto_id: pid,
+          });
+        }
+        return { ok: true, error: null };
+      } catch (errSync) {
+        console.warn("No se pudo sincronizar el corte con Facturación:", errSync);
+        return { ok: false, error: errSync };
+      }
+    };
+
     const refrescar = async () => {
       await Promise.all([cargar(), PCT.recargarEjec(), PCT.recargarFinanzas()]);
       pintar();
@@ -585,7 +748,22 @@
       });
       if (ok) {
         await refrescar();
-        mostrarAviso(corte ? "Corte actualizado." : `Corte N° ${numero} creado.`, "exito");
+        let syncOk = true;
+        if (corte && ["facturado", "pagado"].includes(corte.estado)) {
+          const actualizado = cortes.find((c) => c.id === corte.id);
+          if (actualizado) {
+            const syncRes = await sincronizarCorteAFacturacion(actualizado, corte.estado);
+            syncOk = Boolean(syncRes?.ok);
+          }
+        }
+        mostrarAviso(
+          corte
+            ? syncOk
+              ? "Corte actualizado."
+              : "Corte guardado (no se pudo sincronizar automáticamente con Facturación)."
+            : `Corte N° ${numero} creado.`,
+          syncOk ? "exito" : "info"
+        );
       }
     };
 
@@ -667,10 +845,32 @@
                 onClick: async () => {
                   const ok = await PCT.confirmar("Eliminar corte", `¿Eliminar el corte N° ${corte.numero}? Lo cortado vuelve a quedar pendiente por cortar.`, "Eliminar", true);
                   if (!ok) return false;
+                  let facturaAsociadaId = null;
+                  try {
+                    const resFac = await window.sb
+                      .from("facturas")
+                      .select("id, estado")
+                      .eq("corte_id", corte.id)
+                      .maybeSingle();
+                    if (!resFac.error && resFac.data?.id && resFac.data.estado !== "anulada") {
+                      facturaAsociadaId = resFac.data.id;
+                    }
+                  } catch (eFac) { /* silencioso si la columna corte_id aún no existe */ }
                   const { error } = await window.sb.from("cortes_cliente").delete().eq("id", corte.id);
                   if (error) {
                     manejarError(error, "No se pudo eliminar el corte");
                     return false;
+                  }
+                  if (facturaAsociadaId) {
+                    try {
+                      const { error: errAnul } = await window.sb
+                        .from("facturas")
+                        .update({ estado: "anulada" })
+                        .eq("id", facturaAsociadaId);
+                      if (errAnul) console.warn("No se pudo anular la factura del corte eliminado:", errAnul);
+                    } catch (eAnul) {
+                      console.warn("No se pudo anular la factura del corte eliminado:", eAnul);
+                    }
                   }
                   await refrescar();
                   mostrarAviso("Corte eliminado.", "exito");
@@ -683,6 +883,7 @@
             texto: "Guardar",
             clase: PCT.BTN_PRIMARIO,
             onClick: async ({ el }) => {
+              const estadoAnterior = corte.estado;
               const datos = {
                 estado: el.querySelector("#cd-estado").value,
                 numero_factura: el.querySelector("#cd-factura").value.trim() || null,
@@ -695,8 +896,24 @@
                 manejarError(error, "No se pudo guardar el corte");
                 return false;
               }
+              const esFacturable = ["facturado", "pagado"].includes(datos.estado);
+              const syncRes = await sincronizarCorteAFacturacion({ ...corte, ...datos }, estadoAnterior);
               await refrescar();
-              mostrarAviso("Corte guardado.", "exito");
+              if (esFacturable) {
+                mostrarAviso(
+                  syncRes?.ok
+                    ? "Corte guardado y sincronizado con Facturación."
+                    : "Corte guardado (no se pudo sincronizar automáticamente con Facturación).",
+                  syncRes?.ok ? "exito" : "info"
+                );
+              } else {
+                mostrarAviso(
+                  syncRes?.ok
+                    ? "Corte guardado."
+                    : "Corte guardado (no se pudo sincronizar automáticamente con Facturación).",
+                  syncRes?.ok ? "exito" : "info"
+                );
+              }
             },
           },
         ],
