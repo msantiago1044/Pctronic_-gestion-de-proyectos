@@ -9,7 +9,18 @@
   if (!session) return;
   const usuarioActualId = session?.user?.id;
   const rolNorm = typeof normalizarRol === "function" ? normalizarRol(profile?.rol) : (profile?.rol || "proyectos");
+  const verTodoCRM = window.PCT_ROL_INFO?.puedeVerTodoCRM ?? (rolNorm !== "comercial");
   const esComercialSolo = rolNorm === "comercial";
+  const esAdminCrm = Boolean(
+    window.PCT_ROL_INFO?.esSuperUsuario ||
+      window.PCT_ROL_INFO?.esAdmin ||
+      rolNorm === "super_usuario" ||
+      rolNorm === "jefe_comercial"
+  );
+
+  if (!verTodoCRM) {
+    document.getElementById("filtro-responsable")?.classList.add("hidden");
+  }
 
   // 1. Constantes y Configuración de Etapas y Servicios
   const ETAPAS = {
@@ -23,11 +34,14 @@
     descartada: { label: "Descartado", color: "bg-zinc-400", badge: "bg-zinc-100 text-zinc-700" },
   };
 
+  const ETAPAS_AUTO_PREVENTA = ["visita", "cotizacion", "negociacion", "enviada"];
+
   const ESTADOS_OFERTA = {
     levantamiento: { label: "Pre-venta: Levantamiento", badge: "bg-slate-100 text-slate-700 border-slate-200" },
     en_proceso: { label: "Pre-venta: En proceso", badge: "bg-blue-100 text-blue-700 border-blue-200" },
     finalizado: { label: "Pre-venta: Finalizado", badge: "bg-amber-100 text-amber-800 border-amber-200" },
-    enviado_cliente: { label: "Pre-venta: Enviado al cliente", badge: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+    enviado_comercial: { label: "Pre-venta: Enviado al Comercial", badge: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+    enviado_cliente: { label: "Pre-venta: Enviado al Comercial", badge: "bg-emerald-100 text-emerald-700 border-emerald-200" },
   };
 
   const SERVICIOS = {
@@ -58,15 +72,33 @@
   let puenteOportunidad = null;
   let puenteExcelData = null;
   let puenteArchivoFile = null;
+  const ofertasCreandoEnCurso = new Set();
   const vistaGuardada = localStorage.getItem("pctronic_crm_vista");
   let vistaActual = ["tablero", "lista", "dashboard"].includes(vistaGuardada) ? vistaGuardada : "tablero";
+
+  function obtenerProyectoIdOp(op) {
+    if (!op) return null;
+    return op.proyecto_id || op._oferta?.proyecto_id || null;
+  }
+
+  function oportunidadTieneOfertaAdjunta(op) {
+    const of = op?._oferta;
+    if (!of) return false;
+    if (of.archivo_cotizacion_path) return true;
+    if (Array.isArray(of.adjuntos) && of.adjuntos.length > 0) return true;
+    return false;
+  }
 
   // 3. Cargar datos desde Supabase
   async function cargarOfertasSeguras() {
     const resExt = await window.sb
       .from("crm_ofertas_preventa")
-      .select("id, oportunidad_id, estado, titulo, empresa_id, archivo_cotizacion_path, archivo_cotizacion_nombre, trm_oferta, adjuntos");
+      .select("id, oportunidad_id, estado, titulo, empresa_id, archivo_cotizacion_path, archivo_cotizacion_nombre, trm_oferta, adjuntos, proyecto_id, comercial_destino_id, enviado_comercial_at");
     if (!resExt.error) return resExt;
+    const resMid = await window.sb
+      .from("crm_ofertas_preventa")
+      .select("id, oportunidad_id, estado, titulo, empresa_id, archivo_cotizacion_path, archivo_cotizacion_nombre, trm_oferta, adjuntos");
+    if (!resMid.error) return resMid;
     return window.sb.from("crm_ofertas_preventa").select("id, oportunidad_id, estado, titulo, empresa_id, adjuntos");
   }
 
@@ -99,10 +131,18 @@
       const ofertasPorId = new Map(ofertas.map((o) => [o.id, o]));
       const ofertasPorOpId = new Map(ofertas.filter((o) => o.oportunidad_id).map((o) => [o.oportunidad_id, o]));
 
-      oportunidades = (resOps.data || []).map((op) => ({
-        ...op,
-        _oferta: (op.oferta_preventa_id && ofertasPorId.get(op.oferta_preventa_id)) || ofertasPorOpId.get(op.id) || null,
-      }));
+      const todasOps = (resOps.data || []).map((op) => {
+        const oferta = (op.oferta_preventa_id && ofertasPorId.get(op.oferta_preventa_id)) || ofertasPorOpId.get(op.id) || null;
+        return {
+          ...op,
+          proyecto_id: op.proyecto_id || oferta?.proyecto_id || null,
+          _oferta: oferta,
+        };
+      });
+
+      oportunidades = verTodoCRM
+        ? todasOps
+        : todasOps.filter((op) => op.responsable_id === usuarioActualId || op.creado_por === usuarioActualId);
       clientes = resCli.data || [];
       empresas = resEmp.data || [];
       perfiles = resProf.data || [];
@@ -133,9 +173,21 @@
     const selDrawerResp = document.getElementById("drawer-responsable");
     const selNuevoResp = document.getElementById("nuevo-responsable");
     const selFiltroResp = document.getElementById("filtro-responsable");
-    if (selDrawerResp) selDrawerResp.innerHTML = '<option value="">Sin asignar</option>' + optsPerfiles;
-    if (selNuevoResp) selNuevoResp.innerHTML = '<option value="">Sin asignar</option>' + optsPerfiles;
-    if (selFiltroResp) selFiltroResp.innerHTML = '<option value="">Comercial: Todos</option>' + optsPerfiles;
+    if (selDrawerResp) {
+      selDrawerResp.innerHTML = '<option value="">Sin asignar</option>' + optsPerfiles;
+      if (!verTodoCRM) selDrawerResp.disabled = true;
+    }
+    if (selNuevoResp) {
+      selNuevoResp.innerHTML = '<option value="">Sin asignar</option>' + optsPerfiles;
+      if (!verTodoCRM && usuarioActualId) {
+        selNuevoResp.value = usuarioActualId;
+        selNuevoResp.disabled = true;
+      }
+    }
+    if (selFiltroResp) {
+      selFiltroResp.innerHTML = '<option value="">Comercial: Todos</option>' + optsPerfiles;
+      if (!verTodoCRM) selFiltroResp.classList.add("hidden");
+    }
   }
 
   // 5. Cálculo de métricas comerciales (KPIs)
@@ -275,10 +327,10 @@
                   <span class="inline-flex items-center gap-0.5 rounded-full border px-2 py-0.5 text-[10px] font-bold ${(ESTADOS_OFERTA[op._oferta.estado] || ESTADOS_OFERTA.levantamiento).badge}" title="Estado en Ofertas Pre-venta">
                     ${(ESTADOS_OFERTA[op._oferta.estado] || ESTADOS_OFERTA.levantamiento).label}
                   </span>` : ""}
-                ${op.proyecto_id ? `
-                  <span class="inline-flex items-center gap-0.5 rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[10px] font-bold" title="Vinculado a Proyecto">
-                    <span class="material-symbols-outlined text-[12px]">rocket_launch</span> Proyecto
-                  </span>` : ""}
+                ${obtenerProyectoIdOp(op) ? `
+                  <a href="proyecto-detalle.html?id=${encodeURIComponent(obtenerProyectoIdOp(op))}" class="inline-flex items-center gap-0.5 rounded-full bg-emerald-600 text-white px-2 py-0.5 text-[10px] font-bold hover:bg-emerald-700" title="Ver Proyecto Operativo">
+                    <span class="material-symbols-outlined text-[12px]">rocket_launch</span> Ver Proyecto
+                  </a>` : ""}
               </div>
             </div>
 
@@ -380,6 +432,10 @@
                                 <span class="rounded-full border px-2 py-0.5 text-[9px] font-bold ${(ESTADOS_OFERTA[op._oferta.estado] || ESTADOS_OFERTA.levantamiento).badge}">
                                   ${(ESTADOS_OFERTA[op._oferta.estado] || ESTADOS_OFERTA.levantamiento).label}
                                 </span>` : ""}
+                              ${obtenerProyectoIdOp(op) ? `
+                                <a href="proyecto-detalle.html?id=${encodeURIComponent(obtenerProyectoIdOp(op))}" class="inline-flex items-center gap-0.5 rounded-full bg-emerald-600 text-white px-2 py-0.5 text-[9px] font-bold hover:bg-emerald-700">
+                                  Ver Proyecto →
+                                </a>` : ""}
                               ${esEstancada ? `
                                 <span class="rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 text-[9px] font-bold" title="Sin actualización hace ${diasSinCambio} días">
                                   ⚠️ Inactiva ${diasSinCambio}d
@@ -694,21 +750,51 @@
 
   function actualizarEstadoBanners(op) {
     const bannerGanada = document.getElementById("drawer-banner-ganada");
+    const bannerEnvioCliente = document.getElementById("drawer-banner-envio-cliente");
+    const envioClienteInfo = document.getElementById("drawer-envio-cliente-info");
     const contPerdida = document.getElementById("drawer-contenedor-perdida");
     const btnConvertir = document.getElementById("btn-convertir-proyecto");
+    const linkVerProyecto = document.getElementById("link-ver-proyecto");
     const infoProyecto = document.getElementById("drawer-proyecto-info");
+    const btnEliminar = document.getElementById("btn-drawer-eliminar");
+    const oferta = op._oferta || (oportunidadActual && oportunidadActual._oferta);
+    const proyId = obtenerProyectoIdOp({ ...op, _oferta: oferta });
 
-    if (op.etapa === "ganada") {
+    // Banner Envío al Cliente (etapa cotizacion)
+    if (bannerEnvioCliente) {
+      if (op.etapa === "cotizacion") {
+        bannerEnvioCliente.classList.remove("hidden");
+        if (envioClienteInfo) {
+          const ofertaLista = oferta && ["enviado_comercial", "finalizado", "enviado_cliente"].includes(oferta.estado);
+          envioClienteInfo.textContent = ofertaLista
+            ? "Pre-venta ya entregó la oferta. Cuando la envíes al cliente, márcala aquí para iniciar el seguimiento comercial."
+            : "Cuando presentes la propuesta al cliente, márcala como enviada para iniciar el seguimiento comercial.";
+        }
+      } else {
+        bannerEnvioCliente.classList.add("hidden");
+      }
+    }
+
+    if (op.etapa === "ganada" || proyId) {
       bannerGanada.classList.remove("hidden");
-      if (op.proyecto_id) {
+      if (proyId) {
         btnConvertir.classList.add("hidden");
+        if (linkVerProyecto) {
+          linkVerProyecto.href = `proyecto-detalle.html?id=${encodeURIComponent(proyId)}`;
+          linkVerProyecto.classList.remove("hidden");
+          linkVerProyecto.classList.add("inline-flex");
+        }
         infoProyecto.innerHTML = `
           ✅ <strong>Proyecto creado:</strong> Ya está en ejecución como 
-          <a href="proyecto-detalle.html?id=${op.proyecto_id}" class="underline font-bold text-emerald-900">
+          <a href="proyecto-detalle.html?id=${encodeURIComponent(proyId)}" class="underline font-bold text-emerald-900">
             ${escapeHtml(op.proyectos?.nombre || "Ver Proyecto")} →
           </a>`;
       } else {
         btnConvertir.classList.remove("hidden");
+        if (linkVerProyecto) {
+          linkVerProyecto.classList.add("hidden");
+          linkVerProyecto.classList.remove("inline-flex");
+        }
         infoProyecto.textContent = "Esta cotización ha sido adjudicada. Puedes pasarla a ejecución operativa en el módulo de Proyectos con un solo clic.";
       }
     } else {
@@ -721,12 +807,19 @@
       contPerdida.classList.add("hidden");
     }
 
+    // Permiso de eliminación manual (Super Usuario o Jefe Comercial siempre; dueño solo en etapa perdida)
+    if (btnEliminar) {
+      const esDueno = op.responsable_id === usuarioActualId || op.creado_por === usuarioActualId;
+      const puedeEliminar = esAdminCrm || (op.etapa === "perdida" && esDueno);
+      btnEliminar.classList.toggle("hidden", !puedeEliminar);
+      btnEliminar.textContent = op.etapa === "perdida" ? "Eliminar oportunidad perdida" : "Eliminar Oportunidad";
+    }
+
     // Banner Oferta Pre-venta vinculada
     const ofertaBadge = document.getElementById("drawer-oferta-estado-badge");
     const ofertaInfo = document.getElementById("drawer-oferta-info");
     const btnEnviarPreventa = document.getElementById("btn-enviar-preventa");
     const linkVerOferta = document.getElementById("link-ver-oferta");
-    const oferta = op._oferta || (oportunidadActual && oportunidadActual._oferta);
 
     if (ofertaBadge && ofertaInfo && btnEnviarPreventa && linkVerOferta) {
       if (oferta) {
@@ -734,17 +827,179 @@
         ofertaBadge.textContent = est.label;
         ofertaBadge.className = `rounded-full border px-2 py-0.5 text-[10px] font-bold ${est.badge}`;
         ofertaBadge.classList.remove("hidden");
-        ofertaInfo.textContent = `Vinculada a "${oferta.titulo || op.titulo}".`;
+        ofertaInfo.textContent = `Vinculada a "${oferta.titulo || op.titulo}"${oferta.archivo_cotizacion_nombre ? ` · Excel: ${oferta.archivo_cotizacion_nombre}` : ""}.`;
         btnEnviarPreventa.classList.add("hidden");
-        linkVerOferta.href = `ofertas.html?id=${oferta.id}`;
+        linkVerOferta.href = `ofertas.html?id=${encodeURIComponent(oferta.id)}`;
         linkVerOferta.classList.remove("hidden");
         linkVerOferta.classList.add("inline-flex");
       } else {
         ofertaBadge.classList.add("hidden");
-        ofertaInfo.textContent = "Envía esta oportunidad al tablero de Ofertas Pre-venta para levantamiento y cotización técnica.";
+        ofertaInfo.textContent = "Esta oportunidad se sincroniza automáticamente con Pre-venta al avanzar a Visita o Cotización.";
         btnEnviarPreventa.classList.remove("hidden");
         linkVerOferta.classList.add("hidden");
         linkVerOferta.classList.remove("inline-flex");
+      }
+    }
+  }
+
+  async function asegurarOfertaPreventa(op, { silencioso = true } = {}) {
+    if (!op || !op.id) return null;
+    if (op._oferta?.id) return op._oferta;
+    if (ofertasCreandoEnCurso.has(op.id)) return null;
+    ofertasCreandoEnCurso.add(op.id);
+
+    try {
+      // 1. Verificar idempotencia en BD por oportunidad_id (nunca duplicar)
+      let existente = null;
+      const resExistExt = await window.sb
+        .from("crm_ofertas_preventa")
+        .select("id, oportunidad_id, estado, titulo, empresa_id, archivo_cotizacion_path, archivo_cotizacion_nombre, trm_oferta, adjuntos, proyecto_id")
+        .eq("oportunidad_id", op.id)
+        .limit(1)
+        .maybeSingle();
+      if (!resExistExt.error) {
+        existente = resExistExt.data;
+      } else {
+        const resExistMin = await window.sb
+          .from("crm_ofertas_preventa")
+          .select("id, oportunidad_id, estado, titulo, empresa_id, adjuntos")
+          .eq("oportunidad_id", op.id)
+          .limit(1)
+          .maybeSingle();
+        if (!resExistMin.error) existente = resExistMin.data;
+      }
+
+      if (existente) {
+        if (!op.oferta_preventa_id) {
+          try {
+            await window.sb
+              .from("crm_oportunidades")
+              .update({ oferta_preventa_id: existente.id, updated_at: new Date().toISOString() })
+              .eq("id", op.id);
+          } catch (eLink) { /* silencioso */ }
+        }
+        op._oferta = existente;
+        op.oferta_preventa_id = existente.id;
+        return existente;
+      }
+
+      // 2. Crear oferta en Pre-venta automáticamente
+      const estadoInicial = op.etapa === "cotizacion" ? "en_proceso" : "levantamiento";
+      const comercialOwner = op.responsable_id || op.creado_por || usuarioActualId || null;
+      const relevoInicial = [
+        {
+          fecha: new Date().toISOString(),
+          de_estado: null,
+          a_estado: estadoInicial,
+          de_responsable_id: null,
+          a_responsable_id: comercialOwner,
+          nota: "Creada automáticamente desde CRM Comercial",
+          usuario_id: usuarioActualId || null,
+        },
+      ];
+
+      const payloadBase = {
+        oportunidad_id: op.id,
+        titulo: op.titulo,
+        cliente_id: op.cliente_id || null,
+        empresa_id: op.empresa_id || null,
+        responsable_id: comercialOwner,
+        estado: estadoInicial,
+        prioridad: op.prioridad || "media",
+        valor_estimado: Number(op.valor_estimado || 0),
+        fecha_limite: op.fecha_cierre_estimada || null,
+        descripcion: op.descripcion || null,
+        historial_relevos: relevoInicial,
+        creado_por: usuarioActualId || null,
+      };
+      const payloadConDestino = { ...payloadBase, comercial_destino_id: comercialOwner };
+
+      let { data: nuevaOferta, error: errOferta } = await window.sb
+        .from("crm_ofertas_preventa")
+        .insert(payloadConDestino)
+        .select()
+        .single();
+
+      if (
+        errOferta &&
+        (errOferta.code === "42703" ||
+          errOferta.code === "PGRST204" ||
+          /comercial_destino_id|column|schema cache/i.test(String(errOferta.message || "")))
+      ) {
+        const retry = await window.sb.from("crm_ofertas_preventa").insert(payloadBase).select().single();
+        nuevaOferta = retry.data;
+        errOferta = retry.error;
+      }
+
+      if (errOferta) throw errOferta;
+
+      await window.sb
+        .from("crm_oportunidades")
+        .update({
+          oferta_preventa_id: nuevaOferta.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", op.id);
+
+      op._oferta = nuevaOferta;
+      op.oferta_preventa_id = nuevaOferta.id;
+      return nuevaOferta;
+    } catch (err) {
+      if (!silencioso) throw err;
+      console.warn("No se pudo sincronizar automáticamente la oferta Pre-venta:", err);
+      return null;
+    } finally {
+      ofertasCreandoEnCurso.delete(op.id);
+    }
+  }
+
+  async function marcarComoEnviadaAlCliente() {
+    if (!oportunidadActual) return;
+    const btn = document.getElementById("btn-marcar-enviada-cliente");
+    const textoOrig = btn ? btn.innerHTML : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Actualizando...";
+    }
+
+    try {
+      const ahoraIso = new Date().toISOString();
+      const nuevaProb = Math.max(Number(oportunidadActual.probabilidad || 0), 70);
+      const { error } = await window.sb
+        .from("crm_oportunidades")
+        .update({
+          etapa: "negociacion",
+          probabilidad: nuevaProb,
+          updated_at: ahoraIso,
+        })
+        .eq("id", oportunidadActual.id);
+      if (error) throw error;
+
+      try {
+        await window.sb.from("crm_actividades").insert({
+          oportunidad_id: oportunidadActual.id,
+          tipo: "correo",
+          titulo: "Oferta enviada al cliente",
+          descripcion: "Marcada como Enviada al cliente desde el CRM Comercial.",
+          creado_por: usuarioActualId || null,
+        });
+      } catch (eAct) { /* no bloqueante */ }
+
+      oportunidadActual.etapa = "negociacion";
+      oportunidadActual.probabilidad = nuevaProb;
+      document.getElementById("drawer-etapa").value = "negociacion";
+      document.getElementById("drawer-probabilidad").value = nuevaProb;
+      document.getElementById("drawer-probabilidad-badge").textContent = `${nuevaProb}%`;
+      actualizarEstadoBanners(oportunidadActual);
+      await cargarActividades(oportunidadActual.id);
+      mostrarAviso("Oportunidad marcada como Enviada al cliente.", "exito");
+      await cargarDatos();
+    } catch (err) {
+      manejarError(err, "No se pudo marcar como enviada al cliente");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = textoOrig;
       }
     }
   }
@@ -765,62 +1020,23 @@
     }
 
     try {
-      const relevoInicial = [
-        {
-          fecha: new Date().toISOString(),
-          de_estado: null,
-          a_estado: "levantamiento",
-          de_responsable_id: null,
-          a_responsable_id: op.responsable_id || usuarioActualId || null,
-          nota: "Enviado desde CRM Comercial",
-          usuario_id: usuarioActualId || null,
-        },
-      ];
+      const nuevaOferta = await asegurarOfertaPreventa(op, { silencioso: false });
+      if (!nuevaOferta) return;
 
-      const { data: nuevaOferta, error: errOferta } = await window.sb
-        .from("crm_ofertas_preventa")
-        .insert({
+      try {
+        await window.sb.from("crm_actividades").insert({
           oportunidad_id: op.id,
-          titulo: op.titulo,
-          cliente_id: op.cliente_id || null,
-          empresa_id: op.empresa_id || null,
-          responsable_id: op.responsable_id || usuarioActualId || null,
-          estado: "levantamiento",
-          prioridad: op.prioridad || "media",
-          valor_estimado: Number(op.valor_estimado || 0),
-          fecha_limite: op.fecha_cierre_estimada || null,
-          descripcion: op.descripcion || null,
-          historial_relevos: relevoInicial,
+          tipo: "tarea",
+          titulo: "Enviada a Ofertas Pre-venta",
+          descripcion: `Se vinculó la oferta en Pre-venta.`,
           creado_por: usuarioActualId || null,
-        })
-        .select()
-        .single();
-
-      if (errOferta) throw errOferta;
-
-      const { error: errUpd } = await window.sb
-        .from("crm_oportunidades")
-        .update({
-          oferta_preventa_id: nuevaOferta.id,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", op.id);
-
-      if (errUpd) throw errUpd;
-
-      const { error: errAct } = await window.sb.from("crm_actividades").insert({
-        oportunidad_id: op.id,
-        tipo: "tarea",
-        titulo: "Enviada a Ofertas Pre-venta",
-        descripcion: `Se creó la oferta en Pre-venta en estado Levantamiento.`,
-        creado_por: usuarioActualId || null,
-      });
-      if (errAct) throw errAct;
+        });
+      } catch (eAct) { /* no bloqueante */ }
 
       oportunidadActual._oferta = nuevaOferta;
       oportunidadActual.oferta_preventa_id = nuevaOferta.id;
       actualizarEstadoBanners(oportunidadActual);
-      mostrarAviso("Oportunidad enviada a Ofertas Pre-venta.", "exito");
+      mostrarAviso("Oportunidad vinculada en Ofertas Pre-venta.", "exito");
       await cargarDatos();
     } catch (err) {
       manejarError(err, "No se pudo enviar a Ofertas Pre-venta");
@@ -926,6 +1142,13 @@
     const titulo = document.getElementById("drawer-titulo").value.trim();
     if (!titulo) return mostrarAviso("El título no puede estar vacío", "error");
 
+    const etapa = document.getElementById("drawer-etapa").value;
+    if (etapa === "ganada" && !obtenerProyectoIdOp(oportunidadActual) && !oportunidadTieneOfertaAdjunta(oportunidadActual)) {
+      mostrarAviso("Debes adjuntar la oferta comercial (Excel) antes de pasar a Ganado y crear el proyecto.", "error");
+      abrirModalPuenteProyecto(oportunidadActual);
+      return;
+    }
+
     const btn = document.getElementById("btn-drawer-guardar");
     const textoOrig = btn ? btn.textContent : "";
     if (btn) {
@@ -934,11 +1157,12 @@
     }
 
     try {
-      const etapa = document.getElementById("drawer-etapa").value;
       const cliente_id = document.getElementById("drawer-cliente").value || null;
       const contactoRaw = document.getElementById("drawer-contacto").value.trim();
       const contacto_telefono = document.getElementById("drawer-telefono")?.value.trim() || null;
-      const responsable_id = document.getElementById("drawer-responsable").value || null;
+      const responsable_id = verTodoCRM
+        ? document.getElementById("drawer-responsable").value || null
+        : oportunidadActual.responsable_id || usuarioActualId || null;
       const tipo_servicio = document.getElementById("drawer-servicio").value;
       const prioridad = document.getElementById("drawer-prioridad").value;
       const fecha_cierre_estimada = document.getElementById("drawer-fecha").value || null;
@@ -975,6 +1199,23 @@
         .eq("id", oportunidadActual.id);
 
       if (error) throw error;
+
+      if (ETAPAS_AUTO_PREVENTA.includes(etapa)) {
+        await asegurarOfertaPreventa(
+          {
+            ...oportunidadActual,
+            titulo,
+            etapa,
+            cliente_id,
+            responsable_id,
+            prioridad,
+            valor_estimado,
+            fecha_cierre_estimada,
+            descripcion,
+          },
+          { silencioso: true }
+        );
+      }
 
       mostrarAviso("Oportunidad actualizada con éxito", "exito");
       cerrarDrawer();
@@ -1045,9 +1286,29 @@
     return { ...pres, inicio, archivoNombre: file.name };
   }
 
+  function actualizarEstadoSubmitPuente() {
+    const reqBanner = document.getElementById("puente-oferta-requerida-banner");
+    const reqBadge = document.getElementById("puente-excel-obligatorio-badge");
+    const excelBox = document.getElementById("puente-excel-box");
+    const btnSubmit = document.getElementById("btn-puente-submit");
+    const tieneOferta = Boolean(puenteArchivoFile) || oportunidadTieneOfertaAdjunta(puenteOportunidad);
+
+    if (reqBanner) reqBanner.classList.toggle("hidden", tieneOferta);
+    if (reqBadge) reqBadge.classList.toggle("hidden", tieneOferta);
+    if (excelBox) {
+      excelBox.classList.toggle("border-amber-300", !tieneOferta);
+      excelBox.classList.toggle("bg-amber-50/40", !tieneOferta);
+      excelBox.classList.toggle("border-indigo-200", tieneOferta);
+      excelBox.classList.toggle("bg-indigo-50/50", tieneOferta);
+    }
+    if (btnSubmit) {
+      btnSubmit.disabled = !tieneOferta;
+    }
+  }
+
   async function abrirModalPuenteProyecto(op) {
     if (!op) return;
-    if (op.proyecto_id) {
+    if (obtenerProyectoIdOp(op)) {
       mostrarAviso("Esta oportunidad ya tiene un proyecto vinculado.", "info");
       return;
     }
@@ -1092,6 +1353,7 @@
       banner.classList.add("hidden");
     }
 
+    actualizarEstadoSubmitPuente();
     document.getElementById("modal-puente-proyecto")?.classList.remove("hidden");
 
     if (path) {
@@ -1107,10 +1369,12 @@
           banner.innerHTML = `✅ <strong>Excel de Oferta Pre-venta cargado automáticamente:</strong> ${escapeHtml(nombre)}. Puedes reemplazarlo abajo si deseas.`;
         }
         mostrarPreviewPuente(puenteExcelData, nombre);
+        actualizarEstadoSubmitPuente();
       } catch (err) {
         if (banner) {
           banner.textContent = `ℹ️ La oferta vinculada tiene "${nombre}", pero no se pudo descargar automáticamente. Puedes cargarlo manualmente abajo.`;
         }
+        actualizarEstadoSubmitPuente();
       }
     }
   }
@@ -1126,6 +1390,16 @@
     e.preventDefault();
     const op = puenteOportunidad;
     if (!op) return;
+    if (obtenerProyectoIdOp(op)) {
+      mostrarAviso("Esta oportunidad ya tiene un proyecto vinculado.", "info");
+      cerrarModalPuente();
+      return;
+    }
+
+    if (!puenteArchivoFile && !oportunidadTieneOfertaAdjunta(op)) {
+      actualizarEstadoSubmitPuente();
+      return mostrarAviso("Debes adjuntar la oferta comercial (Excel) antes de pasar a Ganado y crear el proyecto.", "error");
+    }
 
     const nombre = document.getElementById("puente-nombre").value.trim();
     if (!nombre) return mostrarAviso("Escribe el nombre del proyecto.", "error");
@@ -1277,6 +1551,16 @@
         itemsImportados = await window.PCT.insertarItems(proyectoId, puenteExcelData.items, 0);
       }
 
+      // 2b. Vincular proyecto_id (y Excel si faltaba) en la oferta Pre-venta vinculada (defensivo)
+      if (op._oferta?.id) {
+        try {
+          await window.sb
+            .from("crm_ofertas_preventa")
+            .update({ proyecto_id: proyectoId, updated_at: new Date().toISOString() })
+            .eq("id", op._oferta.id);
+        } catch (eOfProy) { /* silencioso si la columna proyecto_id aún no está migrada */ }
+      }
+
       // 3. Subir documentos de cierre + Excel cotización a Storage y tabla documentos
       const docsInput = document.getElementById("puente-docs");
       const docsCat = document.getElementById("puente-docs-categoria")?.value || "orden_compra";
@@ -1357,8 +1641,15 @@
     if (!oportunidadActual) return;
     if (!confirm(`¿Eliminar definitivamente la oportunidad "${oportunidadActual.titulo}"?`)) return;
 
-    const { error } = await window.sb.from("crm_oportunidades").delete().eq("id", oportunidadActual.id);
+    const { data, error } = await window.sb
+      .from("crm_oportunidades")
+      .delete()
+      .eq("id", oportunidadActual.id)
+      .select("id");
     if (error) return manejarError(error, "No se pudo eliminar");
+    if (!data || data.length === 0) {
+      return mostrarAviso("No tienes permisos para eliminar esta oportunidad.", "error");
+    }
 
     mostrarAviso("Oportunidad eliminada", "info");
     cerrarDrawer();
@@ -1371,6 +1662,13 @@
   async function cambiarEtapaOportunidad(id, nuevaEtapa) {
     const op = oportunidades.find((o) => o.id === id);
     if (!op || op.etapa === nuevaEtapa) return;
+
+    // Obligar oferta comercial adjunta antes de pasar a Ganado y crear el proyecto
+    if (nuevaEtapa === "ganada" && !obtenerProyectoIdOp(op) && !oportunidadTieneOfertaAdjunta(op)) {
+      mostrarAviso("Debes adjuntar la oferta comercial (Excel) antes de pasar a Ganado y crear el proyecto.", "error");
+      abrirModalPuenteProyecto(op);
+      return;
+    }
 
     const etapaAnterior = op.etapa;
     const etapaNombre = ETAPAS[nuevaEtapa]?.label || nuevaEtapa;
@@ -1410,8 +1708,14 @@
       });
       if (errAct) throw errAct;
 
+      // Auto-crear oferta en Pre-venta al entrar a visita / cotizacion / negociacion (idempotente)
+      if (ETAPAS_AUTO_PREVENTA.includes(nuevaEtapa)) {
+        const ofertaVinc = await asegurarOfertaPreventa(op, { silencioso: true });
+        if (ofertaVinc) render();
+      }
+
       mostrarAviso(`Oportunidad movida a ${etapaNombre}`, "exito");
-      if (nuevaEtapa === "ganada" && !op.proyecto_id) {
+      if (nuevaEtapa === "ganada" && !obtenerProyectoIdOp(op)) {
         abrirModalPuenteProyecto(op);
       }
     } catch (err) {
@@ -1520,9 +1824,12 @@
     document.addEventListener("click", (e) => {
       const btnAdd = e.target.closest("[data-add-etapa]");
       if (btnAdd) {
+        document.getElementById("form-nuevo")?.reset();
         const etapa = btnAdd.dataset.addEtapa;
         const selEtapa = document.getElementById("nuevo-etapa");
         if (selEtapa) selEtapa.value = etapa;
+        const selResp = document.getElementById("nuevo-responsable");
+        if (selResp && !verTodoCRM && usuarioActualId) selResp.value = usuarioActualId;
         document.getElementById("modal-nuevo")?.classList.remove("hidden");
       }
     });
@@ -1535,6 +1842,7 @@
     document.getElementById("btn-drawer-eliminar")?.addEventListener("click", eliminarOportunidad);
     document.getElementById("btn-convertir-proyecto")?.addEventListener("click", convertirEnProyecto);
     document.getElementById("btn-enviar-preventa")?.addEventListener("click", enviarAOfertasPreventa);
+    document.getElementById("btn-marcar-enviada-cliente")?.addEventListener("click", marcarComoEnviadaAlCliente);
 
     // Modal Puente de Cierre Ganado → Nuevo Proyecto
     document.getElementById("btn-puente-cerrar")?.addEventListener("click", cerrarModalPuente);
@@ -1542,14 +1850,21 @@
     document.getElementById("form-puente-proyecto")?.addEventListener("submit", ejecutarPuenteProyecto);
     document.getElementById("puente-excel")?.addEventListener("change", async (e) => {
       const file = e.target.files?.[0];
-      if (!file) return;
+      if (!file) {
+        puenteArchivoFile = null;
+        puenteExcelData = null;
+        actualizarEstadoSubmitPuente();
+        return;
+      }
       try {
         puenteArchivoFile = file;
         puenteExcelData = await parsearExcelFilePuente(file);
         mostrarPreviewPuente(puenteExcelData, file.name);
+        actualizarEstadoSubmitPuente();
       } catch (err) {
         puenteExcelData = null;
         puenteArchivoFile = null;
+        actualizarEstadoSubmitPuente();
         mostrarAviso(err.message || "No se pudo leer el archivo Excel", "error");
       }
     });
@@ -1565,11 +1880,18 @@
 
     // Botones rápidos Ganada / Perdida en Drawer
     document.getElementById("btn-drawer-ganada")?.addEventListener("click", () => {
+      if (!oportunidadActual) return;
+      const proyId = obtenerProyectoIdOp(oportunidadActual);
+      if (!proyId && !oportunidadTieneOfertaAdjunta(oportunidadActual)) {
+        mostrarAviso("Debes adjuntar la oferta comercial (Excel) antes de pasar a Ganado y crear el proyecto.", "error");
+        abrirModalPuenteProyecto(oportunidadActual);
+        return;
+      }
       document.getElementById("drawer-etapa").value = "ganada";
       document.getElementById("drawer-probabilidad").value = 100;
       document.getElementById("drawer-probabilidad-badge").textContent = "100%";
       actualizarEstadoBanners({ ...(oportunidadActual || {}), etapa: "ganada" });
-      if (oportunidadActual && !oportunidadActual.proyecto_id) {
+      if (!proyId) {
         abrirModalPuenteProyecto(oportunidadActual);
       }
     });
@@ -1583,12 +1905,23 @@
 
     document.getElementById("drawer-etapa")?.addEventListener("change", (e) => {
       const nueva = e.target.value;
-      actualizarEstadoBanners({ ...(oportunidadActual || {}), etapa: nueva });
-      if (nueva === "ganada" && oportunidadActual && !oportunidadActual.proyecto_id) {
+      if (nueva === "ganada" && oportunidadActual) {
+        const proyId = obtenerProyectoIdOp(oportunidadActual);
+        if (!proyId && !oportunidadTieneOfertaAdjunta(oportunidadActual)) {
+          e.target.value = oportunidadActual.etapa || "prospecto";
+          mostrarAviso("Debes adjuntar la oferta comercial (Excel) antes de pasar a Ganado y crear el proyecto.", "error");
+          abrirModalPuenteProyecto(oportunidadActual);
+          return;
+        }
         document.getElementById("drawer-probabilidad").value = 100;
         document.getElementById("drawer-probabilidad-badge").textContent = "100%";
-        abrirModalPuenteProyecto(oportunidadActual);
+        actualizarEstadoBanners({ ...(oportunidadActual || {}), etapa: nueva });
+        if (!proyId) {
+          abrirModalPuenteProyecto(oportunidadActual);
+        }
+        return;
       }
+      actualizarEstadoBanners({ ...(oportunidadActual || {}), etapa: nueva });
     });
 
     document.getElementById("drawer-valor")?.addEventListener("input", actualizarMargenLabel);
@@ -1619,6 +1952,8 @@
     const modalNuevo = document.getElementById("modal-nuevo");
     document.getElementById("btn-nueva-oportunidad")?.addEventListener("click", () => {
       document.getElementById("form-nuevo")?.reset();
+      const selResp = document.getElementById("nuevo-responsable");
+      if (selResp && !verTodoCRM && usuarioActualId) selResp.value = usuarioActualId;
       modalNuevo?.classList.remove("hidden");
     });
     document.getElementById("btn-modal-nuevo-cerrar")?.addEventListener("click", () => {
@@ -1645,27 +1980,45 @@
         const etapa = document.getElementById("nuevo-etapa").value;
         const tipo_servicio = document.getElementById("nuevo-servicio").value;
         const valor_estimado = valorMoneda(document.getElementById("nuevo-valor"));
-        const responsable_id = document.getElementById("nuevo-responsable").value || usuarioActualId || null;
+        const responsable_id = !verTodoCRM
+          ? usuarioActualId || null
+          : document.getElementById("nuevo-responsable").value || usuarioActualId || null;
         const fecha_cierre_estimada = document.getElementById("nuevo-fecha").value || null;
 
-        const { data, error } = await window.sb
+        const payloadBase = {
+          titulo,
+          cliente_id,
+          contacto_nombre,
+          contacto_telefono,
+          etapa,
+          tipo_servicio,
+          valor_estimado,
+          responsable_id,
+          fecha_cierre_estimada,
+          probabilidad: etapa === "cotizacion" ? 50 : etapa === "negociacion" ? 70 : 20,
+        };
+
+        let { data, error } = await window.sb
           .from("crm_oportunidades")
-          .insert({
-            titulo,
-            cliente_id,
-            contacto_nombre,
-            contacto_telefono,
-            etapa,
-            tipo_servicio,
-            valor_estimado,
-            responsable_id,
-            fecha_cierre_estimada,
-            probabilidad: etapa === "cotizacion" ? 50 : etapa === "negociacion" ? 70 : 20,
-          })
+          .insert({ ...payloadBase, creado_por: usuarioActualId || null })
           .select()
           .single();
 
+        if (
+          error &&
+          (error.code === "42703" || error.code === "PGRST204" || /creado_por|column|schema cache/i.test(String(error.message || "")))
+        ) {
+          const retry = await window.sb.from("crm_oportunidades").insert(payloadBase).select().single();
+          data = retry.data;
+          error = retry.error;
+        }
+
         if (error) throw error;
+
+        // Auto-crear registro en Ofertas Pre-venta de forma idempotente para que Pre-venta no vea el tablero vacío
+        if (data?.id) {
+          await asegurarOfertaPreventa(data, { silencioso: true });
+        }
 
         modalNuevo.classList.add("hidden");
         mostrarAviso("Oportunidad creada exitosamente", "exito");
@@ -1685,4 +2038,7 @@
   // Inicialización
   bindEventos();
   await cargarDatos();
+
+  const opIdParam = typeof qs === "function" ? qs("id") : null;
+  if (opIdParam) abrirDrawer(opIdParam);
 })();

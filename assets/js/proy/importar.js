@@ -4,7 +4,7 @@
 //   1) la COTIZACIÓN de Pctronic (hoja "Cotizador": encabezado con cliente y
 //      referencia, ítems por secciones Suministro / Instalación y, abajo, los
 //      totales con IVA pleno y con AIU). La app descarga ese mismo Excel
-//      (docs/Plantilla_Cotizacion_Pctronic.xlsx) como plantilla.
+//      (assets/plantillas/Plantilla_Cotizacion_Pctronic.xlsx) como plantilla.
 //   2) la plantilla completa "PCT_Plantilla_Proyecto_v7" (hojas INICIO,
 //      PRESUPUESTO y MANO DE OBRA), y
 //   3) las hojas simples que exporta la propia app (cotización o costos).
@@ -560,16 +560,113 @@ function evaluarAritmeticaSegura(expr) {
 
   // --------------------------------------------------------------------
   // PLANTILLA DE COTIZACIÓN para descargar: es el mismo Excel que usa
-  // Pctronic (con logo, colores y fórmulas), guardado tal cual en docs/.
+  // Pctronic (con logo, colores y fórmulas), guardado en assets/plantillas/
+  // para que Vercel siempre lo sirva sin 404. Si el fetch llegara a fallar
+  // (sin conexión o archivo ausente), genera un .xlsx válido con SheetJS.
   // --------------------------------------------------------------------
-  PCT.ARCHIVO_PLANTILLA_COTIZACION = "docs/Plantilla_Cotizacion_Pctronic.xlsx";
-  PCT.descargarPlantillaCotizacion = () => {
-    const a = document.createElement("a");
-    a.href = PCT.ARCHIVO_PLANTILLA_COTIZACION;
-    a.download = "Plantilla_Cotizacion_Pctronic.xlsx";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+  PCT.ARCHIVO_PLANTILLA_COTIZACION = "assets/plantillas/Plantilla_Cotizacion_Pctronic.xlsx";
+
+  PCT.generarPlantillaCotizacionFallback = async () => {
+    if (typeof asegurarXLSX === "function") await asegurarXLSX();
+    if (typeof XLSX === "undefined") {
+      throw new Error("No se pudo cargar SheetJS para generar la plantilla de respaldo.");
+    }
+    const hoy =
+      typeof fechaLocalISO === "function" ? fechaLocalISO() : new Date().toISOString().slice(0, 10);
+    const filas = [
+      ["PCTRONIC SEGURIDAD ELECTRÓNICA · PLANTILLA DE COTIZACIÓN"],
+      [],
+      ["Referencia:", "COT-001", "", "", "Fecha:", hoy, "", "", "TRM:", 4200],
+      ["Descripción:", "Nombre del proyecto", "", "", "Ciudad:", "Bogotá"],
+      ["Cliente:", "Nombre del cliente", "", "", "Atención:", ""],
+      ["Correo:", "", "", "", "Teléfono:", ""],
+      [],
+      [
+        "#",
+        "REFERENCIA",
+        "DESCRIPCIÓN",
+        "CANT.",
+        "UNIDAD",
+        "TIEMPO DE ENTREGA",
+        "MARCA",
+        "Precio Unitario",
+        "Subtotal",
+        "Observaciones",
+        "",
+        "Costo",
+        "Moneda",
+        "TRM",
+      ],
+      ["SUMINISTRO DE EQUIPOS"],
+      [1, "CAM-01", "Cámara IP 4MP Domo (Ejemplo)", 4, "UND", "5 días", "Hikvision", 450000, { f: "D10*H10", v: 1800000 }, "", "", 65, "USD", 4200],
+      ["INSTALACIÓN Y PUESTA EN MARCHA"],
+      [2, "INST-01", "Instalación, cableado y configuración (Ejemplo)", 1, "GLB", "5 días", "Pctronic", 1200000, { f: "D12*H12", v: 1200000 }, "", "", 700000, "COP", ""],
+      [],
+      ["SUBTOTAL", "", "", "", "", "", "", "", { f: "SUM(I10:I12)", v: 3000000 }],
+      ["Administración", "", "", "", "", "", "", 0.1, { f: "I14*H15", v: 300000 }],
+      ["Imprevistos", "", "", "", "", "", "", 0.05, { f: "I14*H16", v: 150000 }],
+      ["Utilidad", "", "", "", "", "", "", 0.05, { f: "I14*H17", v: 150000 }],
+      ["IVA sobre utilidad", "", "", "", "", "", "", 0.19, { f: "I17*H18", v: 28500 }],
+      ["TOTAL OFERTA AIU INSTALACION", "", "", "", "", "", "", "", { f: "I14+I15+I16+I17+I18", v: 3628500 }],
+      [],
+      ["IVA", "", "", "", "", "", "", 0.19, { f: "I14*H21", v: 570000 }],
+      ["TOTAL OFERTA SUMINISTROS", "", "", "", "", "", "", "", { f: "I14+I21", v: 3570000 }],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(filas);
+    ws["!cols"] = [
+      { wch: 6 },
+      { wch: 16 },
+      { wch: 44 },
+      { wch: 8 },
+      { wch: 10 },
+      { wch: 18 },
+      { wch: 14 },
+      { wch: 16 },
+      { wch: 16 },
+      { wch: 20 },
+      { wch: 3 },
+      { wch: 14 },
+      { wch: 10 },
+      { wch: 10 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Cotizador");
+    XLSX.writeFile(wb, "Plantilla_Cotizacion_Pctronic.xlsx");
+  };
+
+  PCT.descargarPlantillaCotizacion = async () => {
+    const nombreArchivo = "Plantilla_Cotizacion_Pctronic.xlsx";
+    try {
+      const resp = await fetch(PCT.ARCHIVO_PLANTILLA_COTIZACION, { cache: "no-cache" });
+      const contentType = String(resp.headers?.get("content-type") || "").toLowerCase();
+      if (!resp.ok || contentType.includes("text/html")) {
+        throw new Error(`Plantilla no disponible (${resp.status})`);
+      }
+      const blob = await resp.blob();
+      if (!blob || blob.size === 0) {
+        throw new Error("Archivo de plantilla vacío.");
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = nombreArchivo;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      return true;
+    } catch (errFetch) {
+      console.warn("Plantilla remota no disponible; generando respaldo con SheetJS:", errFetch);
+      try {
+        await PCT.generarPlantillaCotizacionFallback();
+        return true;
+      } catch (errGen) {
+        if (typeof mostrarAviso === "function") {
+          mostrarAviso("No se pudo descargar la plantilla de cotización. Intenta nuevamente.", "error");
+        }
+        return false;
+      }
+    }
   };
 
   // --------------------------------------------------------------------

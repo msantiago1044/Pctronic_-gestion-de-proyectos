@@ -7,6 +7,45 @@
   const CLASE_INPUT =
     "block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary focus:ring-primary sm:text-sm";
 
+  let usuariosCoordCache = null;
+  let promesaUsuariosCoord = null;
+  let tieneColsCoordinador = null;
+
+  const esErrorColumnaCoord = (err) => {
+    const msg = `${err?.code || ""} ${err?.message || ""} ${err?.details || ""}`.toLowerCase();
+    return msg.includes("coordinador_id") || msg.includes("coordinador_nombre") || msg.includes("42703") || msg.includes("pgrst204");
+  };
+
+  const cargarUsuariosCoord = async () => {
+    if (usuariosCoordCache) return usuariosCoordCache;
+    if (promesaUsuariosCoord) return promesaUsuariosCoord;
+    promesaUsuariosCoord = (async () => {
+      try {
+        const tareas = [
+          window.sb.from("profiles").select("id, nombre_completo, rol").order("nombre_completo", { ascending: true }),
+        ];
+        if (tieneColsCoordinador === null) {
+          if (PCT.estado?.proyecto && typeof PCT.estado.proyecto === "object") {
+            tieneColsCoordinador = "coordinador_id" in PCT.estado.proyecto;
+          } else {
+            tareas.push(window.sb.from("proyectos").select("coordinador_id").limit(1));
+          }
+        }
+        const [resUsers, resProbe] = await Promise.all(tareas);
+        if (resProbe) {
+          tieneColsCoordinador = !resProbe.error;
+        }
+        usuariosCoordCache = !resUsers.error && Array.isArray(resUsers.data)
+          ? resUsers.data.filter((u) => u && u.id)
+          : [];
+      } catch (e) {
+        usuariosCoordCache = [];
+      }
+      return usuariosCoordCache;
+    })();
+    return promesaUsuariosCoord;
+  };
+
   // Tarifas de ejemplo de la plantilla (el usuario las reemplaza por las reales)
   PCT.TARIFAS_EJEMPLO = [
     { cargo: "Técnico electricista", valor_hora: 12000, horas_dia: 8 },
@@ -40,7 +79,15 @@
           ${campo("f_fecha_contrato", "Fecha de contrato", input("f_fecha_contrato", "date"))}
           ${campo("f_fecha_inicio", "Fecha de inicio de obra", input("f_fecha_inicio", "date"))}
           ${campo("f_fecha_fin_estimada", "Fecha fin contractual", input("f_fecha_fin_estimada", "date"))}
-          ${campo("f_director_proyecto", "Director de proyecto", input("f_director_proyecto"))}
+          ${campo(
+            "f_coordinador_id",
+            "Coordinador / Director de proyecto",
+            `<select id="f_coordinador_id" class="${CLASE_INPUT}"><option value="">Sin asignar</option></select>
+             <p id="f_coordinador_readonly" class="hidden rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">Sin asignar</p>
+             <input id="f_director_proyecto" type="hidden" />
+             <input id="f_coordinador_id_hidden" type="hidden" />`,
+            "Solo Super Usuario o Directivo puede reasignar el coordinador."
+          )}
           ${campo("f_comercial_responsable", "Comercial responsable", input("f_comercial_responsable"))}
           ${campo(
             "f_contratista_principal_id",
@@ -115,6 +162,9 @@
     q("f_contratista_principal_id").innerHTML = opciones(cat.contratistas, "Sin contratista (personal propio)");
     activarCamposMoneda(".input-moneda", root);
 
+    const nombreCoordInicial = String(p?.coordinador_nombre || p?.director_proyecto || "").trim();
+    const idCoordInicial = p?.coordinador_id || "";
+
     const valores = {
       f_nombre: p?.nombre ?? "",
       f_empresa_id: p?.empresa_id ?? (cat.empresas.length === 1 ? cat.empresas[0].id : ""),
@@ -126,7 +176,8 @@
       f_fecha_contrato: p?.fecha_contrato ?? "",
       f_fecha_inicio: p?.fecha_inicio ?? "",
       f_fecha_fin_estimada: p?.fecha_fin_estimada ?? "",
-      f_director_proyecto: p?.director_proyecto ?? "",
+      f_director_proyecto: nombreCoordInicial,
+      f_coordinador_id_hidden: idCoordInicial,
       f_comercial_responsable: p?.comercial_responsable ?? "",
       f_contratista_principal_id: p?.contratista_principal_id ?? "",
       f_estado: p?.estado ?? "sin_iniciar",
@@ -147,6 +198,79 @@
       const el = q(id);
       if (el) el.value = v;
     });
+
+    const puedeEditarCoord = Boolean(
+      window.PCT_ROL_INFO?.puedeReasignarCoordinador ||
+        window.PCT_ROL_INFO?.esSuperUsuario ||
+        window.PCT_ROL_INFO?.esDirectivo
+    );
+    const selCoord = q("f_coordinador_id");
+    const readonlyCoord = q("f_coordinador_readonly");
+    if (readonlyCoord) {
+      readonlyCoord.textContent = nombreCoordInicial || "Sin asignar";
+    }
+    if (selCoord && readonlyCoord) {
+      selCoord.classList.toggle("hidden", !puedeEditarCoord);
+      selCoord.disabled = !puedeEditarCoord;
+      readonlyCoord.classList.toggle("hidden", puedeEditarCoord);
+    }
+
+    if (selCoord && !selCoord.dataset.wiredCoord) {
+      selCoord.dataset.wiredCoord = "1";
+      selCoord.addEventListener("change", () => {
+        const val = selCoord.value;
+        const opt = selCoord.selectedOptions?.[0];
+        if (!val) {
+          if (q("f_coordinador_id_hidden")) q("f_coordinador_id_hidden").value = "";
+          if (q("f_director_proyecto")) q("f_director_proyecto").value = "";
+        } else if (val === "__legacy__") {
+          if (q("f_coordinador_id_hidden")) q("f_coordinador_id_hidden").value = "";
+          if (q("f_director_proyecto")) q("f_director_proyecto").value = opt?.dataset?.nombre || "";
+        } else {
+          if (q("f_coordinador_id_hidden")) q("f_coordinador_id_hidden").value = val;
+          if (q("f_director_proyecto")) q("f_director_proyecto").value = opt?.dataset?.nombre || opt?.textContent?.trim() || "";
+        }
+        if (readonlyCoord) {
+          readonlyCoord.textContent = q("f_director_proyecto")?.value || "Sin asignar";
+        }
+      });
+    }
+
+    const pintarOpcionesCoord = (usuarios) => {
+      if (!selCoord) return;
+      const lista = Array.isArray(usuarios) ? usuarios : [];
+      let matchedId = idCoordInicial;
+      if (!matchedId && nombreCoordInicial) {
+        const uMatch = lista.find((u) => PCT.norm(u.nombre_completo) === PCT.norm(nombreCoordInicial));
+        if (uMatch) matchedId = uMatch.id;
+      }
+      const tieneLegacy = !matchedId && Boolean(nombreCoordInicial);
+      selCoord.innerHTML = [
+        `<option value="">Sin asignar</option>`,
+        ...(tieneLegacy
+          ? [`<option value="__legacy__" data-nombre="${escapeHtml(nombreCoordInicial)}" selected>${escapeHtml(nombreCoordInicial)} (sin usuario vinculado)</option>`]
+          : []),
+        ...lista.map((u) => {
+          const nom = (u.nombre_completo || "Sin nombre").trim();
+          return `<option value="${escapeHtml(u.id)}" data-nombre="${escapeHtml(nom)}" ${matchedId === u.id ? "selected" : ""}>${escapeHtml(nom)}</option>`;
+        }),
+      ].join("");
+
+      if (matchedId) {
+        const u = lista.find((x) => x.id === matchedId);
+        const nom = (u?.nombre_completo || nombreCoordInicial || "").trim();
+        if (q("f_coordinador_id_hidden")) q("f_coordinador_id_hidden").value = matchedId;
+        if (q("f_director_proyecto")) q("f_director_proyecto").value = nom;
+        if (readonlyCoord) readonlyCoord.textContent = nom || "Sin asignar";
+      }
+    };
+
+    if (usuariosCoordCache) {
+      pintarOpcionesCoord(usuariosCoordCache);
+    } else {
+      cargarUsuariosCoord().then((lista) => pintarOpcionesCoord(lista));
+    }
+
     establecerValorMoneda(q("f_anticipo_recibido"), p?.anticipo_recibido || 0);
     const tipos = new Set(p?.tipo_proyecto || []);
     root.querySelectorAll(".f-tipo").forEach((c) => (c.checked = tipos.has(c.value)));
@@ -162,11 +286,13 @@
   // Lee el formulario y devuelve las columnas de `proyectos`
   PCT.leerFormInicio = (root) => {
     const q = (id) => root.querySelector("#" + id);
-    const txt = (id) => q(id).value.trim() || null;
+    const txt = (id) => q(id)?.value?.trim() || null;
     const n = (id) => PCT.num(q(id).value);
     const esAiu = q("f_tipo_contrato").value === "aiu";
     const contratista = q("f_contratista_principal_id").value || null;
-    return {
+    const coordId = txt("f_coordinador_id_hidden");
+    const coordNombre = txt("f_director_proyecto");
+    const datos = {
       nombre: q("f_nombre").value.trim(),
       empresa_id: q("f_empresa_id").value || null,
       cliente_id: q("f_cliente_id").value || null,
@@ -177,7 +303,7 @@
       fecha_contrato: q("f_fecha_contrato").value || null,
       fecha_inicio: q("f_fecha_inicio").value || null,
       fecha_fin_estimada: q("f_fecha_fin_estimada").value || null,
-      director_proyecto: txt("f_director_proyecto"),
+      director_proyecto: coordNombre,
       comercial_responsable: txt("f_comercial_responsable"),
       contratista_principal_id: contratista,
       ejecutor_tipo: contratista ? "contratista" : "personal_propio",
@@ -197,6 +323,11 @@
       recargo_hora_extra_porcentaje: n("f_recargo_hora_extra_porcentaje"),
       notas: txt("f_notas"),
     };
+    if (tieneColsCoordinador !== false) {
+      datos.coordinador_id = coordId;
+      datos.coordinador_nombre = coordNombre;
+    }
+    return datos;
   };
 
   // --------------------------------------------------------------------
@@ -245,9 +376,29 @@
       const payload = PCT.leerFormInicio(form);
       if (!payload.nombre) return mostrarAviso("El nombre del proyecto es obligatorio.", "error");
       if (!payload.empresa_id) return mostrarAviso("Selecciona la empresa propia del proyecto.", "error");
-      const { error } = await window.sb.from("proyectos").update(payload).eq("id", PCT.estado.proyecto.id);
+      const prevCoordId = PCT.estado.proyecto?.coordinador_id || null;
+
+      let { error } = await window.sb.from("proyectos").update(payload).eq("id", PCT.estado.proyecto.id);
+      if (error && esErrorColumnaCoord(error)) {
+        tieneColsCoordinador = false;
+        const { coordinador_id, coordinador_nombre, ...payloadFallback } = payload;
+        const retry = await window.sb.from("proyectos").update(payloadFallback).eq("id", PCT.estado.proyecto.id);
+        error = retry.error;
+      }
       if (error) return manejarError(error, "No se pudo guardar el proyecto");
+
+      const nuevoCoordId = payload.coordinador_id || null;
       await PCT.recargarProyecto();
+      if (nuevoCoordId && nuevoCoordId !== prevCoordId && typeof window.PCT_NOTIFICAR === "function") {
+        window.PCT_NOTIFICAR({
+          tipo: "nuevo_proyecto",
+          titulo: `Proyecto asignado: ${PCT.estado.proyecto.nombre}`,
+          mensaje: `Has sido asignado como coordinador del proyecto "${PCT.estado.proyecto.nombre}".`,
+          url: `proyecto-detalle.html?id=${PCT.estado.proyecto.id}`,
+          usuario_destino: nuevoCoordId,
+          proyecto_id: PCT.estado.proyecto.id,
+        });
+      }
       mostrarAviso("Proyecto actualizado.", "exito");
       PCT.emit("proyecto");
       pintarContrato();

@@ -3,6 +3,99 @@
 // Se incluye en TODAS las páginas protegidas para que se vean idénticas.
 // ============================================================================
 
+const MODULOS_CATALOGO = {
+  dashboard: {
+    key: "dashboard",
+    label: "Panel Principal",
+    icon: "dashboard",
+    defaultHref: "dashboard.html",
+    pages: ["dashboard"],
+    files: ["dashboard.html"],
+  },
+  proyectos: {
+    key: "proyectos",
+    label: "Proyectos",
+    icon: "folder_open",
+    defaultHref: "proyectos.html",
+    pages: ["proyectos"],
+    files: ["proyectos.html", "proyecto-nuevo.html", "proyecto-detalle.html"],
+  },
+  crm: {
+    key: "crm",
+    label: "CRM Comercial",
+    icon: "handshake",
+    defaultHref: "crm.html",
+    pages: ["crm"],
+    files: ["crm.html"],
+  },
+  ofertas: {
+    key: "ofertas",
+    label: "Ofertas Preventa",
+    icon: "assignment",
+    defaultHref: "ofertas.html",
+    pages: ["ofertas"],
+    files: ["ofertas.html"],
+  },
+  compras: {
+    key: "compras",
+    label: "Compras",
+    icon: "shopping_cart",
+    defaultHref: "compras.html",
+    pages: ["compras"],
+    files: ["compras.html"],
+  },
+  facturacion: {
+    key: "facturacion",
+    label: "Facturación",
+    icon: "receipt_long",
+    defaultHref: "facturacion.html",
+    pages: ["facturacion"],
+    files: ["facturacion.html"],
+  },
+  terceros: {
+    key: "terceros",
+    label: "Terceros (Clientes/Prov./Contratistas)",
+    icon: "groups",
+    defaultHref: "terceros.html",
+    pages: ["terceros", "clientes", "proveedores", "contratistas"],
+    files: [
+      "terceros.html",
+      "tercero-detalle.html",
+      "clientes.html",
+      "cliente-detalle.html",
+      "proveedores.html",
+      "proveedor-detalle.html",
+      "contratistas.html",
+    ],
+  },
+  empresas: {
+    key: "empresas",
+    label: "Empresas",
+    icon: "domain",
+    defaultHref: "empresas.html",
+    pages: ["empresas"],
+    files: ["empresas.html"],
+  },
+  suministros: {
+    key: "suministros",
+    label: "Suministros / Servicios",
+    icon: "inventory_2",
+    defaultHref: "suministros.html",
+    pages: ["suministros"],
+    files: ["suministros.html"],
+  },
+  usuarios: {
+    key: "usuarios",
+    label: "Usuarios",
+    icon: "manage_accounts",
+    defaultHref: "usuarios.html",
+    pages: ["usuarios"],
+    files: ["usuarios.html"],
+  },
+};
+
+window.PCT_MODULOS_CATALOGO = MODULOS_CATALOGO;
+
 const NAV_ITEMS = [
   { page: "dashboard", href: "dashboard.html", icon: "dashboard", label: "Panel Principal" },
   {
@@ -16,6 +109,7 @@ const NAV_ITEMS = [
   },
   { page: "proyectos", href: "proyectos.html", icon: "folder_open", label: "Proyectos" },
   { page: "compras", href: "compras.html", icon: "shopping_cart", label: "Compras" },
+  { page: "suministros", href: "suministros.html", icon: "inventory_2", label: "Suministros" },
   { page: "facturacion", href: "facturacion.html", icon: "receipt_long", label: "Facturación" },
   { page: "terceros", href: "terceros.html", icon: "groups", label: "Terceros" },
   { page: "empresas", href: "empresas.html", icon: "domain", label: "Empresas" },
@@ -25,38 +119,86 @@ const NAV_ITEMS_ADMIN = [
   { page: "usuarios", href: "usuarios.html", icon: "manage_accounts", label: "Usuarios" },
 ];
 
+function expandirModulos(modulos, incluirAdminExtras = false) {
+  const pages = new Set();
+  const files = new Set();
+  (Array.isArray(modulos) ? modulos : []).forEach((key) => {
+    const def = MODULOS_CATALOGO[key];
+    if (!def) return;
+    def.pages.forEach((p) => pages.add(p));
+    def.files.forEach((f) => files.add(f));
+  });
+  if (incluirAdminExtras) {
+    pages.add("comentarios-admin");
+    files.add("comentarios-admin.html");
+  }
+  return { pages: Array.from(pages), files: Array.from(files) };
+}
+
+function construirRolConfig(label, modulos, admin = false) {
+  const { pages, files } = expandirModulos(modulos, admin);
+  return { label, modulos, pages, files, admin };
+}
+
 const ROLES_CONFIG = {
-  super_usuario: {
-    label: "Super Usuario",
-    pages: ["dashboard", "crm", "ofertas", "proyectos", "compras", "facturacion", "terceros", "empresas", "usuarios", "comentarios-admin"],
-    admin: true,
-  },
-  directivo: {
-    label: "Directivo",
-    pages: ["dashboard", "crm", "ofertas", "proyectos", "compras", "facturacion", "terceros", "empresas"],
-    admin: false,
-  },
-  comercial: {
-    label: "Comercial",
-    pages: ["dashboard", "crm", "ofertas", "terceros"],
-    admin: false,
-  },
-  proyectos: {
-    label: "Proyectos",
-    pages: ["dashboard", "proyectos", "terceros"],
-    admin: false,
-  },
-  compras: {
-    label: "Compras",
-    pages: ["dashboard", "compras", "terceros"],
-    admin: false,
-  },
+  super_usuario: construirRolConfig(
+    "Super Usuario",
+    ["dashboard", "proyectos", "crm", "ofertas", "compras", "facturacion", "terceros", "empresas", "suministros", "usuarios"],
+    true
+  ),
+  directivo: construirRolConfig(
+    "Directivo",
+    ["dashboard", "proyectos", "crm", "ofertas", "compras", "facturacion", "terceros", "empresas", "suministros"],
+    false
+  ),
+  jefe_comercial: construirRolConfig(
+    "Jefe Comercial",
+    ["dashboard", "crm", "ofertas", "facturacion", "terceros"],
+    false
+  ),
+  comercial: construirRolConfig(
+    "Comercial",
+    ["dashboard", "crm", "ofertas", "terceros"],
+    false
+  ),
+  preventa: construirRolConfig(
+    "Preventa / Ofertas",
+    ["dashboard", "ofertas", "crm", "terceros"],
+    false
+  ),
+  jefe_compras: construirRolConfig(
+    "Jefe de Compras",
+    ["dashboard", "compras", "suministros", "terceros", "proyectos"],
+    false
+  ),
+  compras: construirRolConfig(
+    "Compras",
+    ["dashboard", "compras", "suministros", "terceros"],
+    false
+  ),
+  proyectos: construirRolConfig(
+    "Proyectos",
+    ["dashboard", "proyectos", "terceros"],
+    false
+  ),
 };
+
+window.PCT_ROLES_CONFIG = ROLES_CONFIG;
 
 function normalizarRol(rolRaw) {
   if (rolRaw === "admin") return "super_usuario";
   if (rolRaw === "miembro" || !rolRaw) return "proyectos";
   return ROLES_CONFIG[rolRaw] ? rolRaw : "proyectos";
+}
+
+function primeraPaginaPermitida(modulosActivos, archivoActual = "") {
+  for (const key of modulosActivos || []) {
+    const def = MODULOS_CATALOGO[key];
+    if (def?.defaultHref && def.defaultHref.toLowerCase() !== String(archivoActual || "").toLowerCase()) {
+      return def.defaultHref;
+    }
+  }
+  return "perfil.html";
 }
 
 function logoSvg() {
@@ -195,6 +337,11 @@ function renderTopbar(titulo) {
     <h1 class="text-lg font-bold text-gray-900">${escapeHtml(titulo || "")}</h1>
     <div class="flex items-center gap-2">
       <div class="relative" id="notif-wrap">
+        <button type="button" id="btn-notif-mostrar" aria-label="Mostrar avisos" title="Avisos ocultos — clic para mostrar"
+          class="hidden flex h-8 items-center gap-1 rounded-lg px-2 text-xs font-medium text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors">
+          <span class="material-symbols-outlined text-[18px]" aria-hidden="true">notifications_off</span>
+          <span class="hidden sm:inline">Mostrar avisos</span>
+        </button>
         <button type="button" id="btn-notif-bell" aria-label="Notificaciones" aria-expanded="false" title="Notificaciones"
           class="relative flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors">
           <span class="material-symbols-outlined text-[22px]" aria-hidden="true">notifications</span>
@@ -209,6 +356,14 @@ function renderTopbar(titulo) {
           </div>
           <div id="notif-lista" class="max-h-80 overflow-y-auto divide-y divide-gray-100">
             <p class="px-4 py-6 text-center text-xs text-gray-400">Sin notificaciones recientes.</p>
+          </div>
+          <div class="flex items-center justify-between border-t border-gray-100 bg-gray-50/70 px-4 py-2">
+            <span class="text-[11px] text-gray-400">¿Pantalla limpia?</span>
+            <button type="button" id="btn-notif-ocultar"
+              class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-colors">
+              <span class="material-symbols-outlined text-[15px]" aria-hidden="true">notifications_off</span>
+              <span>Ocultar avisos</span>
+            </button>
           </div>
         </div>
       </div>
@@ -277,9 +432,30 @@ window.PCT_NOTIFICAR = async function ({ tipo = "info", titulo, mensaje = "", ur
   }
 };
 
+const NOTIF_HIDE_KEY = "pctronic_ocultar_notificaciones";
+const FEEDBACK_HIDE_KEY = "pctronic_ocultar_mejoras";
+
+function leerFlagLocalStorage(key) {
+  try {
+    return localStorage.getItem(key) === "1";
+  } catch (e) {
+    return false;
+  }
+}
+
+function guardarFlagLocalStorage(key, activo) {
+  try {
+    localStorage.setItem(key, activo ? "1" : "0");
+  } catch (e) {
+    /* almacenamiento no disponible */
+  }
+}
+
 function inicializarNotificaciones({ session, rolNorm }) {
   const wrap = document.getElementById("notif-wrap");
   const btn = document.getElementById("btn-notif-bell");
+  const btnMostrar = document.getElementById("btn-notif-mostrar");
+  const btnOcultar = document.getElementById("btn-notif-ocultar");
   const badge = document.getElementById("notif-badge");
   const popover = document.getElementById("notif-popover");
   const listaEl = document.getElementById("notif-lista");
@@ -289,6 +465,38 @@ function inicializarNotificaciones({ session, rolNorm }) {
   const uid = session.user.id;
   let items = [];
   let tablaDisponible = true;
+  let avisosOcultos = leerFlagLocalStorage(NOTIF_HIDE_KEY);
+
+  const aplicarVisibilidadAvisos = () => {
+    btn.classList.toggle("hidden", avisosOcultos);
+    if (btnMostrar) btnMostrar.classList.toggle("hidden", !avisosOcultos);
+    if (avisosOcultos) {
+      popover.classList.add("hidden");
+      btn.setAttribute("aria-expanded", "false");
+      badge.classList.add("hidden");
+    }
+  };
+
+  aplicarVisibilidadAvisos();
+
+  btnOcultar?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    avisosOcultos = true;
+    guardarFlagLocalStorage(NOTIF_HIDE_KEY, true);
+    aplicarVisibilidadAvisos();
+    if (typeof mostrarAviso === "function") {
+      mostrarAviso("Avisos ocultos. Usa «Mostrar avisos» arriba para restaurarlos.", "info");
+    }
+  });
+
+  btnMostrar?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    avisosOcultos = false;
+    guardarFlagLocalStorage(NOTIF_HIDE_KEY, false);
+    aplicarVisibilidadAvisos();
+    pintar();
+    cargar();
+  });
 
   const esNoLeida = (n) => !Array.isArray(n.leida_por) || !n.leida_por.includes(uid);
 
@@ -305,7 +513,7 @@ function inicializarNotificaciones({ session, rolNorm }) {
 
   const pintar = () => {
     const noLeidas = items.filter(esNoLeida).length;
-    if (noLeidas > 0) {
+    if (!avisosOcultos && noLeidas > 0) {
       badge.textContent = noLeidas > 9 ? "9+" : String(noLeidas);
       badge.classList.remove("hidden");
     } else {
@@ -499,8 +707,15 @@ async function inicializarApp() {
     });
   }
 
-  const PROFILE_CACHE_KEY = "pct_profile_cache";
+  const PROFILE_CACHE_KEY = "pct_profile_cache_v2";
   const PROFILE_CACHE_TTL_MS = 3 * 60 * 1000;
+  window.PCT_INVALIDAR_CACHE_PERFIL = () => {
+    try {
+      sessionStorage.removeItem(PROFILE_CACHE_KEY);
+      sessionStorage.removeItem("pct_profile_cache");
+    } catch (e) { /* noop */ }
+  };
+
   let profile = null;
   try {
     const rawCache = sessionStorage.getItem(PROFILE_CACHE_KEY);
@@ -516,7 +731,7 @@ async function inicializarApp() {
     try {
       const { data, error } = await window.sb
         .from("profiles")
-        .select("nombre_completo, rol, cargo, telefono, avatar_url")
+        .select("*")
         .eq("id", session.user.id)
         .single();
       if (!error && data) {
@@ -533,33 +748,57 @@ async function inicializarApp() {
   const rolRaw = profile?.rol || "miembro";
   const rolNorm = normalizarRol(rolRaw);
   const rolCfg = ROLES_CONFIG[rolNorm] || ROLES_CONFIG.proyectos;
+  const esSuperUsuario = rolNorm === "super_usuario";
+  const esDirectivo = rolNorm === "directivo";
+
+  const modulosPersonalizadosRaw = !esSuperUsuario && Array.isArray(profile?.modulos_permitidos)
+    ? profile.modulos_permitidos.filter((m) => Boolean(MODULOS_CATALOGO[m]))
+    : [];
+  const usaModulosPersonalizados = modulosPersonalizadosRaw.length > 0;
+  const modulosActivos = usaModulosPersonalizados ? modulosPersonalizadosRaw : rolCfg.modulos;
+  const expandido = expandirModulos(modulosActivos, esSuperUsuario);
+  const allowedPages = expandido.pages;
+  const allowedFiles = expandido.files;
 
   window.PCT_ROL_INFO = {
     rolRaw,
     rol: rolNorm,
     label: rolCfg.label,
-    pages: rolCfg.pages,
-    esSuperUsuario: rolNorm === "super_usuario",
-    esDirectivo: rolNorm === "directivo",
-    puedeAprobarCompras: rolNorm === "super_usuario" || rolNorm === "directivo",
-    puedeEliminar: rolNorm === "super_usuario",
+    modulos: modulosActivos,
+    pages: allowedPages,
+    files: allowedFiles,
+    usaModulosPersonalizados,
+    esSuperUsuario,
+    esDirectivo,
+    puedeAprobarCompras: esSuperUsuario || esDirectivo,
+    puedeEliminar: esSuperUsuario,
+    puedeEliminarCompras: esSuperUsuario,
+    puedeVerTodosProyectos: rolNorm !== "proyectos",
+    puedeReasignarCoordinador: esSuperUsuario || esDirectivo,
+    puedeVerTodoCRM: esSuperUsuario || esDirectivo || rolNorm === "jefe_comercial" || rolNorm === "preventa",
   };
 
-  // Guardia de ruta por rol
+  // Guardia de ruta por rol / módulos permitidos
   const paginasLibres = new Set(["perfil", "index", "login", ""]);
   const archivoActual = (window.location.pathname.split("/").pop() || "").toLowerCase();
   const esArchivoLibre = ["perfil.html", "index.html", "login.html", ""].includes(archivoActual);
-  if (!paginasLibres.has(page) && !esArchivoLibre && !rolCfg.pages.includes(page)) {
-    if (typeof mostrarAviso === "function") {
-      mostrarAviso("No tienes permisos para acceder a esta sección.", "error");
-    }
-    window.location.href = "dashboard.html";
-    return { session, profile };
+  const esPaginaAdmin = page === "usuarios" || archivoActual === "usuarios.html";
+  const paginaPermitida = esPaginaAdmin
+    ? Boolean(rolCfg.admin)
+    : paginasLibres.has(page) ||
+      esArchivoLibre ||
+      allowedPages.includes(page) ||
+      (archivoActual && allowedFiles.includes(archivoActual));
+
+  if (!paginaPermitida) {
+    document.body.style.display = "none";
+    window.location.href = primeraPaginaPermitida(modulosActivos, archivoActual);
+    return new Promise(() => {});
   }
 
   const navLinksEl = document.getElementById("nav-links");
   if (navLinksEl) {
-    navLinksEl.innerHTML = `${renderNavLinksHtml(page, rolCfg.pages)}<div id="nav-admin-slot"></div>`;
+    navLinksEl.innerHTML = `${renderNavLinksHtml(page, allowedPages)}<div id="nav-admin-slot"></div>`;
     aplicarEstadoSidebar(colapsada);
   }
 
@@ -607,7 +846,7 @@ async function inicializarApp() {
   const btnLogout = document.getElementById("btn-logout");
   if (btnLogout) {
     btnLogout.addEventListener("click", async () => {
-      try { sessionStorage.removeItem("pct_profile_cache"); } catch (e) { /* noop */ }
+      window.PCT_INVALIDAR_CACHE_PERFIL();
       await window.sb.auth.signOut();
       window.location.href = "login.html";
     });
@@ -628,17 +867,42 @@ function montarBurbujaFeedback({ session, profile, page, title, rolNorm }) {
 
   const moduloActual = title || page || "Plataforma";
 
+  const bubbleWrap = document.createElement("div");
+  bubbleWrap.id = "feedback-bubble-wrap";
+  bubbleWrap.className = "fixed right-0 top-1/2 -translate-y-1/2 z-40 flex flex-col items-end gap-1";
+
+  const hideBtn = document.createElement("button");
+  hideBtn.type = "button";
+  hideBtn.id = "feedback-hide-btn";
+  hideBtn.setAttribute("aria-label", "Ocultar pestaña de Mejoras");
+  hideBtn.title = "Ocultar pestaña de Mejoras";
+  hideBtn.className =
+    "flex h-5 w-5 items-center justify-center rounded-full bg-gray-900 text-white opacity-75 hover:opacity-100 shadow transition-opacity";
+  hideBtn.innerHTML = `<span class="material-symbols-outlined text-[13px]" aria-hidden="true">close</span>`;
+
   const bubbleBtn = document.createElement("button");
   bubbleBtn.type = "button";
   bubbleBtn.id = "feedback-bubble-btn";
   bubbleBtn.setAttribute("aria-label", "Enviar comentario o mejora de la plataforma");
   bubbleBtn.title = "Enviar mejora o comentario";
   bubbleBtn.className =
-    "fixed right-0 top-1/2 -translate-y-1/2 z-40 rounded-l-2xl bg-primary text-white shadow-lg hover:bg-blue-700 transition-all px-2.5 py-3 flex flex-col items-center gap-1";
+    "rounded-l-2xl bg-primary text-white shadow-lg hover:bg-blue-700 transition-all px-2.5 py-3 flex flex-col items-center gap-1";
   bubbleBtn.innerHTML = `
     <span class="material-symbols-outlined text-[20px]" aria-hidden="true">rate_review</span>
     <span class="text-[11px] font-semibold tracking-tight">Mejoras</span>
   `;
+
+  bubbleWrap.appendChild(hideBtn);
+  bubbleWrap.appendChild(bubbleBtn);
+
+  const restoreBtn = document.createElement("button");
+  restoreBtn.type = "button";
+  restoreBtn.id = "feedback-restore-btn";
+  restoreBtn.setAttribute("aria-label", "Mostrar pestaña de Mejoras");
+  restoreBtn.title = "Mostrar pestaña de Mejoras";
+  restoreBtn.className =
+    "hidden fixed right-0 top-1/2 -translate-y-1/2 z-40 rounded-l-lg border border-gray-200 bg-white text-gray-500 shadow hover:bg-primary hover:text-white transition-all p-1.5 opacity-75 hover:opacity-100";
+  restoreBtn.innerHTML = `<span class="material-symbols-outlined text-[16px]" aria-hidden="true">chevron_left</span>`;
 
   const drawer = document.createElement("div");
   drawer.id = "feedback-drawer";
@@ -726,8 +990,27 @@ function montarBurbujaFeedback({ session, profile, page, title, rolNorm }) {
     </div>
   `;
 
-  document.body.appendChild(bubbleBtn);
+  document.body.appendChild(bubbleWrap);
+  document.body.appendChild(restoreBtn);
   document.body.appendChild(drawer);
+
+  const aplicarVisibilidadMejoras = (oculto) => {
+    bubbleWrap.classList.toggle("hidden", oculto);
+    restoreBtn.classList.toggle("hidden", !oculto);
+  };
+  aplicarVisibilidadMejoras(leerFlagLocalStorage(FEEDBACK_HIDE_KEY));
+
+  hideBtn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    guardarFlagLocalStorage(FEEDBACK_HIDE_KEY, true);
+    aplicarVisibilidadMejoras(true);
+  });
+
+  restoreBtn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    guardarFlagLocalStorage(FEEDBACK_HIDE_KEY, false);
+    aplicarVisibilidadMejoras(false);
+  });
 
   const form = document.getElementById("feedback-form");
   const backdrop = document.getElementById("feedback-backdrop");

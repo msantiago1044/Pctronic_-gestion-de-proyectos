@@ -47,6 +47,75 @@
     return Math.max(1, diffDias(ini, fin) + 1);
   };
 
+  const parsearEdt = (edt) =>
+    String(edt || "")
+      .trim()
+      .split(".")
+      .map((seg) => {
+        const n = Number(seg);
+        return Number.isFinite(n) && seg !== "" ? n : seg.toLowerCase();
+      });
+
+  const compararEdt = (a, b) => {
+    const fa = FASES[a.fase]?.orden ?? 9;
+    const fb = FASES[b.fase]?.orden ?? 9;
+    if (fa !== fb) return fa - fb;
+    const pa = parsearEdt(a.edt);
+    const pb = parsearEdt(b.edt);
+    const len = Math.max(pa.length, pb.length);
+    for (let i = 0; i < len; i++) {
+      const va = pa[i];
+      const vb = pb[i];
+      if (va === undefined) return -1;
+      if (vb === undefined) return 1;
+      if (typeof va === "number" && typeof vb === "number") {
+        if (va !== vb) return va - vb;
+      } else {
+        const cmp = String(va).localeCompare(String(vb), "es", { numeric: true });
+        if (cmp !== 0) return cmp;
+      }
+    }
+    return PCT.num(a.orden) - PCT.num(b.orden);
+  };
+
+  const construirFechasPlantilla = (fechaInicio, fechaFinProy) => {
+    const iniBase = fechaInicio || PCT.hoyISO();
+    const tieneFinValido = Boolean(fechaFinProy && fechaFinProy >= iniBase);
+    if (!tieneFinValido) {
+      let cursor = iniBase;
+      return {
+        escalada: false,
+        totalDias: PLANTILLA_BASE.reduce((s, item) => s + item.dias, 0),
+        items: PLANTILLA_BASE.map((item) => {
+          const inicio = cursor;
+          const fin = sumarDias(inicio, item.dias - 1);
+          cursor = sumarDias(fin, 1);
+          return { ...item, fecha_inicio: inicio, fecha_fin: fin };
+        }),
+      };
+    }
+
+    const totalDias = Math.max(1, diffDias(iniBase, fechaFinProy) + 1);
+    const totalPeso = PLANTILLA_BASE.reduce((s, item) => s + item.dias, 0) || 1;
+    let pesoAcum = 0;
+    const items = PLANTILLA_BASE.map((item, idx) => {
+      const fracIni = pesoAcum / totalPeso;
+      pesoAcum += item.dias;
+      const fracFin = pesoAcum / totalPeso;
+      const offsetIni = idx === 0 ? 0 : Math.min(totalDias - 1, Math.floor(fracIni * totalDias));
+      const offsetFin =
+        idx === PLANTILLA_BASE.length - 1
+          ? totalDias - 1
+          : Math.min(totalDias - 1, Math.max(offsetIni, Math.ceil(fracFin * totalDias) - 1));
+      let inicio = sumarDias(iniBase, offsetIni);
+      let fin = sumarDias(iniBase, offsetFin);
+      if (fin > fechaFinProy) fin = fechaFinProy;
+      if (inicio > fin) inicio = fin;
+      return { ...item, fecha_inicio: inicio, fecha_fin: fin };
+    });
+    return { escalada: true, totalDias, items };
+  };
+
   const sugerirEdt = (tareas, fase) => {
     const prefijo = String(FASES[fase]?.orden || 2);
     const existentes = tareas.filter((t) => t.fase === fase);
@@ -138,6 +207,12 @@
             </div>
           </div>
           <div class="flex flex-wrap items-center gap-2">
+            <button type="button" id="crono-sort-fecha" class="flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900" title="Ordenar actividades cronológicamente por fecha de inicio y fin">
+              <span class="material-symbols-outlined text-[16px]">calendar_month</span> Ordenar por fecha
+            </button>
+            <button type="button" id="crono-sort-edt" class="flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900" title="Ordenar actividades por fase y código EDT">
+              <span class="material-symbols-outlined text-[16px]">sort</span> Ordenar por EDT
+            </button>
             <button type="button" id="crono-btn-plantilla" class="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
               <span class="material-symbols-outlined text-[16px]">playlist_add</span> Cargar plantilla base
             </button>
@@ -153,6 +228,7 @@
           </div>
         </div>
 
+        <div id="crono-avance-banner"></div>
         <div id="crono-resumen" class="grid grid-cols-2 gap-3 sm:grid-cols-4"></div>
         <div id="crono-contenido"></div>
       </div>`;
@@ -172,7 +248,37 @@
     const pintarResumen = () => {
       const total = tareas.length;
       const completadas = tareas.filter((t) => t.estado === "completada").length;
-      const promedio = total ? Math.round(tareas.reduce((s, t) => s + PCT.num(t.progreso), 0) / total) : 0;
+      const promedio = total ? Math.round((tareas.reduce((s, t) => s + PCT.num(t.progreso), 0) / total) * 10) / 10 : 0;
+      const promedioInt = Math.round(promedio);
+      const avFisico = typeof PCT.avanceFisico === "function" ? PCT.avanceFisico(PCT.estado.items) : { pct: 0 };
+      const avRealPct = Math.round(PCT.num(avFisico?.pct) * 1000) / 10;
+      const desviacion = total ? Math.round((avRealPct - promedio) * 10) / 10 : null;
+      const desvBadge =
+        desviacion === null
+          ? `<span class="rounded-full bg-gray-100 px-2.5 py-0.5 text-[11px] font-semibold text-gray-600">Sin actividades programadas</span>`
+          : desviacion < -10
+          ? `<span class="rounded-full bg-red-100 px-2.5 py-0.5 text-[11px] font-semibold text-red-700">Diferencia ${desviacion}% vs cronograma</span>`
+          : desviacion >= 0
+          ? `<span class="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">${desviacion > 0 ? "+" : ""}${desviacion}% sobre cronograma</span>`
+          : `<span class="rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800">Diferencia ${desviacion}% vs cronograma</span>`;
+
+      root.querySelector("#crono-avance-banner").innerHTML = `
+        <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-2.5 text-xs">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 font-semibold text-blue-800 shadow-sm ring-1 ring-blue-200/70">
+              <span class="material-symbols-outlined text-[15px]">trending_up</span>
+              Avance físico real (Avance Diario): <b>${avRealPct}%</b>
+            </span>
+            <span class="text-gray-400">vs</span>
+            <span class="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200">
+              <span class="material-symbols-outlined text-[15px]">event_note</span>
+              Avance promedio cronograma: <b>${promedio}%</b>
+            </span>
+            ${desvBadge}
+          </div>
+          <span class="text-[11px] text-slate-500">El avance físico real se calcula desde Avance Diario; el cronograma muestra la planeación y seguimiento por actividad.</span>
+        </div>`;
+
       const fechasIni = tareas.map((t) => t.fecha_inicio).filter(Boolean).sort();
       const fechasFin = tareas.map((t) => t.fecha_fin).filter(Boolean).sort();
       const rango = fechasIni.length && fechasFin.length ? `${formatoFecha(fechasIni[0])} → ${formatoFecha(fechasFin[fechasFin.length - 1])}` : "Sin fechas";
@@ -188,8 +294,8 @@
 
       root.querySelector("#crono-resumen").innerHTML =
         card("Actividades", total, `${completadas} completada${completadas === 1 ? "" : "s"}`) +
-        card("Avance Cronograma", `${promedio}%`, `<div class="barra-progreso mt-1"><span style="width:${promedio}%"></span></div>`) +
-        card("Rango Programado", `<span class="text-sm">${rango}</span>`, hitosFact.length ? `💰 ${hitosFact.length} hito(s) de cobro · ${formatoMoneda(montoHitos)}` : "") +
+        card("Avance Cronograma", `${promedioInt}%`, `<div class="barra-progreso mt-1"><span style="width:${promedioInt}%"></span></div>`) +
+        card("Rango Programado", `<span class="text-sm">${rango}</span>`, hitosFact.length ? `${hitosFact.length} hito(s) facturables · ${formatoMoneda(montoHitos)}` : "") +
         card("Fin Contractual", p.fecha_fin_estimada ? formatoFecha(p.fecha_fin_estimada) : "—");
     };
 
@@ -200,7 +306,7 @@
           <div class="rounded-xl border border-dashed border-gray-300 bg-white p-10 text-center">
             <span class="material-symbols-outlined text-[40px] text-gray-300">event_note</span>
             <p class="mt-2 text-sm font-semibold text-gray-700">No hay actividades en el cronograma</p>
-            <p class="mt-1 text-xs text-gray-500">Haz clic en <b>Cargar plantilla base</b> para generar las fases estándar del proyecto o agrega una actividad manual.</p>
+            <p class="mt-1 text-xs text-gray-500">Haz clic en <b>Cargar plantilla base</b> para generar las fases estándar ajustadas a la duración del proyecto o agrega una actividad manual.</p>
           </div>`;
         return;
       }
@@ -210,17 +316,18 @@
           <table class="w-full text-left text-xs">
             <thead class="bg-gray-50 text-[11px] uppercase text-gray-500">
               <tr>
-                <th class="px-3 py-3 w-20 text-center">N° EDT</th>
-                <th class="px-3 py-3">Fase</th>
-                <th class="px-3 py-3">Actividad</th>
-                <th class="px-3 py-3">Responsable</th>
-                <th class="px-3 py-3">Inicio</th>
-                <th class="px-3 py-3">Fin</th>
-                <th class="px-3 py-3 text-center whitespace-nowrap">Duración (días)</th>
-                <th class="px-3 py-3 w-28">Avance (%)</th>
-                <th class="px-3 py-3">Estado</th>
-                <th class="px-3 py-3 whitespace-nowrap">Hito facturación</th>
-                <th class="px-3 py-3"></th>
+                <th class="px-2 py-3 w-16 text-center">Orden</th>
+                <th class="px-2 py-3 w-20 text-center">N° EDT</th>
+                <th class="px-2 py-3">Fase</th>
+                <th class="px-2 py-3">Actividad</th>
+                <th class="px-2 py-3">Responsable</th>
+                <th class="px-2 py-3">Inicio</th>
+                <th class="px-2 py-3">Fin</th>
+                <th class="px-2 py-3 text-center whitespace-nowrap">Duración</th>
+                <th class="px-2 py-3 w-24">Avance (%)</th>
+                <th class="px-2 py-3">Estado</th>
+                <th class="px-2 py-3 text-center whitespace-nowrap" title="Marcar solo actividades que representen un hito de cobro/facturación">Hito</th>
+                <th class="px-2 py-3"></th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-100">
@@ -230,70 +337,90 @@
                   const dur = calcularDuracion(t.fecha_inicio, t.fecha_fin);
                   const esHito = Boolean(t.es_hito_facturacion);
                   const montoEst = PCT.num(t.monto_facturacion_estimado);
+                  const esPrimero = idx === 0;
+                  const esUltimo = idx === tareas.length - 1;
                   return `
-                    <tr class="hover:bg-gray-50/70 ${esHito ? "bg-amber-50/40" : ""}" data-tarea-id="${t.id}">
-                      <td class="px-3 py-2 text-center">
+                    <tr draggable="true" class="hover:bg-gray-50/70 transition-colors ${esHito ? "bg-amber-50/35" : ""}" data-tarea-id="${t.id}" data-idx="${idx}">
+                      <td class="px-1.5 py-2 whitespace-nowrap">
+                        <div class="flex items-center justify-center gap-0.5">
+                          <span class="crono-drag-handle cursor-grab text-gray-300 hover:text-gray-500" title="Arrastrar para reordenar">
+                            <span class="material-symbols-outlined text-[16px] align-middle">drag_indicator</span>
+                          </span>
+                          <button type="button" data-mover="arriba" ${esPrimero ? "disabled" : ""} title="Subir actividad"
+                            class="rounded px-1 py-0.5 text-[11px] font-bold ${esPrimero ? "cursor-not-allowed text-gray-200" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}">↑</button>
+                          <button type="button" data-mover="abajo" ${esUltimo ? "disabled" : ""} title="Bajar actividad"
+                            class="rounded px-1 py-0.5 text-[11px] font-bold ${esUltimo ? "cursor-not-allowed text-gray-200" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}">↓</button>
+                        </div>
+                      </td>
+                      <td class="px-2 py-2 text-center">
                         <input type="text" data-campo="edt" value="${escapeHtml(t.edt || "")}" placeholder="${idx + 1}"
                           class="w-16 rounded-md border-gray-200 py-1 px-1.5 text-center font-mono text-xs font-semibold text-gray-700 focus:border-primary focus:ring-primary" />
                       </td>
-                      <td class="px-3 py-2 whitespace-nowrap">
+                      <td class="px-2 py-2 whitespace-nowrap">
                         <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold ${f.badge}">${f.label}</span>
                       </td>
-                      <td class="px-3 py-2 font-semibold text-gray-900 min-w-[190px]">
-                        <div>${escapeHtml(t.titulo)}</div>
-                        ${
-                          esHito
-                            ? `<span class="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-100 border border-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-900">💰 Hito facturación${montoEst > 0 ? ` · ${formatoMoneda(montoEst)}` : ""}${t.hito_facturado ? " · Facturado" : ""}</span>`
-                            : ""
-                        }
+                      <td class="px-2 py-2 min-w-[210px]">
+                        <input type="text" data-campo="titulo" value="${escapeHtml(t.titulo || "")}" placeholder="Nombre de la actividad"
+                          class="w-full rounded-md border border-transparent bg-transparent px-1.5 py-1 text-xs font-semibold text-gray-900 hover:border-gray-300 focus:border-primary focus:bg-white focus:ring-1 focus:ring-primary" />
                       </td>
-                      <td class="px-3 py-2">
+                      <td class="px-2 py-2">
                         <input type="text" data-campo="responsable" value="${escapeHtml(t.responsable || "")}" placeholder="Asignar..."
-                          class="w-36 rounded-md border-gray-200 py-1 px-2 text-xs focus:border-primary focus:ring-primary" />
+                          class="w-32 rounded-md border-gray-200 py-1 px-2 text-xs focus:border-primary focus:ring-primary" />
                       </td>
-                      <td class="px-3 py-2">
+                      <td class="px-2 py-2">
                         <input type="date" data-campo="fecha_inicio" value="${t.fecha_inicio || ""}"
                           class="rounded-md border-gray-200 py-1 px-2 text-xs focus:border-primary focus:ring-primary" />
                       </td>
-                      <td class="px-3 py-2">
+                      <td class="px-2 py-2">
                         <input type="date" data-campo="fecha_fin" value="${t.fecha_fin || ""}"
                           class="rounded-md border-gray-200 py-1 px-2 text-xs focus:border-primary focus:ring-primary" />
                       </td>
-                      <td class="px-3 py-2 text-center tabular-nums font-semibold text-gray-700 whitespace-nowrap">
+                      <td class="px-2 py-2 text-center tabular-nums font-semibold text-gray-700 whitespace-nowrap">
                         ${dur !== null ? `${dur} d` : "—"}
                       </td>
-                      <td class="px-3 py-2">
-                        <div class="flex items-center gap-1.5">
+                      <td class="px-2 py-2">
+                        <div class="flex items-center gap-1">
                           <input type="number" min="0" max="100" step="5" data-campo="progreso" value="${PCT.num(t.progreso)}"
                             class="w-16 rounded-md border-gray-200 py-1 px-2 text-xs text-right tabular-nums focus:border-primary focus:ring-primary" />
                           <span class="text-gray-400">%</span>
                         </div>
                       </td>
-                      <td class="px-3 py-2">
+                      <td class="px-2 py-2">
                         <select data-campo="estado" class="rounded-md border-gray-200 py-1 px-2 text-xs focus:border-primary focus:ring-primary">
                           ${Object.entries(ESTADOS_TAREA)
                             .map(([k, v]) => `<option value="${k}" ${t.estado === k ? "selected" : ""}>${v.label}</option>`)
                             .join("")}
                         </select>
                       </td>
-                      <td class="px-3 py-2 whitespace-nowrap">
-                        <div class="flex items-center gap-2">
-                          <label class="inline-flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${esHito ? "border-amber-300 bg-amber-100 text-amber-900" : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50"}">
-                            <input type="checkbox" data-campo="es_hito_facturacion" ${esHito ? "checked" : ""} class="rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
-                            <span>💰</span>
-                          </label>
+                      <td class="px-2 py-2 text-center whitespace-nowrap">
+                        <div class="inline-flex items-center justify-center gap-1.5">
+                          <button type="button" data-toggle-hito
+                            title="${esHito ? "Quitar hito de facturación" : "Marcar como hito de facturación"}"
+                            class="inline-flex h-7 w-7 items-center justify-center rounded-md border transition-colors ${
+                              esHito
+                                ? "border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200"
+                                : "border-transparent text-gray-300 hover:border-gray-200 hover:bg-gray-50 hover:text-gray-500"
+                            }">
+                            <span class="material-symbols-outlined text-[16px]">payments</span>
+                          </button>
                           ${
                             esHito
-                              ? `<input type="text" inputmode="decimal" data-campo="monto_facturacion_estimado" value="${montoEst > 0 ? formatearMiles(montoEst) : ""}" placeholder="Monto est."
-                                  class="input-moneda w-28 rounded-md border-amber-300 bg-white py-1 px-2 text-right text-xs tabular-nums focus:border-primary focus:ring-primary" />`
-                              : `<span class="text-[11px] text-gray-300">—</span>`
+                              ? `<input type="text" inputmode="decimal" data-campo="monto_facturacion_estimado" value="${montoEst > 0 ? formatearMiles(montoEst) : ""}" placeholder="Monto"
+                                  class="input-moneda w-24 rounded-md border-amber-300 bg-white py-1 px-2 text-right text-xs tabular-nums focus:border-primary focus:ring-primary" />`
+                              : ""
                           }
                         </div>
                       </td>
-                      <td class="px-3 py-2 text-right">
-                        <button type="button" data-borrar-tarea class="text-gray-400 hover:text-red-600" title="Eliminar actividad">
-                          <span class="material-symbols-outlined text-[18px]">delete</span>
-                        </button>
+                      <td class="px-2 py-2 text-right">
+                        ${
+                          window.PCT_ROL_INFO?.esSuperUsuario ||
+                          !window.PCT_ROL_INFO?.rol ||
+                          ["directivo", "proyectos"].includes(window.PCT_ROL_INFO.rol)
+                            ? `<button type="button" data-borrar-tarea class="text-gray-400 hover:text-red-600" title="Eliminar actividad">
+                                <span class="material-symbols-outlined text-[18px]">delete</span>
+                              </button>`
+                            : ""
+                        }
                       </td>
                     </tr>`;
                 })
@@ -497,34 +624,71 @@
         if (!ok) return;
       }
 
-      let cursor = p.fecha_inicio || PCT.hoyISO();
+      const fechaIniProy = p.fecha_inicio || PCT.hoyISO();
+      const fechaFinProy = p.fecha_fin_estimada || p.fecha_fin || null;
+      const plan = construirFechasPlantilla(fechaIniProy, fechaFinProy);
       const ordenBase = tareas.length ? Math.max(...tareas.map((t) => PCT.num(t.orden))) + 1 : 1;
-      const filas = PLANTILLA_BASE.map((item, idx) => {
-        const inicio = cursor;
-        const fin = sumarDias(inicio, item.dias - 1);
-        cursor = sumarDias(fin, 1);
-        return {
-          proyecto_id: pid,
-          orden: ordenBase + idx,
-          edt: item.edt,
-          fase: item.fase,
-          titulo: item.titulo,
-          responsable: p.director_proyecto || null,
-          fecha_inicio: inicio,
-          fecha_fin: fin,
-          progreso: 0,
-          estado: "pendiente",
-        };
-      });
+      const filas = plan.items.map((item, idx) => ({
+        proyecto_id: pid,
+        orden: ordenBase + idx,
+        edt: item.edt,
+        fase: item.fase,
+        titulo: item.titulo,
+        responsable: p.director_proyecto || null,
+        fecha_inicio: item.fecha_inicio,
+        fecha_fin: item.fecha_fin,
+        progreso: 0,
+        estado: "pendiente",
+      }));
 
       const { error } = await window.sb.from("proyecto_cronograma").insert(filas);
       if (error) return manejarError(error, "No se pudo cargar la plantilla base");
-      mostrarAviso("Plantilla base cargada en el cronograma.", "exito");
+      mostrarAviso(
+        plan.escalada
+          ? `Plantilla base cargada y ajustada a ${plan.totalDias} día${plan.totalDias === 1 ? "" : "s"} del proyecto.`
+          : "Plantilla base cargada en el cronograma.",
+        "exito"
+      );
       await cargar();
+    };
+
+    const persistirOrden = async (nuevaLista, mensaje = "Orden actualizado") => {
+      const prevLista = tareas.slice();
+      const prevOrdenes = new Map(prevLista.map((t) => [t.id, t.orden]));
+      const cambios = [];
+      nuevaLista.forEach((t, idx) => {
+        const nuevoOrden = idx + 1;
+        if (PCT.num(t.orden) !== nuevoOrden) {
+          t.orden = nuevoOrden;
+          cambios.push({ id: t.id, orden: nuevoOrden });
+        }
+      });
+      tareas = nuevaLista;
+      pintar();
+      if (!cambios.length) return;
+      try {
+        const resultados = await Promise.all(
+          cambios.map((c) => window.sb.from("proyecto_cronograma").update({ orden: c.orden }).eq("id", c.id))
+        );
+        const fallo = resultados.find((r) => r.error);
+        if (fallo?.error) throw fallo.error;
+        if (mensaje) mostrarAviso(mensaje, "exito");
+      } catch (err) {
+        prevLista.forEach((t) => {
+          t.orden = prevOrdenes.get(t.id);
+        });
+        tareas = prevLista;
+        pintar();
+        manejarError(err, "No se pudo guardar el orden");
+      }
     };
 
     const abrirModalNueva = () => {
       const edtInicial = sugerirEdt(tareas, "pre_inicio");
+      const iniDef = p.fecha_inicio || PCT.hoyISO();
+      const finProy = p.fecha_fin_estimada || p.fecha_fin || null;
+      let finDef = sumarDias(iniDef, 3);
+      if (finProy && finProy >= iniDef && finDef > finProy) finDef = finProy;
       const m = PCT.modal({
         titulo: "Nueva actividad de cronograma",
         ancho: "max-w-md",
@@ -553,11 +717,11 @@
             <div class="grid grid-cols-2 gap-3">
               <div>
                 <label class="mb-1 block font-medium text-gray-700">Fecha inicio</label>
-                <input type="date" id="cr-ini" value="${p.fecha_inicio || PCT.hoyISO()}" class="w-full rounded-lg border-gray-300 text-xs" />
+                <input type="date" id="cr-ini" value="${iniDef}" class="w-full rounded-lg border-gray-300 text-xs" />
               </div>
               <div>
                 <label class="mb-1 block font-medium text-gray-700">Fecha fin</label>
-                <input type="date" id="cr-fin" value="${sumarDias(p.fecha_inicio || PCT.hoyISO(), 3)}" class="w-full rounded-lg border-gray-300 text-xs" />
+                <input type="date" id="cr-fin" value="${finDef}" class="w-full rounded-lg border-gray-300 text-xs" />
               </div>
             </div>
             <div class="rounded-lg border border-amber-200 bg-amber-50/60 p-3 space-y-2">
@@ -766,13 +930,107 @@
       vista = "gantt";
       pintar();
     });
+    root.querySelector("#crono-sort-fecha").addEventListener("click", async () => {
+      if (tareas.length < 2) return;
+      const ordenada = tareas.slice().sort((a, b) => {
+        const ia = a.fecha_inicio || "9999-12-31";
+        const ib = b.fecha_inicio || "9999-12-31";
+        if (ia !== ib) return ia.localeCompare(ib);
+        const fa = a.fecha_fin || "9999-12-31";
+        const fb = b.fecha_fin || "9999-12-31";
+        if (fa !== fb) return fa.localeCompare(fb);
+        return compararEdt(a, b);
+      });
+      await persistirOrden(ordenada, "Actividades ordenadas por fecha.");
+    });
+    root.querySelector("#crono-sort-edt").addEventListener("click", async () => {
+      if (tareas.length < 2) return;
+      const ordenada = tareas.slice().sort(compararEdt);
+      await persistirOrden(ordenada, "Actividades ordenadas por EDT.");
+    });
     root.querySelector("#crono-btn-plantilla").addEventListener("click", cargarPlantillaBase);
     root.querySelector("#crono-btn-nueva").addEventListener("click", abrirModalNueva);
     root.querySelector("#crono-btn-excel").addEventListener("click", exportarExcel);
     root.querySelector("#crono-btn-pdf").addEventListener("click", exportarPDF);
 
-    // Inline editing & delete in Lista view
-    root.querySelector("#crono-contenido").addEventListener("change", async (e) => {
+    const contCrono = root.querySelector("#crono-contenido");
+
+    // Permitir confirmar edición de título/texto con Enter
+    contCrono.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && e.target.matches('input[data-campo="titulo"], input[data-campo="edt"], input[data-campo="responsable"]')) {
+        e.preventDefault();
+        e.target.blur();
+      }
+    });
+
+    // Evitar interferencia de drag-and-drop al seleccionar texto en inputs
+    contCrono.addEventListener("mousedown", (e) => {
+      const tr = e.target.closest("tr[data-tarea-id]");
+      if (!tr) return;
+      const enControl = Boolean(e.target.closest("input, select, textarea, button"));
+      tr.setAttribute("draggable", enControl ? "false" : "true");
+    });
+    contCrono.addEventListener("mouseup", (e) => {
+      const tr = e.target.closest("tr[data-tarea-id]");
+      if (tr) tr.setAttribute("draggable", "true");
+    });
+
+    // Reordenamiento HTML5 Drag & Drop
+    let dragTareaId = null;
+    contCrono.addEventListener("dragstart", (e) => {
+      const tr = e.target.closest("tr[data-tarea-id]");
+      if (!tr) return;
+      dragTareaId = tr.dataset.tareaId;
+      tr.classList.add("opacity-50");
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", dragTareaId);
+      }
+    });
+    contCrono.addEventListener("dragover", (e) => {
+      if (!dragTareaId) return;
+      const tr = e.target.closest("tr[data-tarea-id]");
+      if (!tr || tr.dataset.tareaId === dragTareaId) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+      contCrono.querySelectorAll("tr.crono-drop-target").forEach((el) => {
+        if (el !== tr) el.classList.remove("crono-drop-target", "border-t-2", "border-primary", "bg-blue-50/40");
+      });
+      tr.classList.add("crono-drop-target", "border-t-2", "border-primary", "bg-blue-50/40");
+    });
+    contCrono.addEventListener("dragleave", (e) => {
+      const tr = e.target.closest("tr[data-tarea-id]");
+      if (tr && !tr.contains(e.relatedTarget)) {
+        tr.classList.remove("crono-drop-target", "border-t-2", "border-primary", "bg-blue-50/40");
+      }
+    });
+    contCrono.addEventListener("drop", async (e) => {
+      if (!dragTareaId) return;
+      const tr = e.target.closest("tr[data-tarea-id]");
+      contCrono.querySelectorAll("tr.crono-drop-target").forEach((el) => {
+        el.classList.remove("crono-drop-target", "border-t-2", "border-primary", "bg-blue-50/40");
+      });
+      if (!tr || tr.dataset.tareaId === dragTareaId) return;
+      e.preventDefault();
+      const fromIdx = tareas.findIndex((x) => x.id === dragTareaId);
+      const toIdx = tareas.findIndex((x) => x.id === tr.dataset.tareaId);
+      if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return;
+      const nuevaLista = tareas.slice();
+      const [movida] = nuevaLista.splice(fromIdx, 1);
+      nuevaLista.splice(toIdx, 0, movida);
+      dragTareaId = null;
+      await persistirOrden(nuevaLista, "Actividad reordenada.");
+    });
+    contCrono.addEventListener("dragend", () => {
+      dragTareaId = null;
+      contCrono.querySelectorAll("tr[data-tarea-id]").forEach((el) => {
+        el.classList.remove("opacity-50", "crono-drop-target", "border-t-2", "border-primary", "bg-blue-50/40");
+        el.setAttribute("draggable", "true");
+      });
+    });
+
+    // Inline editing in Lista view
+    contCrono.addEventListener("change", async (e) => {
       const input = e.target.closest("[data-campo]");
       if (!input) return;
       const tr = input.closest("tr[data-tarea-id]");
@@ -780,8 +1038,17 @@
       const id = tr.dataset.tareaId;
       const campo = input.dataset.campo;
       const t = tareas.find((x) => x.id === id);
+      if (!t) return;
+
       let valor = input.value;
-      if (campo === "es_hito_facturacion") {
+      if (campo === "titulo") {
+        valor = valor.trim();
+        if (!valor) {
+          input.value = t.titulo || "";
+          return mostrarAviso("El título de la actividad no puede estar vacío.", "error");
+        }
+        if (valor === t.titulo) return;
+      } else if (campo === "es_hito_facturacion") {
         valor = Boolean(input.checked);
       } else if (campo === "monto_facturacion_estimado") {
         valor = input.value.trim() === "" ? null : valorMoneda(input);
@@ -794,39 +1061,48 @@
         valor = null;
       }
 
-      if (campo === "fecha_inicio" || campo === "fecha_fin") {
-        const ini = campo === "fecha_inicio" ? valor : t?.fecha_inicio;
-        const fin = campo === "fecha_fin" ? valor : t?.fecha_fin;
-        if (ini && fin && fin < ini) {
-          input.value = (t && t[campo]) || "";
-          return mostrarAviso("La fecha de fin no puede ser anterior a la fecha de inicio.", "error");
-        }
+      const patch = { [campo]: valor };
+      let avisoExtra = null;
+
+      if (campo === "fecha_inicio" && valor && t.fecha_fin && valor > t.fecha_fin) {
+        const durPrevDias =
+          t.fecha_inicio && t.fecha_fin && t.fecha_fin >= t.fecha_inicio
+            ? Math.max(0, diffDias(t.fecha_inicio, t.fecha_fin))
+            : 0;
+        patch.fecha_fin = sumarDias(valor, durPrevDias);
+        avisoExtra = "Fecha fin ajustada automáticamente.";
+      } else if (campo === "fecha_fin" && valor && t.fecha_inicio && valor < t.fecha_inicio) {
+        patch.fecha_inicio = valor;
+        avisoExtra = "Fecha inicio ajustada automáticamente.";
       }
 
-      const patch = { [campo]: valor };
       if (campo === "estado" && valor === "completada") {
         patch.progreso = 100;
       } else if (campo === "progreso" && valor === 100) {
         patch.estado = "completada";
-      } else if (campo === "progreso" && valor < 100 && t?.estado === "completada") {
+      } else if (campo === "progreso" && valor < 100 && t.estado === "completada") {
         patch.estado = "en_curso";
       }
 
+      const snapshotPrev = { ...t };
+      // Actualización optimista local
+      Object.assign(t, patch);
+
       const { error } = await window.sb.from("proyecto_cronograma").update(patch).eq("id", id);
       if (error) {
+        Object.assign(t, snapshotPrev);
         const msg = String(error.message || "");
         if (
           (campo === "es_hito_facturacion" || campo === "monto_facturacion_estimado") &&
           (error.code === "42703" || error.code === "PGRST204" || /es_hito_facturacion|monto_facturacion_estimado/i.test(msg))
         ) {
-          if (campo === "es_hito_facturacion") input.checked = Boolean(t?.es_hito_facturacion);
-          else input.value = t?.monto_facturacion_estimado ? formatearMiles(t.monto_facturacion_estimado) : "";
-          return mostrarAviso("Falta ejecutar la migración SQL (migracion_2026-11_comite_mejoras.sql) en Supabase para guardar Hitos de facturación.", "error");
+          pintarLista();
+          return mostrarAviso("Falta ejecutar la migración SQL en Supabase para guardar Hitos de facturación.", "error");
         }
+        pintarLista();
         return manejarError(error, "No se pudo actualizar la actividad");
       }
 
-      if (t) Object.assign(t, patch);
       pintarResumen();
       if (
         patch.progreso !== undefined ||
@@ -838,18 +1114,64 @@
       ) {
         pintarLista();
       }
-      mostrarAviso("Actividad actualizada", "exito");
+      mostrarAviso(avisoExtra || "Actividad actualizada", avisoExtra ? "info" : "exito");
     });
 
-    root.querySelector("#crono-contenido").addEventListener("click", async (e) => {
-      const btn = e.target.closest("[data-borrar-tarea]");
-      if (!btn) return;
-      const id = btn.closest("tr[data-tarea-id]")?.dataset.tareaId;
+    // Click actions in Lista view: ↑/↓ reorder, compact Hito toggle, delete
+    contCrono.addEventListener("click", async (e) => {
+      const btnMover = e.target.closest("[data-mover]");
+      if (btnMover) {
+        const tr = btnMover.closest("tr[data-tarea-id]");
+        const id = tr?.dataset.tareaId;
+        const idx = tareas.findIndex((x) => x.id === id);
+        if (idx < 0) return;
+        const destino = btnMover.dataset.mover === "arriba" ? idx - 1 : idx + 1;
+        if (destino < 0 || destino >= tareas.length) return;
+        const nuevaLista = tareas.slice();
+        const tmp = nuevaLista[idx];
+        nuevaLista[idx] = nuevaLista[destino];
+        nuevaLista[destino] = tmp;
+        await persistirOrden(nuevaLista, null);
+        return;
+      }
+
+      const btnHito = e.target.closest("[data-toggle-hito]");
+      if (btnHito) {
+        const tr = btnHito.closest("tr[data-tarea-id]");
+        const id = tr?.dataset.tareaId;
+        const t = tareas.find((x) => x.id === id);
+        if (!t) return;
+        const nuevoValor = !Boolean(t.es_hito_facturacion);
+        const prev = Boolean(t.es_hito_facturacion);
+        t.es_hito_facturacion = nuevoValor;
+        pintarResumen();
+        pintarLista();
+        const { error } = await window.sb.from("proyecto_cronograma").update({ es_hito_facturacion: nuevoValor }).eq("id", id);
+        if (error) {
+          t.es_hito_facturacion = prev;
+          pintarResumen();
+          pintarLista();
+          const msg = String(error.message || "");
+          if (error.code === "42703" || error.code === "PGRST204" || /es_hito_facturacion/i.test(msg)) {
+            return mostrarAviso("Falta ejecutar la migración SQL en Supabase para guardar Hitos de facturación.", "error");
+          }
+          return manejarError(error, "No se pudo actualizar el hito de facturación");
+        }
+        mostrarAviso(nuevoValor ? "Marcado como hito de facturación." : "Hito de facturación desactivado.", "info");
+        return;
+      }
+
+      const btnBorrar = e.target.closest("[data-borrar-tarea]");
+      if (!btnBorrar) return;
+      const id = btnBorrar.closest("tr[data-tarea-id]")?.dataset.tareaId;
       if (!id) return;
       const ok = await PCT.confirmar("Eliminar actividad", "¿Eliminar esta actividad del cronograma?", "Eliminar", true);
       if (!ok) return;
-      const { error } = await window.sb.from("proyecto_cronograma").delete().eq("id", id);
+      const { data, error } = await window.sb.from("proyecto_cronograma").delete().eq("id", id).select("id");
       if (error) return manejarError(error, "No se pudo eliminar la actividad");
+      if (!data || data.length === 0) {
+        return mostrarAviso("No tienes permisos para eliminar esta actividad.", "error");
+      }
       mostrarAviso("Actividad eliminada.", "info");
       await cargar();
     });

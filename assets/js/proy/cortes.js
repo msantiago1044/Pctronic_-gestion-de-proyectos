@@ -82,7 +82,7 @@
             <div class="max-h-[48vh] overflow-auto rounded-lg border border-gray-200">
               <table class="min-w-full text-xs">
                 <thead class="sticky top-0 bg-gray-50 text-left text-[10px] font-semibold uppercase text-gray-500">
-                  <tr><th class="px-2 py-2">#</th><th class="px-2 py-2">Descripción</th><th class="px-2 py-2">Und</th><th class="px-2 py-2 text-right">Contratado</th><th class="px-2 py-2 text-right">Ejecutado</th><th class="px-2 py-2 text-right">Cortado antes</th><th class="px-2 py-2 text-right">Pendiente</th><th class="px-2 py-2 text-right">Este corte</th><th class="px-2 py-2 text-right">Valor</th></tr>
+                  <tr><th class="px-2 py-2">#</th><th class="px-2 py-2">Descripción</th><th class="px-2 py-2">Und</th><th class="px-2 py-2 text-right">Contratado</th><th class="px-2 py-2 text-right">Ejecutado</th><th class="px-2 py-2 text-right">Cortado antes</th><th class="px-2 py-2 text-right">Pendiente</th><th class="px-2 py-2 text-right">PU</th><th class="px-2 py-2 text-right">Este corte</th><th class="px-2 py-2 text-right">Valor</th></tr>
                 </thead>
                 <tbody id="ec-filas"></tbody>
               </table>
@@ -113,7 +113,8 @@
                 return false;
               }
               try {
-                await onGuardar({ fecha: f, cantidades: cant, el });
+                const res = await onGuardar({ fecha: f, cantidades: cant, el });
+                if (res === false) return false;
                 resolve(true);
               } catch (err) {
                 manejarError(err, "No se pudo guardar el corte");
@@ -147,12 +148,13 @@
                   <td class="px-2 py-1 text-right tabular-nums">${PCT.fmtCant(f.ejecutado)}</td>
                   <td class="px-2 py-1 text-right tabular-nums">${PCT.fmtCant(f.cortadoOtros)}</td>
                   <td class="px-2 py-1 text-right tabular-nums ${pend < 0 ? "text-amber-700" : ""}">${PCT.fmtCant(pend)}</td>
+                  <td class="px-2 py-1 text-right tabular-nums text-gray-600">${f.sinPrecio ? `<span class="text-red-500">—</span>` : formatoMoneda(f.precio)}</td>
                   <td class="w-24 px-1 py-1"><input data-cant type="number" step="0.01" min="0" value="${c || ""}" placeholder="0" class="w-full rounded border border-gray-200 px-1.5 py-1 text-right text-xs tabular-nums focus:border-primary focus:ring-1 focus:ring-primary ${c > pend + 0.0001 ? "text-amber-700" : ""}" /></td>
                   <td class="px-2 py-1 text-right tabular-nums text-gray-700" data-valor>${formatoMoneda(c * PCT.num(f.precio))}</td>
                 </tr>`;
               })
               .join("")
-          : `<tr><td colspan="9" class="py-8 text-center text-gray-400">No hay nada ejecutado pendiente por cortar. Registra avance en «Avance diario» o quita el filtro para cortar a mano.</td></tr>`;
+          : `<tr><td colspan="10" class="py-8 text-center text-gray-400">No hay nada ejecutado pendiente por cortar. Registra avance en «Avance diario» o quita el filtro para cortar a mano.</td></tr>`;
         pintarResumen();
       };
 
@@ -610,6 +612,15 @@
       PCT.emit("proyecto");
     };
 
+    const confirmarSinGastosSiAplica = async () => {
+      if (Number(PCT.estado.finanzas?.gastado || 0) > 0) return true;
+      return await PCT.confirmar(
+        "Proyecto sin compras ni gastos registrados",
+        "Atención: Este proyecto aún tiene $0 en compras y gastos registrados. ¿Seguro que deseas continuar y facturar este corte?",
+        "Continuar de todos modos"
+      );
+    };
+
     root.innerHTML = `
       <div class="space-y-5">
         <div id="cc-kpis" class="${PCT.CLASE_PANEL_KPIS}"></div>
@@ -624,7 +635,7 @@
           <div class="overflow-x-auto">
             <table class="min-w-full text-sm">
               <thead class="bg-gray-50 text-left text-[11px] font-semibold uppercase text-gray-500">
-                <tr><th class="px-3 py-2">N°</th><th class="px-3 py-2">Fecha</th><th class="px-3 py-2 text-right">Costo directo</th><th class="px-3 py-2 text-right">Total acta</th><th class="px-3 py-2 text-right">Amortización</th><th class="px-3 py-2 text-right">Neto a facturar</th><th class="px-3 py-2">Estado</th><th class="px-3 py-2">Factura</th><th class="px-3 py-2 text-right">Recaudado</th><th class="px-3 py-2"></th></tr>
+                <tr><th class="px-3 py-2">N°</th><th class="px-3 py-2">Fecha</th><th class="px-3 py-2 text-right">Costo directo</th><th class="px-3 py-2 text-right">Total acta</th><th class="px-3 py-2 text-right">Amortización</th><th class="px-3 py-2 text-right">Neto a facturar</th><th class="px-3 py-2 text-right">Acumulado cobrado</th><th class="px-3 py-2 text-right">Saldo contrato</th><th class="px-3 py-2">Estado</th><th class="px-3 py-2">Factura</th><th class="px-3 py-2 text-right">Recaudado</th><th class="px-3 py-2"></th></tr>
               </thead>
               <tbody id="cc-lista"></tbody>
               <tfoot id="cc-total" class="bg-gray-50 text-xs font-bold text-gray-800"></tfoot>
@@ -634,32 +645,76 @@
       </div>`;
 
     const pintar = () => {
-      // KPIs
-      const actas = cortes.map((c) => ({ c, a: PCT.acta(cdDe(c.id), p()) }));
-      const cortado = actas.reduce((s, x) => s + x.a.total, 0);
-      const facturado = actas.filter((x) => x.c.estado !== "pendiente").reduce((s, x) => s + x.a.total, 0);
+      // KPIs financieros completos
+      const proy = p();
+      const valorContrato = PCT.num(proy.valor_total);
+      const anticipoPactado = PCT.contrato(proy).anticipo;
+      const anticipoRecibido = PCT.num(proy.anticipo_recibido);
+      const baseAnticipo = anticipoRecibido > 0 ? anticipoRecibido : anticipoPactado;
+
+      const actas = cortes.map((c) => ({ c, a: PCT.acta(cdDe(c.id), proy) }));
+      const acumuladoCortadoBruto = actas.reduce((s, x) => s + x.a.total, 0);
+      const acumuladoCortadoNeto = actas.reduce((s, x) => s + x.a.neto, 0);
+      const totalAmortizado = actas.reduce((s, x) => s + Math.abs(PCT.num(x.a.amortizacion)), 0);
+      const anticipoPendiente = Math.max(0, baseAnticipo - totalAmortizado);
+      const actasFacturadas = actas.filter((x) => x.c.estado !== "pendiente");
+      const facturadoBruto = actasFacturadas.reduce((s, x) => s + x.a.total, 0);
+      const facturadoNeto = actasFacturadas.reduce((s, x) => s + x.a.neto, 0);
       const recaudado = cortes.reduce((s, c) => s + PCT.num(c.valor_recaudado), 0);
+      const saldoContrato = Math.max(0, valorContrato - acumuladoCortadoBruto);
+      const porRecaudar = Math.max(0, facturadoNeto - recaudado);
       const sinCortar = soloItems().reduce((s, i) => s + Math.max(0, PCT.num(PCT.ejecItem(i.id).pendiente_cortar_cliente)) * PCT.num(i.pu_venta), 0);
-      const valorContrato = PCT.num(p().valor_total);
+
       root.querySelector("#cc-kpis").innerHTML =
-        PCT.tarjetaKpi("Valor del contrato", formatoMoneda(valorContrato), p().tipo_contrato === "aiu" ? "Esquema AIU" : "IVA pleno") +
-        PCT.tarjetaKpi("Cortado (total actas)", formatoMoneda(cortado), valorContrato ? `${PCT.fmtPct(cortado / valorContrato)} del contrato · ${cortes.length} cortes` : `${cortes.length} cortes`) +
-        PCT.tarjetaKpi("Facturado", formatoMoneda(facturado), "Cortes facturados o pagados") +
-        PCT.tarjetaKpi("Recaudado", formatoMoneda(recaudado), facturado ? `Por cobrar ${formatoMoneda(Math.max(0, facturado - recaudado))}` : "") +
+        PCT.tarjetaKpi(
+          "Valor del contrato",
+          formatoMoneda(valorContrato),
+          `${proy.tipo_contrato === "aiu" ? "Esquema AIU" : "IVA pleno"}${baseAnticipo > 0 ? ` · Anticipo ${formatoMoneda(baseAnticipo)}` : ""}`
+        ) +
+        PCT.tarjetaKpi(
+          "Acumulado cobrado / facturado",
+          formatoMoneda(facturadoNeto > 0 ? facturadoNeto : acumuladoCortadoNeto),
+          `Neto facturado ${formatoMoneda(facturadoNeto)} · Bruto facturado ${formatoMoneda(facturadoBruto)} · Cortado total ${formatoMoneda(acumuladoCortadoBruto)} (${cortes.length} cortes)`
+        ) +
+        PCT.tarjetaKpi(
+          "Saldo pendiente del contrato",
+          formatoMoneda(saldoContrato),
+          `Por recaudar (neto) ${formatoMoneda(porRecaudar)} · Recaudado ${formatoMoneda(recaudado)}`,
+          saldoContrato > 0 ? "text-gray-900" : "text-green-600"
+        ) +
+        PCT.tarjetaKpi(
+          "Amortización de anticipo",
+          formatoMoneda(totalAmortizado),
+          baseAnticipo > 0
+            ? `Pendiente por amortizar ${formatoMoneda(anticipoPendiente)} de ${formatoMoneda(baseAnticipo)}`
+            : `${PCT.num(proy.anticipo_porcentaje)}% sobre actas`
+        ) +
         PCT.tarjetaKpi("Ejecutado sin cortar", formatoMoneda(sinCortar), "Costo directo, antes de AIU", sinCortar > 0 ? "text-amber-700" : "text-gray-900");
 
-      // Lista
+      // Lista con acumulados corridos
+      let acumBruto = 0;
+      let acumAmort = 0;
+      let acumNeto = 0;
       const tbody = root.querySelector("#cc-lista");
       tbody.innerHTML = actas.length
         ? actas
-            .map(
-              ({ c, a }) => `<tr data-id="${c.id}" class="cursor-pointer border-t border-gray-100 hover:bg-gray-50">
+            .map(({ c, a }) => {
+              acumBruto += a.total;
+              acumAmort += Math.abs(PCT.num(a.amortizacion));
+              acumNeto += a.neto;
+              const saldoFila = Math.max(0, valorContrato - acumBruto);
+              return `<tr data-id="${c.id}" class="cursor-pointer border-t border-gray-100 hover:bg-gray-50">
                 <td class="px-3 py-2 font-semibold">${c.numero}</td>
-                <td class="px-3 py-2">${formatoFecha(c.fecha)}</td>
+                <td class="px-3 py-2 whitespace-nowrap">${formatoFecha(c.fecha)}</td>
                 <td class="px-3 py-2 text-right tabular-nums">${formatoMoneda(a.cd)}</td>
                 <td class="px-3 py-2 text-right tabular-nums">${formatoMoneda(a.total)}</td>
                 <td class="px-3 py-2 text-right tabular-nums text-gray-500">${formatoMoneda(a.amortizacion)}</td>
                 <td class="px-3 py-2 text-right font-semibold tabular-nums">${formatoMoneda(a.neto)}</td>
+                <td class="px-3 py-2 text-right tabular-nums">
+                  <div class="font-semibold text-gray-800">${formatoMoneda(acumNeto)}</div>
+                  <div class="text-[10px] text-gray-400">Bruto ${formatoMoneda(acumBruto)}${acumAmort > 0 ? ` · Amort. ${formatoMoneda(acumAmort)}` : ""}</div>
+                </td>
+                <td class="px-3 py-2 text-right tabular-nums text-gray-700">${formatoMoneda(saldoFila)}</td>
                 <td class="px-3 py-2">${badgeHtml(PCT.ESTADOS_CORTE, c.estado)}</td>
                 <td class="px-3 py-2 text-xs text-gray-600">${escapeHtml(c.numero_factura || "—")}${c.fecha_factura ? `<br /><span class="text-gray-400">${formatoFecha(c.fecha_factura)}</span>` : ""}</td>
                 <td class="px-3 py-2 text-right tabular-nums">${formatoMoneda(c.valor_recaudado)}</td>
@@ -667,13 +722,13 @@
                   <button data-acc="ver" class="text-xs font-semibold text-primary hover:underline">Abrir</button>
                   <button data-acc="pdf" title="Acta en PDF" class="ml-2 text-gray-400 hover:text-gray-800"><span class="material-symbols-outlined text-[18px] align-middle">picture_as_pdf</span></button>
                 </td>
-              </tr>`
-            )
+              </tr>`;
+            })
             .join("")
-        : `<tr><td colspan="10" class="py-10 text-center text-gray-400">Aún no hay cortes. Usa «Nuevo corte» cuando quieras cobrar lo ejecutado.</td></tr>`;
+        : `<tr><td colspan="12" class="py-10 text-center text-gray-400">Aún no hay cortes. Usa «Nuevo corte» cuando quieras cobrar lo ejecutado.</td></tr>`;
       const t = actas.reduce((s, { a }) => ({ cd: s.cd + a.cd, total: s.total + a.total, am: s.am + a.amortizacion, neto: s.neto + a.neto }), { cd: 0, total: 0, am: 0, neto: 0 });
       root.querySelector("#cc-total").innerHTML = actas.length
-        ? `<tr><td colspan="2" class="px-3 py-2 uppercase">Acumulado</td><td class="px-3 py-2 text-right tabular-nums">${formatoMoneda(t.cd)}</td><td class="px-3 py-2 text-right tabular-nums">${formatoMoneda(t.total)}</td><td class="px-3 py-2 text-right tabular-nums">${formatoMoneda(t.am)}</td><td class="px-3 py-2 text-right tabular-nums">${formatoMoneda(t.neto)}</td><td></td><td></td><td class="px-3 py-2 text-right tabular-nums">${formatoMoneda(recaudado)}</td><td></td></tr>`
+        ? `<tr><td colspan="2" class="px-3 py-2 uppercase">Acumulado</td><td class="px-3 py-2 text-right tabular-nums">${formatoMoneda(t.cd)}</td><td class="px-3 py-2 text-right tabular-nums">${formatoMoneda(t.total)}</td><td class="px-3 py-2 text-right tabular-nums">${formatoMoneda(t.am)}</td><td class="px-3 py-2 text-right tabular-nums">${formatoMoneda(t.neto)}</td><td class="px-3 py-2 text-right tabular-nums">${formatoMoneda(t.neto)}</td><td class="px-3 py-2 text-right tabular-nums">${formatoMoneda(saldoContrato)}</td><td></td><td></td><td class="px-3 py-2 text-right tabular-nums">${formatoMoneda(recaudado)}</td><td></td></tr>`
         : "";
     };
 
@@ -697,6 +752,10 @@
         iniciales,
         resumen: (cd) => PCT.htmlResumen(PCT.filasActa(cd, p())),
         onGuardar: async ({ fecha, cantidades }) => {
+          if (!corte) {
+            const seguir = await confirmarSinGastosSiAplica();
+            if (!seguir) return false;
+          }
           let corteId = corte?.id;
           let esNuevo = false;
           if (corte) {
@@ -769,6 +828,7 @@
 
     // ---- PDF ----
     const descargarPdf = async (corte) => {
+      const proy = p();
       const anteriores = new Map();
       cortes
         .filter((c) => c.numero < corte.numero)
@@ -778,17 +838,37 @@
         .filter((x) => x.i)
         .sort((a, b) => PCT.num(a.i.orden) - PCT.num(b.i.orden))
         .map(({ l, i }) => ({ codigo: i.codigo, descripcion: i.descripcion + (i.es_adicional ? " (ADICIONAL)" : ""), unidad: i.unidad, contratado: i.cantidad, precio: l.pu_venta_snapshot, anterior: anteriores.get(i.id) || 0, actual: l.cantidad }));
+
+      // Acumulados corridos hasta este corte (inclusive)
+      const actasHasta = cortes.filter((c) => c.numero <= corte.numero).map((c) => PCT.acta(cdDe(c.id), proy));
+      const acumBrutoPdf = actasHasta.reduce((s, a) => s + a.total, 0);
+      const acumNetoPdf = actasHasta.reduce((s, a) => s + a.neto, 0);
+      const acumAmortPdf = actasHasta.reduce((s, a) => s + Math.abs(PCT.num(a.amortizacion)), 0);
+      const valorContrato = PCT.num(proy.valor_total);
+      const saldoPendientePdf = Math.max(0, valorContrato - acumBrutoPdf);
+      const baseAnticipo = PCT.num(proy.anticipo_recibido) > 0 ? PCT.num(proy.anticipo_recibido) : PCT.contrato(proy).anticipo;
+      const anticipoPendientePdf = Math.max(0, baseAnticipo - acumAmortPdf);
+
+      const resumenPdf = [
+        ...PCT.filasActa(cdDe(corte.id), proy),
+        ["Acumulado cobrado (bruto actas)", acumBrutoPdf],
+        ["Acumulado cobrado (neto)", acumNetoPdf],
+        ["Amortizado acumulado", acumAmortPdf],
+        ...(baseAnticipo > 0 ? [["Anticipo pendiente por amortizar", anticipoPendientePdf]] : []),
+        ["Saldo pendiente del contrato", saldoPendientePdf, "fuerte"],
+      ];
+
       await PCT.pdfActa({
         titulo: `ACTA DE CORTE DE OBRA N° ${corte.numero}`,
         subtitulo: corte.numero_factura ? `Factura ${corte.numero_factura}${corte.fecha_factura ? " del " + formatoFecha(corte.fecha_factura) : ""}` : "",
-        proyecto: p(),
+        proyecto: proy,
         corte,
         filas,
         encabezadoPrecio: "PU venta",
-        resumen: PCT.filasActa(cdDe(corte.id), p()),
-        firmas: ["Recibido / aprobado por el cliente", `Elaborado por ${p().empresas?.nombre || "Pctronic"}`],
+        resumen: resumenPdf,
+        firmas: ["Recibido / aprobado por el cliente", `Elaborado por ${proy.empresas?.nombre || "Pctronic"}`],
         adjuntos: docs.filter((d) => d.corte_id === corte.id),
-        nombreArchivo: `Acta_corte_${corte.numero}_${(p().nombre || "proyecto").replace(/[^\w\-]+/g, "_")}.pdf`,
+        nombreArchivo: `Acta_corte_${corte.numero}_${(proy.nombre || "proyecto").replace(/[^\w\-]+/g, "_")}.pdf`,
       });
     };
 
@@ -891,12 +971,16 @@
                 valor_recaudado: valorMoneda(el.querySelector("#cd-recaudado")),
                 notas: el.querySelector("#cd-notas").value.trim() || null,
               };
+              const esFacturable = ["facturado", "pagado"].includes(datos.estado);
+              if (esFacturable && (datos.estado === "facturado" || estadoAnterior === "pendiente")) {
+                const seguir = await confirmarSinGastosSiAplica();
+                if (!seguir) return false;
+              }
               const { error } = await window.sb.from("cortes_cliente").update(datos).eq("id", corte.id);
               if (error) {
                 manejarError(error, "No se pudo guardar el corte");
                 return false;
               }
-              const esFacturable = ["facturado", "pagado"].includes(datos.estado);
               const syncRes = await sincronizarCorteAFacturacion({ ...corte, ...datos }, estadoAnterior);
               await refrescar();
               if (esFacturable) {
@@ -959,7 +1043,7 @@
       abrirDetalle(corte);
     });
 
-    root.querySelector("#cc-lista").innerHTML = `<tr><td colspan="10" class="py-6"><div class="skeleton h-10 rounded"></div></td></tr>`;
+    root.querySelector("#cc-lista").innerHTML = `<tr><td colspan="12" class="py-6"><div class="skeleton h-10 rounded"></div></td></tr>`;
     try {
       await cargar();
     } catch (err) {

@@ -51,6 +51,9 @@
           <option value="detenido">Detenido</option>
           <option value="finalizado">Finalizado</option>
         </select>
+        <select id="filtro-coordinador" aria-label="Filtrar por coordinador" class="hidden rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary focus:ring-primary">
+          <option value="">Coordinador: Todos</option>
+        </select>
       </div>
       <a href="proyecto-nuevo.html" id="link-nuevo-proyecto"
         class="hidden items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
@@ -59,12 +62,15 @@
       </a>
     </div>
 
+    <div id="aviso-filtro-coordinador" class="hidden rounded-lg border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs text-blue-900"></div>
+
     <div class="rounded-xl border border-gray-200 bg-white">
       <div class="overflow-x-auto">
         <table class="w-full text-left text-sm">
           <thead class="bg-gray-50 text-xs uppercase text-gray-500">
             <tr>
               <th class="px-5 py-3">Nombre del Proyecto</th>
+              <th class="px-5 py-3">Coordinador</th>
               <th class="px-5 py-3">Estado</th>
               <th class="px-5 py-3">Avance</th>
               <th class="px-5 py-3">Valor Total</th>
@@ -73,7 +79,7 @@
             </tr>
           </thead>
           <tbody id="tabla-proyectos">
-            <tr aria-live="polite"><td class="px-5 py-6 text-gray-500" colspan="6">Cargando…</td></tr>
+            <tr aria-live="polite"><td class="px-5 py-6 text-gray-500" colspan="7">Cargando…</td></tr>
           </tbody>
         </table>
       </div>

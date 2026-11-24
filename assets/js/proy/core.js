@@ -120,7 +120,43 @@ _globalRoot.PCT = _globalRoot.PCT || {};
     return PCT.estado.tarifas;
   };
 
-  // Lo facturado sale de los cortes de cliente; lo gastado, de Gastos.
+  // Cálculo de costo y horas de mano de obra propia (soporta columna `valor_total` si existe o cálculo con tarifa).
+  PCT.calcHorasMoPropia = (r, tarifas = PCT.estado.tarifas) => {
+    if (!r) return 0;
+    const t = (Array.isArray(tarifas) ? tarifas.find((x) => x.id === r.tarifa_id) : null) || r.tarifas_tecnicos || null;
+    const horasDia = r.horas_dia === null || r.horas_dia === undefined ? PCT.num(t?.horas_dia) : PCT.num(r.horas_dia);
+    return PCT.num(r.dias) * horasDia + PCT.num(r.horas_extra);
+  };
+
+  PCT.calcValorMoPropia = (r, tarifas = PCT.estado.tarifas, proyecto = PCT.estado.proyecto) => {
+    if (!r) return 0;
+    if (r.valor_total !== null && r.valor_total !== undefined && r.valor_total !== "" && Number.isFinite(Number(r.valor_total))) {
+      return PCT.num(r.valor_total);
+    }
+    const t = (Array.isArray(tarifas) ? tarifas.find((x) => x.id === r.tarifa_id) : null) || r.tarifas_tecnicos || null;
+    if (!t) return 0;
+    const horasDia = r.horas_dia === null || r.horas_dia === undefined ? PCT.num(t.horas_dia) : PCT.num(r.horas_dia);
+    const recargo = 1 + PCT.num(proyecto?.recargo_hora_extra_porcentaje) / 100;
+    return PCT.num(t.valor_hora) * (PCT.num(r.dias) * horasDia + PCT.num(r.horas_extra) * recargo);
+  };
+
+  const cargarTotalMoPropia = async (id) => {
+    try {
+      let res = await window.sb
+        .from("registro_mo_propia")
+        .select("*, tarifas_tecnicos(cargo, valor_hora, horas_dia)")
+        .eq("proyecto_id", id);
+      if (res.error) {
+        res = await window.sb.from("registro_mo_propia").select("*").eq("proyecto_id", id);
+      }
+      if (res.error || !Array.isArray(res.data)) return 0;
+      return res.data.reduce((s, r) => s + PCT.calcValorMoPropia(r, PCT.estado.tarifas, PCT.estado.proyecto), 0);
+    } catch (e) {
+      return 0;
+    }
+  };
+
+  // Lo facturado sale de los cortes de cliente; lo gastado, de Gastos + Mano de obra propia.
   PCT.recargarFinanzas = async (proyectoId = PCT.estado.proyecto?.id) => {
     const id = proyectoId;
     if (!id) return PCT.estado.finanzas;
@@ -132,9 +168,17 @@ _globalRoot.PCT = _globalRoot.PCT || {};
         if (!rpcError && rpcData) {
           const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
           if (row && (row.cd_cortado !== undefined || row.cdCortado !== undefined || row.gastado !== undefined)) {
+            const rpcIncluyeMoPropia =
+              row.gastado_mo_propia !== undefined || row.mo_propia !== undefined || row.incluye_mo_propia === true;
+            const moPropiaTotal = rpcIncluyeMoPropia
+              ? PCT.num(row.gastado_mo_propia ?? row.mo_propia)
+              : await cargarTotalMoPropia(id);
+            const gastadoTotal = rpcIncluyeMoPropia ? PCT.num(row.gastado) : PCT.num(row.gastado) + moPropiaTotal;
             PCT.estado.finanzas = {
               cdCortado: PCT.num(row.cdCortado ?? row.cd_cortado),
-              gastado: PCT.num(row.gastado),
+              gastado: gastadoTotal,
+              gastadoGastos: Math.max(0, gastadoTotal - moPropiaTotal),
+              gastadoMoPropia: moPropiaTotal,
             };
             return PCT.estado.finanzas;
           }
@@ -144,7 +188,7 @@ _globalRoot.PCT = _globalRoot.PCT || {};
       }
     }
 
-    const [c, g] = await Promise.all([
+    const [c, g, moPropiaTotal] = await Promise.all([
       // solo cortes ya facturados o pagados (un corte "pendiente" aún no se ha facturado)
       window.sb
         .from("cortes_cliente_items")
@@ -152,12 +196,16 @@ _globalRoot.PCT = _globalRoot.PCT || {};
         .eq("corte.proyecto_id", id)
         .in("corte.estado", ["facturado", "pagado"]),
       window.sb.from("gastos").select("valor_total").eq("proyecto_id", id),
+      cargarTotalMoPropia(id),
     ]);
     if (c.error) throw c.error;
     if (g.error) throw g.error;
+    const gastadoGastos = (g.data || []).reduce((s, x) => s + PCT.num(x.valor_total), 0);
     PCT.estado.finanzas = {
       cdCortado: (c.data || []).reduce((s, x) => s + PCT.num(x.cantidad) * PCT.num(x.pu_venta_snapshot), 0),
-      gastado: (g.data || []).reduce((s, x) => s + PCT.num(x.valor_total), 0),
+      gastado: gastadoGastos + moPropiaTotal,
+      gastadoGastos,
+      gastadoMoPropia: moPropiaTotal,
     };
     return PCT.estado.finanzas;
   };

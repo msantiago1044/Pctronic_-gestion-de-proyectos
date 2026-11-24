@@ -1,15 +1,20 @@
 // ============================================================================
-// PROYECTOS · pestaña GASTOS (única fuente del dinero que sale).
-// Muestra KPIs reales vs presupuesto, desglose por tipo y registro manual.
+// PROYECTOS · pestaña GASTOS (vista consolidada de todo el dinero que sale:
+// Compras OCs, gastos manuales, pagos de cortes contratista y técnicos propios).
 // ============================================================================
 (function (PCT) {
-  const TIPOS_GASTO = [
+  const TIPOS_GASTO_MANUAL = [
     { id: "Material", badge: "bg-blue-100 text-blue-800" },
     { id: "Equipo", badge: "bg-indigo-100 text-indigo-800" },
     { id: "Suministro", badge: "bg-cyan-100 text-cyan-800" },
     { id: "Alquiler", badge: "bg-amber-100 text-amber-800" },
     { id: "Transporte", badge: "bg-purple-100 text-purple-800" },
     { id: "Mano de obra contratista", badge: "bg-emerald-100 text-emerald-800" },
+  ];
+
+  const TIPOS_GASTO = [
+    ...TIPOS_GASTO_MANUAL,
+    { id: "Mano de obra propia", badge: "bg-slate-200 text-slate-800" },
   ];
 
   const badgeTipo = (tipo) => {
@@ -20,6 +25,9 @@
   PCT.renderGastos = async (root) => {
     const pid = PCT.estado.proyecto.id;
     let gastos = [];
+    let moPropia = [];
+    let cortesMo = [];
+    let cortesMoItems = [];
     let proveedores = [];
     let filtroTipo = "";
     let busqueda = "";
@@ -29,7 +37,7 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 class="text-base font-bold text-gray-900">Control de Gastos del Proyecto</h2>
-            <p class="text-xs text-gray-500">Registro consolidado de materiales, equipos, suministros, alquileres, transporte y mano de obra.</p>
+            <p class="text-xs text-gray-500">Vista unificada de órdenes de compra, gastos manuales, pagos a contratistas y técnicos propios.</p>
           </div>
           <button type="button" id="btn-nuevo-gasto" class="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 shadow-sm">
             <span class="material-symbols-outlined text-[18px]">add</span> Registrar gasto manual
@@ -38,9 +46,11 @@
 
         <div id="gastos-kpis" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"></div>
 
+        <div id="gastos-cortes-mo-resumen" class="hidden"></div>
+
         <div class="rounded-xl border border-gray-200 bg-white p-4">
           <p class="mb-3 text-xs font-bold uppercase tracking-wider text-gray-500">Desglose por tipo de gasto</p>
-          <div id="gastos-desglose" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"></div>
+          <div id="gastos-desglose" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"></div>
         </div>
 
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -58,7 +68,7 @@
               <tr>
                 <th class="px-4 py-3">Fecha</th>
                 <th class="px-4 py-3">Tipo</th>
-                <th class="px-4 py-3">Proveedor</th>
+                <th class="px-4 py-3">Proveedor / Técnico</th>
                 <th class="px-4 py-3">Documento</th>
                 <th class="px-4 py-3">Descripción / Ítem</th>
                 <th class="px-4 py-3 text-right">Cant.</th>
@@ -72,8 +82,47 @@
         </div>
       </div>`;
 
+    const construirFilasMoPropia = () =>
+      moPropia.map((r) => {
+        const tarifa =
+          (PCT.estado.tarifas || []).find((t) => t.id === r.tarifa_id) || r.tarifas_tecnicos || null;
+        const valorTotal = PCT.calcValorMoPropia(r, PCT.estado.tarifas, PCT.estado.proyecto);
+        const horas = PCT.calcHorasMoPropia(r, PCT.estado.tarifas);
+        const valorUnit = horas > 0 ? Math.round(valorTotal / horas) : PCT.num(tarifa?.valor_hora);
+        const detalleHoras =
+          `${PCT.fmtCant(r.dias)} d · ${PCT.fmtCant(horas)} h` +
+          (PCT.num(r.horas_extra) > 0 ? ` (+${PCT.fmtCant(r.horas_extra)} h extra)` : "");
+        return {
+          id: `mo-propia-${r.id}`,
+          fecha: r.fecha,
+          created_at: r.created_at,
+          tipo: "Mano de obra propia",
+          proveedor_texto: `${r.tecnico || "Técnico propio"}${tarifa?.cargo ? ` (${tarifa.cargo})` : ""}`,
+          documento: "MO Propia",
+          presupuesto_items: r.presupuesto_items || null,
+          descripcion: r.observaciones ? `${r.observaciones} · ${detalleHoras}` : `Jornada técnica propia · ${detalleHoras}`,
+          cantidad: horas,
+          valor_unitario: valorUnit,
+          valor_total: valorTotal,
+          observaciones: r.observaciones || "",
+          _esMoPropia: true,
+          _sufijoCant: " h",
+        };
+      });
+
     const pintar = () => {
-      const totalGastado = gastos.reduce((s, g) => s + PCT.num(g.valor_total), 0);
+      const filasMoPropia = construirFilasMoPropia();
+      const todos = [...gastos, ...filasMoPropia].sort((a, b) => {
+        const fa = String(a.fecha || "");
+        const fb = String(b.fecha || "");
+        if (fa !== fb) return fb.localeCompare(fa);
+        return String(b.created_at || "").localeCompare(String(a.created_at || ""));
+      });
+
+      const totalGastosTabla = gastos.reduce((s, g) => s + PCT.num(g.valor_total), 0);
+      const totalMoPropia = filasMoPropia.reduce((s, g) => s + PCT.num(g.valor_total), 0);
+      const totalGastado = totalGastosTabla + totalMoPropia;
+
       const { base, adic } = PCT.resumenPresupuesto();
       const presupuestoCostos = base.costo + adic.costo;
       const contrato = PCT.contrato();
@@ -84,12 +133,16 @@
 
       const pctEjecCosto = presupuestoCostos > 0 ? totalGastado / presupuestoCostos : null;
       const colorMg = mg.margen > 0 ? "text-emerald-600" : mg.margen < 0 ? "text-red-600" : "text-gray-900";
+      const subGastado =
+        totalMoPropia > 0
+          ? `${todos.length} reg. · Compras/Gastos ${formatoMoneda(totalGastosTabla)} · MO propia ${formatoMoneda(totalMoPropia)}`
+          : `${todos.length} registro${todos.length === 1 ? "" : "s"}`;
 
       root.querySelector("#gastos-kpis").innerHTML = `
         <div class="rounded-xl border border-gray-200 bg-white p-4">
           <p class="text-[11px] font-semibold uppercase text-gray-500">Total Gastado</p>
           <p class="mt-1 text-xl font-bold tabular-nums text-gray-900">${formatoMoneda(totalGastado)}</p>
-          <p class="mt-1 text-xs text-gray-400">${gastos.length} registro${gastos.length === 1 ? "" : "s"}</p>
+          <p class="mt-1 text-xs text-gray-400">${subGastado}</p>
         </div>
         <div class="rounded-xl border border-gray-200 bg-white p-4">
           <p class="text-[11px] font-semibold uppercase text-gray-500">Presupuesto de Costos</p>
@@ -109,8 +162,86 @@
           <p class="mt-1 text-xs text-gray-400">Total contrato ${formatoMoneda(contrato.total)}</p>
         </div>`;
 
+      // Estado de cortes de contratista pendientes de pago
+      const TIPO_GASTO_MO = "Mano de obra contratista";
+      const esGastoDeCorte = (g, corte) => {
+        if (!g || !corte) return false;
+        if (g.corte_mo_id && g.corte_mo_id === corte.id) return true;
+        if (g.corte_mo_id && g.corte_mo_id !== corte.id) return false;
+        const esTipoMo =
+          g.tipo === TIPO_GASTO_MO ||
+          String(g.categoria || "").toLowerCase().replace(/\s+/g, "_") === "mano_obra" ||
+          String(g.categoria || "").toLowerCase().includes("mano de obra");
+        if (!esTipoMo) return false;
+        const reNum = new RegExp(`corte\\s*(?:n[°º]?\\s*)?${corte.numero}(?:\\b|\\s|$)`, "i");
+        return (
+          reNum.test(String(g.descripcion || "")) ||
+          String(g.documento || "").trim().toLowerCase() === `corte ${corte.numero}`
+        );
+      };
+      const extraerPagadoDeGasto = (g) => {
+        const obs = String(g?.observaciones || "");
+        const m = obs.match(/\[PAGADO_MO:(\d+(?:\.\d+)?)\]/);
+        if (m) return PCT.num(m[1]);
+        if (/pendiente de pago/i.test(obs)) return 0;
+        return PCT.num(g?.valor_total);
+      };
+
+      const resumenCortesEl = root.querySelector("#gastos-cortes-mo-resumen");
+      const resumenCortes = cortesMo.map((c) => {
+        const bruto = cortesMoItems
+          .filter((l) => l.corte_id === c.id)
+          .reduce((s, l) => s + PCT.num(l.cantidad) * PCT.num(l.pu_contratista_snapshot), 0);
+        const pagado = gastos
+          .filter((g) => esGastoDeCorte(g, c))
+          .reduce((s, g) => s + extraerPagadoDeGasto(g), 0);
+        const saldo = Math.max(0, bruto - pagado);
+        return { corte: c, bruto, pagado, saldo };
+      });
+      const cortesPendientes = resumenCortes.filter((x) => x.saldo > 0.5);
+      if (cortesPendientes.length > 0) {
+        const totalSaldoPend = cortesPendientes.reduce((s, x) => s + x.saldo, 0);
+        resumenCortesEl.className = "rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-2";
+        resumenCortesEl.innerHTML = `
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2 text-amber-900">
+              <span class="material-symbols-outlined text-[18px]" aria-hidden="true">pending_actions</span>
+              <p class="text-xs font-bold">
+                ${cortesPendientes.length} corte${cortesPendientes.length === 1 ? "" : "s"} de contratista con saldo pendiente de pago
+              </p>
+            </div>
+            <span class="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold tabular-nums text-amber-900">
+              Saldo pendiente: ${formatoMoneda(totalSaldoPend)}
+            </span>
+          </div>
+          <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            ${cortesPendientes
+              .map(
+                ({ corte, bruto, pagado, saldo }) => `
+              <div class="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="font-bold text-gray-900">Corte N° ${corte.numero}</span>
+                  <span class="text-[11px] text-gray-500">${formatoFecha(corte.fecha)}</span>
+                </div>
+                <p class="mt-0.5 text-[11px] text-gray-600 truncate">${escapeHtml(corte.contratistas?.nombre || PCT.estado.proyecto?.contratista?.nombre || "Contratista")}${corte.numero_cuenta_cobro ? ` · Doc. ${escapeHtml(corte.numero_cuenta_cobro)}` : ""}</p>
+                <div class="mt-1 flex items-center justify-between text-[11px]">
+                  <span class="text-gray-500">Corte ${formatoMoneda(bruto)} · Pagado ${formatoMoneda(pagado)}</span>
+                  <span class="font-bold tabular-nums text-amber-800">Saldo ${formatoMoneda(saldo)}</span>
+                </div>
+              </div>`
+              )
+              .join("")}
+          </div>
+          <p class="text-[11px] text-amber-800">
+            Los pagos de cortes de contratista se incorporan automáticamente a esta tabla cuando los registras en la pestaña <strong>Mano de obra</strong>.
+          </p>`;
+      } else {
+        resumenCortesEl.className = "hidden";
+        resumenCortesEl.innerHTML = "";
+      }
+
       root.querySelector("#gastos-desglose").innerHTML = TIPOS_GASTO.map((t) => {
-        const sub = gastos.filter((g) => g.tipo === t.id).reduce((s, g) => s + PCT.num(g.valor_total), 0);
+        const sub = todos.filter((g) => g.tipo === t.id).reduce((s, g) => s + PCT.num(g.valor_total), 0);
         const pct = totalGastado > 0 ? (sub / totalGastado) * 100 : 0;
         return `
           <div class="rounded-lg border border-gray-100 bg-gray-50/70 p-2.5">
@@ -130,7 +261,7 @@
         .join("");
 
       const q = busqueda.trim().toLowerCase();
-      const lista = gastos.filter((g) => {
+      const lista = todos.filter((g) => {
         if (filtroTipo && g.tipo !== filtroTipo) return false;
         if (!q) return true;
         const txt = [
@@ -153,29 +284,89 @@
               const prov = g.proveedores?.nombre || g.proveedor_texto || "—";
               const desc = g.descripcion || g.presupuesto_items?.descripcion || "—";
               const itemLink = g.presupuesto_items?.descripcion && g.descripcion ? `<div class="text-[11px] text-gray-400">Ítem: ${escapeHtml(g.presupuesto_items.descripcion)}</div>` : "";
+              const esOc = !g._esMoPropia && Boolean(g.orden_compra_id || /^(OC|PRE)-/i.test(g.documento || ""));
+              const docBadge = esOc
+                ? `<span class="ml-1 inline-flex rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-primary">OC</span>`
+                : "";
+              const puedeEliminarGasto = Boolean(window.PCT_ROL_INFO?.esSuperUsuario);
+              const accionCell = g._esMoPropia
+                ? `<span class="inline-flex rounded bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500" title="Edita o elimina este registro en la pestaña Mano de obra">Mano de obra</span>`
+                : puedeEliminarGasto
+                  ? `<button type="button" data-borrar-gasto class="text-gray-400 hover:text-red-600" title="Eliminar gasto">
+                      <span class="material-symbols-outlined text-[18px]">delete</span>
+                    </button>`
+                  : "";
               return `
-                <tr class="border-t border-gray-100 hover:bg-gray-50/60" data-id="${g.id}">
+                <tr class="border-t border-gray-100 ${g._esMoPropia ? "bg-slate-50/50" : "hover:bg-gray-50/60"}" data-id="${escapeHtml(g.id)}">
                   <td class="whitespace-nowrap px-4 py-2.5 text-xs text-gray-600">${formatoFecha(g.fecha)}</td>
                   <td class="whitespace-nowrap px-4 py-2.5">${badgeTipo(g.tipo)}</td>
                   <td class="px-4 py-2.5 text-xs font-medium text-gray-800">${escapeHtml(prov)}</td>
-                  <td class="px-4 py-2.5 text-xs text-gray-500">${escapeHtml(g.documento || "—")}</td>
+                  <td class="px-4 py-2.5 text-xs text-gray-500 whitespace-nowrap">${escapeHtml(g.documento || "—")}${docBadge}</td>
                   <td class="px-4 py-2.5 text-xs text-gray-700">${escapeHtml(desc)}${itemLink}</td>
-                  <td class="px-4 py-2.5 text-right text-xs tabular-nums text-gray-600">${PCT.fmtCant(g.cantidad ?? 1)}</td>
+                  <td class="px-4 py-2.5 text-right text-xs tabular-nums text-gray-600">${PCT.fmtCant(g.cantidad ?? 1)}${g._sufijoCant || ""}</td>
                   <td class="px-4 py-2.5 text-right text-xs tabular-nums text-gray-600">${formatoMoneda(g.valor_unitario)}</td>
                   <td class="px-4 py-2.5 text-right text-xs font-bold tabular-nums text-gray-900">${formatoMoneda(g.valor_total)}</td>
-                  <td class="px-4 py-2.5 text-right">
-                    <button type="button" data-borrar-gasto class="text-gray-400 hover:text-red-600" title="Eliminar gasto">
-                      <span class="material-symbols-outlined text-[18px]">delete</span>
-                    </button>
-                  </td>
+                  <td class="px-4 py-2.5 text-right whitespace-nowrap">${accionCell}</td>
                 </tr>`;
             })
             .join("")
         : `<tr><td colspan="9" class="px-4 py-8 text-center text-gray-400">No hay gastos registrados con los filtros actuales.</td></tr>`;
     };
 
+    const cargarMoPropiaSeguro = async () => {
+      try {
+        let res = await window.sb
+          .from("registro_mo_propia")
+          .select("*, tarifas_tecnicos(cargo, valor_hora, horas_dia), presupuesto_items(descripcion)")
+          .eq("proyecto_id", pid)
+          .order("fecha", { ascending: false })
+          .order("created_at", { ascending: false });
+        if (res.error) {
+          res = await window.sb
+            .from("registro_mo_propia")
+            .select("*")
+            .eq("proyecto_id", pid)
+            .order("fecha", { ascending: false });
+        }
+        return res.error ? [] : res.data || [];
+      } catch (e) {
+        return [];
+      }
+    };
+
+    const cargarCortesMoSeguro = async () => {
+      try {
+        let resC = await window.sb
+          .from("cortes_mo")
+          .select("id, numero, fecha, numero_cuenta_cobro, retencion_porcentaje, contratistas(nombre)")
+          .eq("proyecto_id", pid)
+          .order("numero", { ascending: true });
+        if (resC.error) {
+          resC = await window.sb
+            .from("cortes_mo")
+            .select("id, numero, fecha, numero_cuenta_cobro, retencion_porcentaje")
+            .eq("proyecto_id", pid)
+            .order("numero", { ascending: true });
+        }
+        if (resC.error || !Array.isArray(resC.data) || !resC.data.length) {
+          return { cortes: [], items: [] };
+        }
+        const ids = resC.data.map((c) => c.id);
+        const resIt = await window.sb
+          .from("cortes_mo_items")
+          .select("corte_id, cantidad, pu_contratista_snapshot")
+          .in("corte_id", ids);
+        return {
+          cortes: resC.data,
+          items: resIt.error ? [] : resIt.data || [],
+        };
+      } catch (e) {
+        return { cortes: [], items: [] };
+      }
+    };
+
     const cargar = async () => {
-      const [resG, resP] = await Promise.all([
+      const [resG, resP, resMoPropia, resCortes] = await Promise.all([
         window.sb
           .from("gastos")
           .select("*, proveedores(nombre), presupuesto_items(descripcion)")
@@ -185,11 +376,16 @@
         proveedores.length
           ? Promise.resolve({ data: proveedores, error: null })
           : window.sb.from("proveedores").select("id, nombre").order("nombre"),
+        cargarMoPropiaSeguro(),
+        cargarCortesMoSeguro(),
       ]);
       if (resG.error) throw resG.error;
       if (resP.error) throw resP.error;
       gastos = resG.data || [];
       proveedores = resP.data || [];
+      moPropia = resMoPropia || [];
+      cortesMo = resCortes.cortes || [];
+      cortesMoItems = resCortes.items || [];
       pintar();
     };
 
@@ -208,7 +404,7 @@
               <div>
                 <label class="mb-1 block font-medium text-gray-700">Tipo *</label>
                 <select id="g-tipo" class="w-full rounded-lg border-gray-300 text-xs">
-                  ${TIPOS_GASTO.map((t) => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.id)}</option>`).join("")}
+                  ${TIPOS_GASTO_MANUAL.map((t) => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.id)}</option>`).join("")}
                 </select>
               </div>
             </div>
@@ -333,8 +529,11 @@
       const id = btn.closest("tr").dataset.id;
       const ok = await PCT.confirmar("Eliminar gasto", "¿Eliminar este registro de gasto?", "Eliminar", true);
       if (!ok) return;
-      const { error } = await window.sb.from("gastos").delete().eq("id", id);
+      const { data, error } = await window.sb.from("gastos").delete().eq("id", id).select("id");
       if (error) return manejarError(error, "No se pudo eliminar el gasto");
+      if (!data || data.length === 0) {
+        return mostrarAviso("No tienes permisos para eliminar este gasto.", "error");
+      }
       mostrarAviso("Gasto eliminado.", "info");
       try {
         await Promise.all([cargar(), PCT.recargarFinanzas()]);

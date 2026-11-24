@@ -77,6 +77,14 @@
     el.classList.remove("flex");
   }
 
+  function esSuperUsuario() {
+    return Boolean(
+      window.PCT_ROL_INFO?.esSuperUsuario ||
+        ["super_usuario", "admin"].includes(window.PCT_ROL_INFO?.rol) ||
+        ["super_usuario", "admin"].includes(window.PCT_ROL_INFO?.rolRaw)
+    );
+  }
+
   function esErrorColumnaFaltante(error) {
     if (!error) return false;
     const code = String(error.code || "");
@@ -90,11 +98,69 @@
     const res = await window.sb.from("compras_solicitudes").update(payloadCompleto).eq("id", solicitudId);
     if (!res.error) return res;
     if (hasExtra && esErrorColumnaFaltante(res.error)) {
+      // Si el fallo puede ser solo por `motivo_seleccion` aún no migrado, reintentar conservando los demás campos extra
+      if ("motivo_seleccion" in extraPayload && Object.keys(extraPayload).length > 1) {
+        const extraSinMotivo = { ...extraPayload };
+        delete extraSinMotivo.motivo_seleccion;
+        const resIntermedio = await window.sb
+          .from("compras_solicitudes")
+          .update({ ...basePayload, ...extraSinMotivo })
+          .eq("id", solicitudId);
+        if (!resIntermedio.error) {
+          console.warn("La columna motivo_seleccion aún no existe en compras_solicitudes; se guardaron los demás campos.");
+          return resIntermedio;
+        }
+      }
       console.warn("Algunas columnas nuevas de compras_solicitudes aún no existen en BD; guardando campos base.", res.error);
       if (Object.keys(basePayload).length === 0) return { data: null, error: null };
       return window.sb.from("compras_solicitudes").update(basePayload).eq("id", solicitudId);
     }
     return res;
+  }
+
+  async function insertarOrdenCompraSeguro(basePayload, extraPayload = {}) {
+    const hasExtra = extraPayload && Object.keys(extraPayload).length > 0;
+    const payloadCompleto = hasExtra ? { ...basePayload, ...extraPayload } : { ...basePayload };
+    const res = await window.sb.from("compras_ordenes").insert(payloadCompleto).select().single();
+    if (!res.error) return res;
+    if (hasExtra && esErrorColumnaFaltante(res.error)) {
+      console.warn("Algunas columnas opcionales de compras_ordenes aún no existen en BD; insertando campos base.", res.error);
+      return window.sb.from("compras_ordenes").insert(basePayload).select().single();
+    }
+    return res;
+  }
+
+  async function insertarGastosOrdenSeguro(rowsBase, ordenId) {
+    if (!Array.isArray(rowsBase) || !rowsBase.length) return { data: [], error: null };
+    const rowsConOc = ordenId ? rowsBase.map((r) => ({ ...r, orden_compra_id: ordenId })) : rowsBase;
+    const res = await window.sb.from("gastos").insert(rowsConOc);
+    if (!res.error) return res;
+    if (ordenId && esErrorColumnaFaltante(res.error)) {
+      console.warn("La columna orden_compra_id aún no existe en gastos; insertando gastos sin vínculo de columna.", res.error);
+      return window.sb.from("gastos").insert(rowsBase);
+    }
+    return res;
+  }
+
+  async function eliminarGastosDeOrdenSeguro(orden, proyectoId = null) {
+    if (!orden) return;
+    // 1. Intentar borrar por orden_compra_id si la columna existe
+    if (orden.id) {
+      const resPorId = await window.sb.from("gastos").delete().eq("orden_compra_id", orden.id);
+      if (resPorId.error && !esErrorColumnaFaltante(resPorId.error)) {
+        console.warn("Error al eliminar gastos por orden_compra_id:", resPorId.error);
+      }
+    }
+    // 2. Borrar también filas previas vinculadas por documento = numero_orden (esquema histórico)
+    const numDoc = orden.numero_orden || orden.numero || "";
+    if (numDoc) {
+      let query = window.sb.from("gastos").delete().eq("documento", numDoc);
+      if (proyectoId) query = query.eq("proyecto_id", proyectoId);
+      const resPorDoc = await query;
+      if (resPorDoc.error && !esErrorColumnaFaltante(resPorDoc.error)) {
+        console.warn("Error al eliminar gastos por documento de orden:", resPorDoc.error);
+      }
+    }
   }
 
   async function obtenerConsecutivo(tipo, fallbackFn) {
@@ -207,11 +273,24 @@
       );
     });
 
+    const puedeEliminar = esSuperUsuario();
     const tbody = document.getElementById("tabla-solicitudes");
     tbody.innerHTML = lista.length
       ? lista
-          .map(
-            (s) => `
+          .map((s) => {
+            const yaTieneOrden = s.estado === "ordenada" || ordenes.some((o) => o.solicitud_id === s.id);
+            const btnGenerarOc =
+              s.estado === "aprobada" && !yaTieneOrden
+                ? `<button type="button" data-generar-orden="${s.id}" class="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700" title="Generar Orden de Compra y cargar a Gastos">
+                    <span class="material-symbols-outlined text-[15px]" aria-hidden="true">receipt_long</span> Generar OC
+                  </button>`
+                : "";
+            const btnEliminar = puedeEliminar
+              ? `<button type="button" data-eliminar-sol="${s.id}" class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100" title="Eliminar solicitud de compra">
+                  <span class="material-symbols-outlined text-[15px]" aria-hidden="true">delete</span> Eliminar
+                </button>`
+              : "";
+            return `
           <tr class="border-b border-gray-50 last:border-0 hover:bg-gray-50">
             <td class="px-4 py-3 font-mono text-xs font-semibold text-gray-700">${escapeHtml(s.numero || "—")}</td>
             <td class="px-4 py-3 font-medium text-gray-900">${escapeHtml(s.titulo)}</td>
@@ -228,20 +307,28 @@
                 <button type="button" data-abrir-comite="${s.id}" class="inline-flex items-center gap-1 rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100">
                   <span class="material-symbols-outlined text-[15px]" aria-hidden="true">co_present</span> Comité
                 </button>
+                ${btnGenerarOc}
+                ${btnEliminar}
               </div>
             </td>
-          </tr>`
-          )
+          </tr>`;
+          })
           .join("")
       : `<tr><td class="px-4 py-8 text-center text-gray-400" colspan="8">No hay solicitudes para ese filtro.</td></tr>`;
   }
 
   function renderOrdenes() {
+    const puedeEliminar = esSuperUsuario();
     const tbody = document.getElementById("tabla-ordenes");
     tbody.innerHTML = ordenes.length
       ? ordenes
-          .map(
-            (o) => `
+          .map((o) => {
+            const btnEliminar = puedeEliminar
+              ? `<button type="button" data-eliminar-orden="${o.id}" class="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-100" title="Eliminar orden de compra y sus gastos vinculados">
+                  <span class="material-symbols-outlined text-[15px]" aria-hidden="true">delete</span> Eliminar
+                </button>`
+              : "";
+            return `
           <tr class="border-b border-gray-50 last:border-0 hover:bg-gray-50">
             <td class="px-4 py-3 font-mono text-xs font-semibold">${escapeHtml(o.numero_orden || "—")}</td>
             <td class="px-4 py-3">
@@ -255,13 +342,16 @@
             <td class="px-4 py-3 text-right tabular-nums text-red-600">${formatoCOP(o.retenciones)}</td>
             <td class="px-4 py-3 text-right font-bold tabular-nums">${formatoCOP(o.total)}</td>
             <td class="px-4 py-3 text-gray-500">${formatoFecha(o.created_at)}</td>
-            <td class="px-4 py-3 text-right">
-              <button type="button" data-pdf-orden="${o.id}" class="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">
-                <span class="material-symbols-outlined text-[15px]" aria-hidden="true">picture_as_pdf</span> PDF
-              </button>
+            <td class="px-4 py-3 text-right whitespace-nowrap">
+              <div class="inline-flex items-center justify-end gap-1.5">
+                <button type="button" data-pdf-orden="${o.id}" class="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                  <span class="material-symbols-outlined text-[15px]" aria-hidden="true">picture_as_pdf</span> PDF
+                </button>
+                ${btnEliminar}
+              </div>
             </td>
-          </tr>`
-          )
+          </tr>`;
+          })
           .join("")
       : `<tr><td class="px-4 py-8 text-center text-gray-400" colspan="9">Aún no se han emitido órdenes de compra.</td></tr>`;
   }
@@ -292,6 +382,8 @@
   const modalCmp = document.getElementById("modal-comparativo");
   const modalComite = document.getElementById("modal-comite");
   const modalHist = document.getElementById("modal-historial-item");
+  const modalEliminar = document.getElementById("modal-eliminar-compra");
+  let pendienteEliminar = null; // { tipo: 'solicitud' | 'orden', id: string }
 
   function poblarSelectsNueva() {
     document.getElementById("ns-empresa").innerHTML = empresas.map((e) => `<option value="${e.id}">${escapeHtml(e.nombre)}</option>`).join("");
@@ -809,8 +901,17 @@
         </div>`;
     }
 
+    // Estado del motivo de selección (obligatorio si se elige un proveedor distinto al más económico)
+    const estadoMotivo = actualizarEstadoMotivoComparativo(trm, monedas);
+
     // Alertas
     const alertas = [];
+    if (estadoMotivo.requiereMotivo && !estadoMotivo.motivo) {
+      alertas.push(`<div class="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+        <span class="material-symbols-outlined text-[18px]" aria-hidden="true">fact_check</span>
+        Elegiste un proveedor distinto al más económico en ${estadoMotivo.count} ítem(s). Debes escribir el <strong>motivo de elección</strong> antes de guardar o presentar a Comité.
+      </div>`);
+    }
     if (hayUsdSinTrm) {
       alertas.push(`<div class="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
         <span class="material-symbols-outlined text-[18px]" aria-hidden="true">currency_exchange</span>
@@ -835,6 +936,86 @@
       </div>`);
     }
     document.getElementById("cmp-alertas").innerHTML = alertas.join("");
+  }
+
+  function detectarEleccionNoMasEconomica(trm = getTrmActual(), monedas = getMonedasActuales()) {
+    const itemsNoMasEconomicos = [];
+    itemsActuales.forEach((it) => {
+      const calc = calcularItemComparativo(it, { trm, monedas });
+      if (
+        calc.mejor &&
+        calc.ganadorId &&
+        calc.ganadorId !== calc.mejor.id &&
+        (calc.precioGanador <= 0 || calc.precioGanador > calc.mejor.precioCop + 0.01)
+      ) {
+        itemsNoMasEconomicos.push({ it, calc });
+      }
+    });
+    return {
+      requiereMotivo: itemsNoMasEconomicos.length > 0,
+      count: itemsNoMasEconomicos.length,
+      items: itemsNoMasEconomicos,
+    };
+  }
+
+  function actualizarEstadoMotivoComparativo(trm = getTrmActual(), monedas = getMonedasActuales()) {
+    const { requiereMotivo, count } = detectarEleccionNoMasEconomica(trm, monedas);
+    const wrap = document.getElementById("cmp-motivo-wrap");
+    const badge = document.getElementById("cmp-motivo-req-badge");
+    const ayuda = document.getElementById("cmp-motivo-ayuda");
+    const input = document.getElementById("cmp-motivo-seleccion");
+    const motivo = input?.value?.trim() || "";
+
+    if (wrap && badge && ayuda) {
+      if (requiereMotivo && !motivo) {
+        wrap.className = "rounded-xl border-2 border-red-400 bg-red-50/60 p-3.5";
+        badge.textContent = "Obligatorio";
+        badge.className = "rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700";
+        ayuda.className = "mb-1.5 text-[11px] font-medium text-red-700";
+        ayuda.textContent = `Elegiste un proveedor distinto al más económico en ${count} ítem(s). Indica el motivo antes de guardar o presentar a Comité.`;
+      } else if (requiereMotivo && motivo) {
+        wrap.className = "rounded-xl border border-amber-300 bg-amber-50/50 p-3.5";
+        badge.textContent = "Justificado";
+        badge.className = "rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800";
+        ayuda.className = "mb-1.5 text-[11px] text-amber-800";
+        ayuda.textContent = `Motivo registrado para ${count} ítem(s) con proveedor distinto al más económico.`;
+      } else {
+        wrap.className = "rounded-xl border border-gray-200 bg-gray-50 p-3.5";
+        badge.className = "hidden rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700";
+        ayuda.className = "mb-1.5 text-[11px] text-gray-500";
+        ayuda.textContent =
+          "Opcional si se elige el proveedor más económico; obligatorio si seleccionas una opción distinta a la más económica.";
+      }
+    }
+    return { requiereMotivo, count, motivo };
+  }
+
+  function actualizarBotonesOrden(estado, solicitudId = solicitudActual?.id) {
+    const yaTieneOrden = estado === "ordenada" || (solicitudId ? ordenes.some((o) => o.solicitud_id === solicitudId) : false);
+    const configs = [
+      { id: "cmp-btn-orden", labelActiva: "Generar Orden / Pre-orden" },
+      { id: "comite-btn-generar-orden", labelActiva: "Generar Orden de Compra" },
+    ];
+    configs.forEach(({ id, labelActiva }) => {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      if (estado === "aprobada" && !yaTieneOrden) {
+        btn.classList.remove("hidden");
+        btn.disabled = false;
+        btn.className =
+          "inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-emerald-700";
+        btn.innerHTML = `<span class="material-symbols-outlined text-[16px]" aria-hidden="true">receipt_long</span> ${labelActiva}`;
+      } else if (estado === "ordenada" || yaTieneOrden) {
+        btn.classList.remove("hidden");
+        btn.disabled = true;
+        btn.className =
+          "inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-gray-100 px-3.5 py-2 text-xs font-semibold text-gray-500 cursor-not-allowed";
+        btn.innerHTML = `<span class="material-symbols-outlined text-[16px]" aria-hidden="true">check_circle</span> OC ya generada`;
+      } else {
+        btn.classList.add("hidden");
+        btn.disabled = false;
+      }
+    });
   }
 
   function renderTextoTotalProveedor(slotCalc, cant) {
@@ -1061,7 +1242,7 @@
       (solicitudActual.proyectos?.nombre ? `Proyecto: ${solicitudActual.proyectos.nombre}` : `Cliente: ${solicitudActual.clientes?.nombre || "—"}`);
     document.getElementById("cmp-estado-badge").innerHTML = badgeHtml(ESTADOS_SOL, solicitudActual.estado);
 
-    document.getElementById("cmp-btn-orden").classList.toggle("hidden", !["aprobada", "ordenada"].includes(solicitudActual.estado));
+    actualizarBotonesOrden(solicitudActual.estado, solicitudActual.id);
 
     const first = itemsActuales[0] || {};
     document.getElementById("cmp-prov-1").innerHTML = opcionesProveedores(first.proveedor_1_id);
@@ -1093,6 +1274,8 @@
     if (ciudadEl) ciudadEl.value = "Barranquilla";
     const obsOcEl = document.getElementById("cmp-observaciones-oc");
     if (obsOcEl) obsOcEl.value = "";
+    const motivoEl = document.getElementById("cmp-motivo-seleccion");
+    if (motivoEl) motivoEl.value = solicitudActual.motivo_seleccion || "";
     const notasEl = document.getElementById("cmp-notas");
     if (notasEl) notasEl.value = solicitudActual.notas || "";
 
@@ -1173,10 +1356,18 @@
     if (btnCmp) return abrirComparativo(btnCmp.dataset.abrirSol);
     const btnCom = e.target.closest("[data-abrir-comite]");
     if (btnCom) return abrirComitePorId(btnCom.dataset.abrirComite);
+    const btnGenOc = e.target.closest("[data-generar-orden]");
+    if (btnGenOc) return generarOrdenesDeSolicitud(btnGenOc.dataset.generarOrden);
+    const btnDel = e.target.closest("[data-eliminar-sol]");
+    if (btnDel) return abrirModalEliminarCompra("solicitud", btnDel.dataset.eliminarSol);
   });
 
   document.getElementById("cmp-cerrar").addEventListener("click", () => cerrarModal(modalCmp));
   document.getElementById("cmp-btn-cancelar")?.addEventListener("click", () => cerrarModal(modalCmp));
+  document.getElementById("cmp-btn-pdf")?.addEventListener("click", () => generarPdfResumenComite());
+  document.getElementById("cmp-motivo-seleccion")?.addEventListener("input", () => {
+    actualizarResumenComparativo();
+  });
 
   document.querySelectorAll(".cmp-prov-select").forEach((sel) => {
     sel.addEventListener("change", () => {
@@ -1299,6 +1490,19 @@
       }
 
       const monedas = getMonedasActuales();
+      const motivoEl = document.getElementById("cmp-motivo-seleccion");
+      const motivoVal = motivoEl?.value?.trim() || "";
+      const { requiereMotivo } = detectarEleccionNoMasEconomica(trmVal, monedas);
+      if (requiereMotivo && !motivoVal) {
+        actualizarEstadoMotivoComparativo(trmVal, monedas);
+        if (motivoEl) {
+          motivoEl.scrollIntoView({ behavior: "smooth", block: "center" });
+          motivoEl.focus();
+        }
+        mostrarAviso("Elegiste un proveedor que no es el más económico; indica el motivo de elección.", "error");
+        return false;
+      }
+
       const notasVal = document.getElementById("cmp-notas")?.value?.trim() || null;
 
       const updates = itemsActuales.map((it) => {
@@ -1334,6 +1538,7 @@
         moneda_p2: monedas[2],
         moneda_p3: monedas[3],
         trm_fuente: solicitudActual.trm_fuente || "manual",
+        motivo_seleccion: motivoVal || null,
       };
 
       const { error: errSolUpd } = await actualizarSolicitudSeguro(solicitudActual.id, basePayload, extraPayload);
@@ -1342,6 +1547,7 @@
       solicitudActual.estado = estadoFinal;
       solicitudActual.trm = trmVal;
       solicitudActual.notas = notasVal;
+      solicitudActual.motivo_seleccion = motivoVal || null;
       solicitudActual.moneda_p1 = monedas[1];
       solicitudActual.moneda_p2 = monedas[2];
       solicitudActual.moneda_p3 = monedas[3];
@@ -1364,19 +1570,36 @@
   document.getElementById("cmp-btn-guardar").addEventListener("click", () => guardarComparativo(null, { cerrarAlGuardar: true }));
 
   // --------------------------------------------------------------------------
-  // PRESENTACIÓN A COMITÉ · RESUMEN PDF · ENVÍO GMAIL · APROBACIÓN / RECHAZO
+  // PRESENTACIÓN A COMITÉ · COMPARATIVO COMPLETO PDF · GMAIL · APROBACIÓN
   // --------------------------------------------------------------------------
-  function calcularResumenComite() {
-    const trm = Number(solicitudActual?.trm || 0);
-    const monedas = {
-      1: solicitudActual?.moneda_p1 || "COP",
-      2: solicitudActual?.moneda_p2 || "COP",
-      3: solicitudActual?.moneda_p3 || "COP",
-    };
+  function calcularResumenComite({ desdeDom = false } = {}) {
+    const usarDomCmp = desdeDom && modalCmp && !modalCmp.classList.contains("hidden");
+    const trm = usarDomCmp ? getTrmActual(solicitudActual, true) : Number(solicitudActual?.trm || 0);
+    const monedas = usarDomCmp
+      ? getMonedasActuales(solicitudActual, true)
+      : {
+          1: solicitudActual?.moneda_p1 || "COP",
+          2: solicitudActual?.moneda_p2 || "COP",
+          3: solicitudActual?.moneda_p3 || "COP",
+        };
     const ivaPct = getIvaPorcentajeActual(solicitudActual);
+
+    const nombreProv = (id) => proveedores.find((p) => p.id === id)?.nombre || null;
+    const first = itemsActuales[0] || {};
+    const provIds = {
+      1: (usarDomCmp ? document.getElementById("cmp-prov-1")?.value : null) || first.proveedor_1_id || null,
+      2: (usarDomCmp ? document.getElementById("cmp-prov-2")?.value : null) || first.proveedor_2_id || null,
+      3: (usarDomCmp ? document.getElementById("cmp-prov-3")?.value : null) || first.proveedor_3_id || null,
+    };
 
     let totPresup = 0;
     let totCompra = 0;
+    const accProvs = {
+      1: { totalCop: 0, totalOrig: 0, cotizados: 0 },
+      2: { totalCop: 0, totalOrig: 0, cotizados: 0 },
+      3: { totalCop: 0, totalOrig: 0, cotizados: 0 },
+    };
+
     const filas = itemsActuales.map((it) => {
       const calc = calcularItemComparativo(it, { trm, monedas });
       const cantInicial = Number(it.cantidad_presupuestada || it.cantidad_solicitada || 0);
@@ -1389,16 +1612,52 @@
       const totalIt = calc.subtotalNeto;
       totPresup += calc.presupTotal;
       totCompra += totalIt;
-      const provNombre = proveedores.find((p) => p.id === calc.ganadorId)?.nombre || "Sin proveedor";
+      [1, 2, 3].forEach((slot) => {
+        const s = calc.slots[slot];
+        if (s) {
+          accProvs[slot].cotizados += 1;
+          accProvs[slot].totalCop += s.precioCop * cantSol;
+          accProvs[slot].totalOrig += s.precioOrig * cantSol;
+        }
+      });
+      const provNombre = nombreProv(calc.ganadorId) || "Sin proveedor";
       return { it, calc, cantInicial, previas, compradoAntes, pendiente, cantSol, totalIt, provNombre };
     });
+
+    const totalItems = itemsActuales.length;
+    const resumenProvs = [1, 2, 3].map((slot) => ({
+      slot,
+      id: provIds[slot],
+      nombre: provIds[slot] ? nombreProv(provIds[slot]) || `Proveedor ${slot}` : `Proveedor ${slot}`,
+      moneda: monedas[slot] || "COP",
+      totalCop: accProvs[slot].totalCop,
+      totalOrig: accProvs[slot].totalOrig,
+      cotizados: accProvs[slot].cotizados,
+      completo: Boolean(provIds[slot] && totalItems > 0 && accProvs[slot].cotizados === totalItems && accProvs[slot].totalCop > 0),
+    }));
+    const completos = resumenProvs.filter((p) => p.completo).sort((a, b) => a.totalCop - b.totalCop);
+    const masEconomico = completos[0] || null;
 
     const ahorro = totPresup > 0 && totCompra > 0 ? totPresup - totCompra : 0;
     const pctAhorro = totPresup > 0 && totCompra > 0 ? (ahorro / totPresup) * 100 : 0;
     const ivaMonto = totCompra * (ivaPct / 100);
     const totalConIva = totCompra + ivaMonto;
 
-    return { filas, totPresup, totCompra, ahorro, pctAhorro, ivaPct, ivaMonto, totalConIva, trm, monedas };
+    return {
+      filas,
+      totPresup,
+      totCompra,
+      ahorro,
+      pctAhorro,
+      ivaPct,
+      ivaMonto,
+      totalConIva,
+      trm,
+      monedas,
+      resumenProvs,
+      masEconomico,
+      totalItems,
+    };
   }
 
   function renderModalComite() {
@@ -1467,6 +1726,18 @@
         <p class="mt-1">${badgeHtml(ESTADOS_SOL, solicitudActual.estado)}</p>
       </div>`;
 
+    const motivoComiteEl = document.getElementById("comite-motivo-seleccion");
+    if (motivoComiteEl) motivoComiteEl.value = solicitudActual.motivo_seleccion || "";
+    const { requiereMotivo } = detectarEleccionNoMasEconomica(res.trm, res.monedas);
+    const motivoAlertaEl = document.getElementById("comite-motivo-alerta");
+    if (motivoAlertaEl) motivoAlertaEl.classList.toggle("hidden", !requiereMotivo);
+    const motivoWrapEl = document.getElementById("comite-motivo-wrap");
+    if (motivoWrapEl) {
+      motivoWrapEl.className = requiereMotivo
+        ? "rounded-xl border-2 border-amber-400 bg-amber-50 p-3.5 space-y-1.5"
+        : "rounded-xl border border-amber-200 bg-amber-50/50 p-3.5 space-y-1.5";
+    }
+
     const correoEl = document.getElementById("comite-correo-aprobador");
     if (correoEl) correoEl.value = solicitudActual.correo_aprobador || "";
 
@@ -1488,11 +1759,15 @@
     const bloqueada = solicitudActual.estado === "aprobada" || solicitudActual.estado === "ordenada";
     document.getElementById("comite-btn-aprobar").classList.toggle("hidden", !puedeAprobar || bloqueada);
     document.getElementById("comite-btn-rechazar").classList.toggle("hidden", !puedeAprobar || bloqueada);
-    document.getElementById("comite-permiso-msg").textContent = bloqueada
-      ? `Esta solicitud ya se encuentra en estado «${ESTADOS_SOL[solicitudActual.estado]?.label || solicitudActual.estado}».`
-      : puedeAprobar
-      ? "Como Directivo / Super Usuario puedes aprobar o rechazar esta compra."
-      : "Solo un Directivo o Super Usuario puede aprobar o rechazar la compra.";
+    actualizarBotonesOrden(solicitudActual.estado, solicitudActual.id);
+    document.getElementById("comite-permiso-msg").textContent =
+      solicitudActual.estado === "aprobada"
+        ? "Compra aprobada. Haz clic en «Generar Orden de Compra» para emitir el PDF y cargar el gasto al proyecto."
+        : solicitudActual.estado === "ordenada"
+        ? "Esta solicitud ya cuenta con Orden de Compra emitida."
+        : puedeAprobar
+        ? "Como Directivo / Super Usuario puedes aprobar o rechazar esta compra."
+        : "Solo un Directivo o Super Usuario puede aprobar o rechazar la compra.";
 
     abrirModal(modalComite);
   }
@@ -1514,55 +1789,220 @@
     if (!window.jspdf || !window.jspdf.jsPDF) {
       return mostrarAviso("No se pudo cargar jsPDF para generar el PDF", "error");
     }
-    const res = calcularResumenComite();
+    const cmpAbierto = modalCmp && !modalCmp.classList.contains("hidden");
+    const comiteAbierto = modalComite && !modalComite.classList.contains("hidden");
+    const res = calcularResumenComite({ desdeDom: cmpAbierto });
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ unit: "pt", format: "letter", orientation: "landscape" });
+    const doc = new jsPDF({ unit: "pt", format: "letter", orientation: "l" });
     const pageW = doc.internal.pageSize.getWidth();
-    const m = 34;
+    const pageH = doc.internal.pageSize.getHeight();
+    const m = 24;
     const contentW = pageW - m * 2;
-    let y = 30;
+    let y = 24;
 
     // Encabezado
     doc.setFillColor(19, 91, 236);
-    doc.rect(m, y, contentW, 44, "F");
+    doc.rect(m, y, contentW, 42, "F");
     doc.setTextColor(255, 255, 255);
-    doc.setFontSize(13);
+    doc.setFontSize(12.5);
     doc.setFont(undefined, "bold");
-    doc.text("RESUMEN COMITÉ DE COMPRAS", m + 12, y + 19);
-    doc.setFontSize(9);
-    doc.setFont(undefined, "normal");
-    doc.text(`${solicitudActual.empresas?.nombre || "Pctronic"} · ${solicitudActual.numero || "—"}`, m + 12, y + 34);
-    doc.setFontSize(10);
-    doc.setFont(undefined, "bold");
-    doc.text(`Estado: ${(ESTADOS_SOL[solicitudActual.estado]?.label || solicitudActual.estado || "").toUpperCase()}`, pageW - m - 12, y + 19, { align: "right" });
+    doc.text("CUADRO COMPARATIVO Y RESUMEN COMITÉ DE COMPRAS", m + 12, y + 18);
     doc.setFontSize(8.5);
     doc.setFont(undefined, "normal");
-    doc.text(`Fecha: ${formatoFecha(hoyLocal())}`, pageW - m - 12, y + 34, { align: "right" });
+    doc.text(`${solicitudActual.empresas?.nombre || "Pctronic"} · ${solicitudActual.numero || "—"}`, m + 12, y + 32);
+    doc.setFontSize(9.5);
+    doc.setFont(undefined, "bold");
+    doc.text(
+      `Estado: ${(ESTADOS_SOL[solicitudActual.estado]?.label || solicitudActual.estado || "").toUpperCase()}`,
+      pageW - m - 12,
+      y + 18,
+      { align: "right" }
+    );
+    doc.setFontSize(8);
+    doc.setFont(undefined, "normal");
+    doc.text(
+      `Fecha solicitud: ${formatoFecha(solicitudActual.fecha_solicitud || hoyLocal())} · Emitido: ${formatoFecha(hoyLocal())}`,
+      pageW - m - 12,
+      y + 32,
+      { align: "right" }
+    );
     doc.setTextColor(0, 0, 0);
 
-    y += 56;
+    y += 54;
     doc.setFontSize(9.5);
     doc.setFont(undefined, "bold");
     doc.text(`Solicitud: ${solicitudActual.titulo || "—"}`, m, y);
     doc.setFont(undefined, "normal");
-    doc.setFontSize(8.5);
-    y += 14;
+    doc.setFontSize(8);
+    y += 13;
     const metaLinea = [
       `Proyecto / Cliente: ${solicitudActual.proyectos?.nombre || solicitudActual.clientes?.nombre || "—"}`,
       `Origen: ${ORIGEN_LABEL[solicitudActual.origen] || solicitudActual.origen || "—"}`,
-      res.trm > 0 ? `TRM aplicada: ${formatoCOP(res.trm)}` : null,
+      res.trm > 0 ? `TRM aplicada: ${formatoCOP(res.trm)}` : "TRM aplicada: N/A (COP)",
       solicitudActual.proyectos?.trm_cotizacion ? `TRM cotización: ${formatoCOP(solicitudActual.proyectos.trm_cotizacion)}` : null,
     ]
       .filter(Boolean)
       .join("   ·   ");
     doc.text(metaLinea, m, y);
 
-    y += 14;
+    // Tabla Comparativa Completa (todos los proveedores evaluados lado a lado)
+    const fmtCeldaProv = (slotCalc, cant) => {
+      if (!slotCalc) return "—";
+      if (slotCalc.moneda === "USD") {
+        const unitTxt = `U: ${formatoUSD(slotCalc.precioOrig)}`;
+        const totTxt =
+          slotCalc.precioCop > 0
+            ? `T: ${formatoCOP(slotCalc.precioCop * cant)}`
+            : `T: ${formatoUSD(slotCalc.precioOrig * cant)} (sin TRM)`;
+        return `${unitTxt}\n${totTxt}`;
+      }
+      return `U: ${formatoCOP(slotCalc.precioOrig)}\nT: ${formatoCOP(slotCalc.precioCop * cant)}`;
+    };
+
+    const p1 = res.resumenProvs[0];
+    const p2 = res.resumenProvs[1];
+    const p3 = res.resumenProvs[2];
+
+    const bodyRows = res.filas.map(({ it, calc, cantSol, totalIt, provNombre }, idx) => {
+      const refLinea = it.referencia || it.codigo ? `\n[${it.referencia || it.codigo}]` : "";
+      const descTxt = `${it.descripcion || "—"}${refLinea}`;
+      const pptoTxt = `${formatoCOP(calc.presupTotal)}\n(U: ${formatoCOP(calc.presupUnit)})`;
+      const ganadorTxt = `${provNombre}${calc.descuentoPct > 0 ? `\nDesc: -${calc.descuentoPct}%` : ""}`;
+      const netoTxt = `${formatoCOP(totalIt)}\n(U: ${formatoCOP(calc.precioNetoUnit)})`;
+      const difTxt = calc.tieneComparacion ? `${formatoCOP(calc.diffTotal)}\n(${calc.pctAhorro.toFixed(1)}%)` : "—";
+      return [
+        String(idx + 1),
+        descTxt,
+        `${cantSol} ${it.unidad || "Und"}`,
+        pptoTxt,
+        fmtCeldaProv(calc.slots[1], cantSol),
+        fmtCeldaProv(calc.slots[2], cantSol),
+        fmtCeldaProv(calc.slots[3], cantSol),
+        ganadorTxt,
+        netoTxt,
+        difTxt,
+      ];
+    });
+
+    y += 10;
     doc.autoTable({
       startY: y,
       margin: { left: m, right: m },
       theme: "grid",
-      head: [["Presupuesto Base", "Subtotal Ganador (Neto)", `IVA (${res.ivaPct}%)`, "Total con IVA", res.ahorro >= 0 ? "Ahorro Total" : "Sobrecosto Total"]],
+      head: [[
+        "#",
+        "Descripción",
+        "Cant.",
+        "Ppto. Base Total",
+        `${p1.nombre}\n(${p1.moneda})`,
+        `${p2.nombre}\n(${p2.moneda})`,
+        `${p3.nombre}\n(${p3.moneda})`,
+        "Proveedor Ganador",
+        "Total Neto Ganador",
+        "Diferencia / Ahorro",
+      ]],
+      body: bodyRows,
+      styles: { fontSize: 6.8, cellPadding: 3, overflow: "linebreak", valign: "middle" },
+      headStyles: { fillColor: [19, 91, 236], textColor: 255, fontStyle: "bold", halign: "center", fontSize: 6.8 },
+      columnStyles: {
+        0: { halign: "center", cellWidth: 20 },
+        1: { cellWidth: 162 },
+        2: { halign: "right", cellWidth: 38 },
+        3: { halign: "right", cellWidth: 66 },
+        4: { halign: "right", cellWidth: 78 },
+        5: { halign: "right", cellWidth: 78 },
+        6: { halign: "right", cellWidth: 78 },
+        7: { halign: "left", cellWidth: 84 },
+        8: { halign: "right", cellWidth: 70 },
+        9: { halign: "right", cellWidth: 70 },
+      },
+      didParseCell: (data) => {
+        if (data.section !== "body") return;
+        const filaInfo = res.filas[data.row.index];
+        if (!filaInfo) return;
+        const { calc } = filaInfo;
+        const winCol = calc.ganadorSlot ? 3 + calc.ganadorSlot : null;
+        if ((winCol && data.column.index === winCol) || data.column.index === 7) {
+          data.cell.styles.fillColor = [254, 243, 199];
+          data.cell.styles.textColor = [120, 53, 15];
+          data.cell.styles.fontStyle = "bold";
+        }
+        if (data.column.index === 9 && calc.tieneComparacion) {
+          data.cell.styles.fontStyle = "bold";
+          if (calc.diffTotal >= 0) {
+            data.cell.styles.fillColor = [236, 253, 245];
+            data.cell.styles.textColor = [6, 95, 70];
+          } else {
+            data.cell.styles.fillColor = [254, 226, 226];
+            data.cell.styles.textColor = [185, 28, 28];
+          }
+        }
+      },
+    });
+
+    // Resumen: Total por Proveedor + Totales Oferta Ganadora
+    let nextY = doc.lastAutoTable.finalY + 10;
+    if (nextY + 110 > pageH - 24) {
+      doc.addPage();
+      nextY = 28;
+    }
+
+    const filasProvResumen = res.resumenProvs
+      .filter((p) => p.id || p.totalCop > 0)
+      .map((p) => {
+        const esMasEcon = res.masEconomico && res.masEconomico.slot === p.slot;
+        const estadoTxt = esMasEcon
+          ? "Más económico (completo)"
+          : p.cotizados > 0 && p.cotizados < res.totalItems
+          ? `Cotización parcial (${p.cotizados}/${res.totalItems})`
+          : p.completo
+          ? `Completo (${p.cotizados}/${res.totalItems})`
+          : "Sin cotizar";
+        const totalTxt =
+          p.totalCop > 0
+            ? p.moneda === "USD"
+              ? `${formatoCOP(p.totalCop)} (${formatoUSD(p.totalOrig)})`
+              : formatoCOP(p.totalCop)
+            : "—";
+        return [`Prov. ${p.slot}: ${p.nombre}`, p.moneda, `${p.cotizados}/${res.totalItems}`, totalTxt, estadoTxt];
+      });
+
+    if (filasProvResumen.length) {
+      doc.autoTable({
+        startY: nextY,
+        margin: { left: m, right: m },
+        theme: "grid",
+        head: [["Total Evaluado por Proveedor", "Moneda", "Ítems", "Total Evaluado (COP)", "Condición"]],
+        body: filasProvResumen,
+        styles: { fontSize: 7.5, cellPadding: 3.5 },
+        headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: "bold" },
+        columnStyles: {
+          1: { halign: "center", cellWidth: 48 },
+          2: { halign: "center", cellWidth: 48 },
+          3: { halign: "right", cellWidth: 165, fontStyle: "bold" },
+          4: { cellWidth: 155 },
+        },
+        didParseCell: (data) => {
+          if (data.section === "body" && String(data.row.raw?.[4] || "").includes("Más económico")) {
+            data.cell.styles.fillColor = [236, 253, 245];
+            data.cell.styles.textColor = [6, 95, 70];
+          }
+        },
+      });
+      nextY = doc.lastAutoTable.finalY + 8;
+    }
+
+    doc.autoTable({
+      startY: nextY,
+      margin: { left: m, right: m },
+      theme: "grid",
+      head: [[
+        "Presupuesto Base",
+        "SubTotal Ganador (Neto)",
+        `IVA (${res.ivaPct}%)`,
+        "Total con IVA",
+        res.ahorro >= 0 ? "Ahorro Total ($ y %)" : "Sobrecosto Total ($ y %)",
+      ]],
       body: [[
         formatoCOP(res.totPresup),
         formatoCOP(res.totCompra),
@@ -1570,62 +2010,89 @@
         formatoCOP(res.totalConIva),
         `${formatoCOP(res.ahorro)} (${res.pctAhorro.toFixed(1)}%)`,
       ]],
-      styles: { fontSize: 8.5, halign: "right", cellPadding: 5 },
+      styles: { fontSize: 8.5, halign: "right", cellPadding: 4.5, fontStyle: "bold" },
       headStyles: { fillColor: [241, 245, 249], textColor: [30, 41, 59], fontStyle: "bold", halign: "right" },
-    });
-
-    y = doc.lastAutoTable.finalY + 14;
-    const bodyRows = res.filas.map(({ it, calc, cantSol, totalIt, provNombre }, idx) => [
-      String(idx + 1),
-      it.referencia || it.codigo || "—",
-      it.descripcion || "—",
-      `${cantSol} ${it.unidad || "Und"}`,
-      formatoCOP(calc.presupUnit),
-      provNombre,
-      calc.descuentoPct > 0 ? `${calc.descuentoPct}%` : "0%",
-      formatoCOP(calc.precioNetoUnit),
-      formatoCOP(totalIt),
-      calc.tieneComparacion ? `${formatoCOP(calc.diffTotal)} (${calc.pctAhorro.toFixed(1)}%)` : "—",
-    ]);
-
-    doc.autoTable({
-      startY: y,
-      margin: { left: m, right: m },
-      head: [["#", "Ref.", "Descripción", "Cant.", "Presup. Unit", "Proveedor Ganador", "Desc.", "Unit. Neto", "Total Neto", "Ahorro / Dif."]],
-      body: bodyRows,
-      styles: { fontSize: 7.5, cellPadding: 3.5, overflow: "linebreak" },
-      headStyles: { fillColor: [19, 91, 236], textColor: 255, fontStyle: "bold" },
-      columnStyles: {
-        0: { halign: "center", cellWidth: 22 },
-        1: { cellWidth: 58 },
-        3: { halign: "right", cellWidth: 48 },
-        4: { halign: "right", cellWidth: 62 },
-        6: { halign: "right", cellWidth: 34 },
-        7: { halign: "right", cellWidth: 62 },
-        8: { halign: "right", cellWidth: 68 },
-        9: { halign: "right", cellWidth: 78 },
+      didParseCell: (data) => {
+        if (data.section === "body" && data.column.index === 4) {
+          if (res.ahorro >= 0) {
+            data.cell.styles.fillColor = [236, 253, 245];
+            data.cell.styles.textColor = [6, 95, 70];
+          } else {
+            data.cell.styles.fillColor = [254, 226, 226];
+            data.cell.styles.textColor = [185, 28, 28];
+          }
+        }
       },
     });
 
-    let endY = doc.lastAutoTable.finalY + 14;
-    const comentarioActual = document.getElementById("comite-comentario")?.value?.trim() || solicitudActual.comentario_comite || "";
-    if (solicitudActual.notas) {
-      doc.setFontSize(8);
-      doc.setFont(undefined, "bold");
-      doc.text("Notas del comparativo:", m, endY);
-      doc.setFont(undefined, "normal");
-      doc.text(solicitudActual.notas, m + 96, endY, { maxWidth: contentW - 100 });
-      endY += 16;
-    }
-    if (comentarioActual) {
-      doc.setFontSize(8);
-      doc.setFont(undefined, "bold");
-      doc.text("Comentario Comité:", m, endY);
-      doc.setFont(undefined, "normal");
-      doc.text(comentarioActual, m + 96, endY, { maxWidth: contentW - 100 });
-    }
+    // Caja destacada: Motivo de elección del proveedor + Notas + Comentario Comité
+    let endY = doc.lastAutoTable.finalY + 10;
+    const motivoActual =
+      (comiteAbierto ? document.getElementById("comite-motivo-seleccion")?.value?.trim() : "") ||
+      (cmpAbierto ? document.getElementById("cmp-motivo-seleccion")?.value?.trim() : "") ||
+      solicitudActual.motivo_seleccion ||
+      "";
+    const notasActuales =
+      (cmpAbierto ? document.getElementById("cmp-notas")?.value?.trim() : "") ||
+      solicitudActual.notas ||
+      "";
+    const comentarioActual =
+      (comiteAbierto ? document.getElementById("comite-comentario")?.value?.trim() : "") ||
+      solicitudActual.comentario_comite ||
+      "";
 
-    const nombreArchivo = `Resumen_Comite_${String(solicitudActual.numero || "solicitud").replace(/[^a-z0-9_-]+/gi, "_")}.pdf`;
+    const { requiereMotivo } = detectarEleccionNoMasEconomica(res.trm, res.monedas);
+    const textoMotivo =
+      motivoActual ||
+      (requiereMotivo
+        ? "Sin justificación registrada (se eligió un proveedor distinto al más económico)."
+        : "Se seleccionó la opción más económica evaluada.");
+    doc.setFontSize(8);
+    const motivoLines = doc.splitTextToSize(textoMotivo, contentW - 20);
+    const motivoBoxH = Math.max(36, 22 + motivoLines.length * 10);
+    if (endY + motivoBoxH > pageH - 24) {
+      doc.addPage();
+      endY = 28;
+    }
+    doc.setDrawColor(245, 158, 11);
+    doc.setFillColor(255, 251, 235);
+    doc.roundedRect(m, endY, contentW, motivoBoxH, 4, 4, "FD");
+    doc.setTextColor(146, 64, 14);
+    doc.setFontSize(8.2);
+    doc.setFont(undefined, "bold");
+    doc.text(
+      requiereMotivo
+        ? "MOTIVO DE ELECCIÓN DEL PROVEEDOR (Opción distinta a la más económica)"
+        : "MOTIVO DE ELECCIÓN DEL PROVEEDOR",
+      m + 10,
+      endY + 13
+    );
+    doc.setTextColor(30, 41, 59);
+    doc.setFontSize(8);
+    doc.setFont(undefined, "normal");
+    doc.text(motivoLines, m + 10, endY + 25);
+    endY += motivoBoxH + 10;
+
+    const escribirBloqueTexto = (etiqueta, texto) => {
+      if (!texto) return;
+      doc.setFontSize(8);
+      const lines = doc.splitTextToSize(texto, contentW - 108);
+      const alto = Math.max(14, lines.length * 10 + 4);
+      if (endY + alto > pageH - 24) {
+        doc.addPage();
+        endY = 28;
+      }
+      doc.setFont(undefined, "bold");
+      doc.text(etiqueta, m, endY);
+      doc.setFont(undefined, "normal");
+      doc.text(lines, m + 104, endY);
+      endY += alto + 4;
+    };
+
+    escribirBloqueTexto("Notas del comparativo:", notasActuales);
+    escribirBloqueTexto("Comentario Comité:", comentarioActual);
+
+    const nombreArchivo = `Comparativo_Comite_${String(solicitudActual.numero || "solicitud").replace(/[^a-z0-9_-]+/gi, "_")}.pdf`;
     doc.save(nombreArchivo);
     return nombreArchivo;
   }
@@ -1642,22 +2109,28 @@
   document.getElementById("comite-btn-enviar-correo")?.addEventListener("click", async () => {
     if (!solicitudActual) return;
     const correo = document.getElementById("comite-correo-aprobador")?.value?.trim() || "";
+    const motivoComite = document.getElementById("comite-motivo-seleccion")?.value?.trim() || "";
     const res = calcularResumenComite();
 
-    // Guardar correo_aprobador y pasar a "presentada" si aún no lo está
+    // Guardar correo_aprobador, motivo_seleccion y pasar a "presentada" si aún no lo está
     const estadoNuevo = ["pendiente", "en_comparativo"].includes(solicitudActual.estado) ? "presentada" : solicitudActual.estado;
     const baseUpd = estadoNuevo !== solicitudActual.estado ? { estado: estadoNuevo } : {};
-    const { error } = await actualizarSolicitudSeguro(solicitudActual.id, baseUpd, { correo_aprobador: correo || null });
+    const extraUpd = { correo_aprobador: correo || null };
+    if (motivoComite || solicitudActual.motivo_seleccion) {
+      extraUpd.motivo_seleccion = motivoComite || null;
+    }
+    const { error } = await actualizarSolicitudSeguro(solicitudActual.id, baseUpd, extraUpd);
     if (error) return manejarError(error, "No se pudo actualizar la solicitud para envío a comité");
 
     solicitudActual.estado = estadoNuevo;
     solicitudActual.correo_aprobador = correo || null;
+    if ("motivo_seleccion" in extraUpd) solicitudActual.motivo_seleccion = extraUpd.motivo_seleccion;
     const badgeEst = document.getElementById("comite-estado-badge");
     if (badgeEst) badgeEst.innerHTML = badgeHtml(ESTADOS_SOL, estadoNuevo);
     await cargarDatos();
 
-    // 1. Descargar PDF Resumen Comité
-    const pdfNombre = (await generarPdfResumenComite()) || "Resumen_Comite.pdf";
+    // 1. Descargar PDF Comparativo Completo
+    const pdfNombre = (await generarPdfResumenComite()) || "Comparativo_Comite.pdf";
 
     // 2. Registrar notificación interna para directivo / super_usuario
     const urlRelativa = `compras.html?solicitud=${encodeURIComponent(solicitudActual.id)}`;
@@ -1673,6 +2146,7 @@
     // 3. Abrir Gmail compose prellenado
     const linkAprobacion = `${window.location.origin}/compras.html?solicitud=${encodeURIComponent(solicitudActual.id)}`;
     const asunto = `Solicitud de Aprobación de Compra · ${solicitudActual.numero || ""} · ${solicitudActual.titulo || ""}`;
+    const motivoLinea = solicitudActual.motivo_seleccion ? `• Motivo de elección: ${solicitudActual.motivo_seleccion}\n` : "";
     const cuerpo =
       `Hola,\n\n` +
       `Se presenta para aprobación en Comité la siguiente solicitud de compra:\n\n` +
@@ -1683,13 +2157,14 @@
       `• SubTotal Compra (Neto): ${formatoCOP(res.totCompra)}\n` +
       `• IVA (${res.ivaPct}%): ${formatoCOP(res.ivaMonto)}\n` +
       `• Total Oferta con IVA: ${formatoCOP(res.totalConIva)}\n` +
-      `• ${res.ahorro >= 0 ? "Ahorro" : "Sobrecosto"}: ${formatoCOP(res.ahorro)} (${res.pctAhorro.toFixed(1)}%)\n\n` +
+      `• ${res.ahorro >= 0 ? "Ahorro" : "Sobrecosto"}: ${formatoCOP(res.ahorro)} (${res.pctAhorro.toFixed(1)}%)\n` +
+      `${motivoLinea}\n` +
       `Aprueba o rechaza directamente aquí:\n${linkAprobacion}\n\n` +
       `Nota: Adjunta el PDF "${pdfNombre}" descargado automáticamente.`;
 
     const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(correo)}&su=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
     window.open(gmailUrl, "_blank", "noopener");
-    mostrarAviso("PDF descargado, notificación creada y borrador abierto en Gmail", "exito");
+    mostrarAviso("PDF comparativo descargado, notificación creada y borrador abierto en Gmail", "exito");
   });
 
   document.getElementById("comite-cerrar").addEventListener("click", () => cerrarModal(modalComite));
@@ -1726,6 +2201,8 @@
     }
     const comentEl = document.getElementById("comite-comentario");
     const comentario = comentEl?.value?.trim() || "";
+    const motivoComiteEl = document.getElementById("comite-motivo-seleccion");
+    const motivoComite = motivoComiteEl?.value?.trim() || "";
     if (nuevoEstado === "rechazada" && !comentario) {
       if (comentEl) comentEl.focus();
       return mostrarAviso("Ingresa el motivo del rechazo en el comentario de comité", "error");
@@ -1738,6 +2215,7 @@
     };
     const extraPayload = {
       comentario_comite: comentario || null,
+      motivo_seleccion: motivoComite || null,
     };
 
     const { error } = await actualizarSolicitudSeguro(solicitudActual.id, basePayload, extraPayload);
@@ -1745,6 +2223,7 @@
 
     solicitudActual.estado = nuevoEstado;
     solicitudActual.comentario_comite = comentario || null;
+    solicitudActual.motivo_seleccion = motivoComite || null;
 
     await registrarNotificacion({
       tipo: nuevoEstado === "aprobada" ? "compra_aprobada" : "compra_rechazada",
@@ -1755,15 +2234,22 @@
       proyecto_id: solicitudActual.proyecto_id || null,
     });
 
-    cerrarModal(modalComite);
     document.getElementById("cmp-estado-badge").innerHTML = badgeHtml(ESTADOS_SOL, nuevoEstado);
-    document.getElementById("cmp-btn-orden").classList.toggle("hidden", !["aprobada", "ordenada"].includes(nuevoEstado));
-    mostrarAviso(nuevoEstado === "aprobada" ? "Compra aprobada por comité" : "Compra rechazada por comité", nuevoEstado === "aprobada" ? "exito" : "info");
+    actualizarBotonesOrden(nuevoEstado, solicitudActual.id);
     await cargarDatos();
+
+    if (nuevoEstado === "aprobada") {
+      renderModalComite();
+      mostrarAviso("Compra aprobada por comité. Ya puedes generar la Orden de Compra.", "exito");
+    } else {
+      cerrarModal(modalComite);
+      mostrarAviso("Compra rechazada por comité", "info");
+    }
   }
 
   document.getElementById("comite-btn-aprobar").addEventListener("click", () => resolverComite("aprobada"));
   document.getElementById("comite-btn-rechazar").addEventListener("click", () => resolverComite("rechazada"));
+  document.getElementById("comite-btn-generar-orden")?.addEventListener("click", () => generarOrdenesDeSolicitud(solicitudActual?.id));
 
   // --------------------------------------------------------------------------
   // GENERAR ORDEN / PRE-ORDEN + PDF + REGISTRO EN GASTOS
@@ -1974,47 +2460,100 @@
     doc.save(`${numOrden}.pdf`);
   }
 
-  document.getElementById("cmp-btn-orden").addEventListener("click", async () => {
-    const trm = getTrmActual();
-    const monedas = getMonedasActuales();
-    const porProveedor = new Map();
-    itemsActuales.forEach((it) => {
-      const calc = calcularItemComparativo(it, { trm, monedas });
-      if (!calc.ganadorId || !calc.precioGanador) return;
-      if (!porProveedor.has(calc.ganadorId)) porProveedor.set(calc.ganadorId, []);
-      porProveedor.get(calc.ganadorId).push({
-        ...it,
-        precio_ganador: Math.round(calc.precioGanador),
-        descuento_pct: calc.descuentoPct,
-      });
-    });
+  let generandoOrden = false;
 
-    if (!porProveedor.size) {
-      return mostrarAviso("Asigna al menos un proveedor y precio ganador antes de generar la orden", "error");
+  async function generarOrdenesDeSolicitud(solicitudId = solicitudActual?.id) {
+    if (generandoOrden) return;
+    if (!solicitudId) return;
+
+    const sol = solicitudes.find((s) => s.id === solicitudId) || solicitudActual;
+    if (!sol) return;
+
+    if (sol.estado !== "aprobada" && sol.estado !== "ordenada") {
+      return mostrarAviso("La solicitud debe estar aprobada por comité antes de generar la Orden de Compra.", "error");
     }
 
-    const emp = solicitudActual.empresas || {};
-    const esPctronic = /pctronic/i.test(emp.nombre || "");
-    const tipoOrden = esPctronic ? "pre_orden" : "orden_compra";
-    const ivaInputEl = document.getElementById("cmp-iva-porcentaje");
-    const ivaRaw = ivaInputEl && ivaInputEl.value !== "" ? Number(ivaInputEl.value) : solicitudActual?.iva_porcentaje ?? 19;
-    if (!Number.isFinite(ivaRaw) || ivaRaw < 0 || ivaRaw > 100) {
-      return mostrarAviso("La tarifa de IVA debe estar entre 0% y 100%", "error");
-    }
-    const ivaPct = ivaRaw;
-
+    generandoOrden = true;
     try {
-      const centroCosto = document.getElementById("cmp-centro-costo")?.value?.trim() || solicitudActual.proyectos?.nombre || null;
-      const ciudad = document.getElementById("cmp-ciudad")?.value?.trim() || "Barranquilla";
-      const observacionesOc = document.getElementById("cmp-observaciones-oc")?.value?.trim() || null;
+      // Prevenir duplicados consultando órdenes existentes en BD
+      const { data: existentes, error: errExist } = await window.sb
+        .from("compras_ordenes")
+        .select("id, numero_orden")
+        .eq("solicitud_id", sol.id);
+      if (!errExist && Array.isArray(existentes) && existentes.length > 0) {
+        actualizarBotonesOrden("ordenada", sol.id);
+        return mostrarAviso("Esta solicitud ya tiene orden(es) de compra generada(s).", "info");
+      }
+      if (sol.estado === "ordenada") {
+        actualizarBotonesOrden("ordenada", sol.id);
+        return mostrarAviso("Esta solicitud ya está marcada como ordenada.", "info");
+      }
+
+      // Cargar ítems si no están cargados para esta solicitud
+      const cmpAbiertoParaEsta = modalCmp && !modalCmp.classList.contains("hidden") && solicitudActual?.id === sol.id;
+      if (solicitudActual?.id !== sol.id || !itemsActuales.length) {
+        solicitudActual = sol;
+        await cargarItemsYHistorialSolicitud(sol.id);
+      }
+
+      const trm = getTrmActual(solicitudActual, cmpAbiertoParaEsta);
+      const monedas = getMonedasActuales(solicitudActual, cmpAbiertoParaEsta);
+      const porProveedor = new Map();
+      itemsActuales.forEach((it) => {
+        const calc = calcularItemComparativo(it, { trm, monedas });
+        if (!calc.ganadorId || !calc.precioGanador) return;
+        if (!porProveedor.has(calc.ganadorId)) porProveedor.set(calc.ganadorId, []);
+        porProveedor.get(calc.ganadorId).push({
+          ...it,
+          precio_ganador: Math.round(calc.precioGanador),
+          descuento_pct: calc.descuentoPct,
+        });
+      });
+
+      if (!porProveedor.size) {
+        return mostrarAviso("Asigna al menos un proveedor y precio ganador antes de generar la orden", "error");
+      }
+
+      const emp = solicitudActual.empresas || {};
+      const esPctronic = /pctronic/i.test(emp.nombre || "");
+      const tipoOrden = esPctronic ? "pre_orden" : "orden_compra";
+      const ivaInputEl = cmpAbiertoParaEsta ? document.getElementById("cmp-iva-porcentaje") : null;
+      const ivaRaw = ivaInputEl && ivaInputEl.value !== "" ? Number(ivaInputEl.value) : solicitudActual?.iva_porcentaje ?? 19;
+      if (!Number.isFinite(ivaRaw) || ivaRaw < 0 || ivaRaw > 100) {
+        return mostrarAviso("La tarifa de IVA debe estar entre 0% y 100%", "error");
+      }
+      const ivaPct = ivaRaw;
+
+      const centroCosto =
+        (cmpAbiertoParaEsta ? document.getElementById("cmp-centro-costo")?.value?.trim() : "") ||
+        solicitudActual.proyectos?.nombre ||
+        null;
+      const ciudad = (cmpAbiertoParaEsta ? document.getElementById("cmp-ciudad")?.value?.trim() : "") || "Barranquilla";
+      const observacionesOc =
+        (cmpAbiertoParaEsta ? document.getElementById("cmp-observaciones-oc")?.value?.trim() : "") || null;
+
+      const proyectoObj =
+        solicitudActual.proyectos ||
+        (solicitudActual.proyecto_id ? proyectos.find((p) => p.id === solicitudActual.proyecto_id) : null);
+      const incluirIvaEnGasto = ivaPct > 0 && proyectoObj?.iva_materiales !== false;
+      const factorIvaGasto = incluirIvaEnGasto ? 1 + ivaPct / 100 : 1;
 
       let indiceFallback = ordenes.length;
+      let erroresGastos = [];
+      let gastosInsertados = 0;
+
       for (const [provId, itemsProv] of porProveedor.entries()) {
         const prov = proveedores.find((p) => p.id === provId) || {};
-        const subtotalBruto = Math.round(itemsProv.reduce((a, it) => a + Number(it.cantidad_solicitada) * Number(it.precio_ganador), 0));
+        const subtotalBruto = Math.round(
+          itemsProv.reduce((a, it) => a + Number(it.cantidad_solicitada) * Number(it.precio_ganador), 0)
+        );
         const descuentoTotal = Math.round(
           itemsProv.reduce(
-            (a, it) => a + Number(it.cantidad_solicitada) * Number(it.precio_ganador) * (Math.min(100, Math.max(0, Number(it.descuento_pct || 0))) / 100),
+            (a, it) =>
+              a +
+              Number(it.cantidad_solicitada) *
+                Number(it.precio_ganador) *
+                (Math.min(100, Math.max(0, Number(it.descuento_pct || 0))) / 100),
             0
           )
         );
@@ -2039,9 +2578,8 @@
           () => `${esPctronic ? "PRE" : "OC"}-${new Date().getFullYear()}-${String(indiceFallback).padStart(4, "0")}`
         );
 
-        const { data: ord, error } = await window.sb
-          .from("compras_ordenes")
-          .insert({
+        const { data: ord, error } = await insertarOrdenCompraSeguro(
+          {
             solicitud_id: solicitudActual.id,
             empresa_id: solicitudActual.empresa_id,
             proveedor_id: provId,
@@ -2050,21 +2588,23 @@
             subtotal: subtotalBruto,
             iva,
             retenciones,
-            reteiva,
             total,
+          },
+          {
+            reteiva,
             centro_costo: centroCosto,
             ciudad,
             observaciones_oc: observacionesOc,
-          })
-          .select()
-          .single();
+          }
+        );
         if (error) throw error;
 
-        // Si la solicitud viene de un proyecto, registrar en `gastos`
+        // Si la solicitud viene de un proyecto, registrar SIEMPRE en `gastos`
         if (solicitudActual.proyecto_id) {
           const gastosRows = itemsProv.map((it) => {
             const descPct = Math.min(100, Math.max(0, Number(it.descuento_pct || 0)));
-            const valorNeto = Math.round(Number(it.precio_ganador) * (1 - descPct / 100));
+            const valorSinIva = Number(it.precio_ganador) * (1 - descPct / 100);
+            const valorUnitReal = Math.round(valorSinIva * factorIvaGasto);
             return {
               proyecto_id: solicitudActual.proyecto_id,
               fecha: hoyLocal(),
@@ -2074,12 +2614,17 @@
               presupuesto_item_id: it.presupuesto_item_id || null,
               descripcion: it.descripcion,
               cantidad: Number(it.cantidad_solicitada),
-              valor_unitario: valorNeto,
-              observaciones: `Generado desde ${numeroOrden} (${solicitudActual.numero})`,
+              valor_unitario: valorUnitReal,
+              observaciones: `Generado desde ${numeroOrden} (${solicitudActual.numero})${incluirIvaEnGasto ? ` · Incluye IVA ${ivaPct}%` : ""}`,
             };
           });
-          const { error: errG } = await window.sb.from("gastos").insert(gastosRows);
-          if (errG) throw errG;
+          const { error: errG } = await insertarGastosOrdenSeguro(gastosRows, ord?.id || null);
+          if (errG) {
+            console.error("Error al registrar gastos de la orden de compra:", errG);
+            erroresGastos.push(`${numeroOrden}: ${errG.message || "Error al guardar gasto"}`);
+          } else {
+            gastosInsertados += gastosRows.length;
+          }
         }
 
         await generarPdfOrdenCompra(
@@ -2094,19 +2639,148 @@
       if (errSol) throw errSol;
       solicitudActual.estado = "ordenada";
       document.getElementById("cmp-estado-badge").innerHTML = badgeHtml(ESTADOS_SOL, "ordenada");
+      actualizarBotonesOrden("ordenada", solicitudActual.id);
 
       cerrarModal(modalCmp);
+      cerrarModal(modalComite);
       await cargarDatos();
-      mostrarAviso(
-        esPctronic ? "Pre-orden generada para transcripción en Siigo" : "Orden de Compra PDF generada exitosamente",
-        "exito"
-      );
+
+      if (erroresGastos.length > 0) {
+        mostrarAviso(
+          `Orden generada, pero no se pudo cargar a Gastos del proyecto (${erroresGastos[0]}).`,
+          "error"
+        );
+      } else if (solicitudActual.proyecto_id && gastosInsertados > 0) {
+        mostrarAviso("Orden de compra generada y cargada a Gastos del proyecto.", "exito");
+      } else {
+        mostrarAviso(
+          esPctronic ? "Pre-orden generada para transcripción en Siigo" : "Orden de Compra PDF generada exitosamente",
+          "exito"
+        );
+      }
     } catch (err) {
       manejarError(err, "No se pudo generar la orden");
+    } finally {
+      generandoOrden = false;
     }
+  }
+
+  document.getElementById("cmp-btn-orden").addEventListener("click", () => generarOrdenesDeSolicitud(solicitudActual?.id));
+
+  // --------------------------------------------------------------------------
+  // ELIMINACIÓN DE COMPRAS (SOLO SUPER USUARIO / ADMIN)
+  // --------------------------------------------------------------------------
+  function abrirModalEliminarCompra(tipo, id) {
+    if (!esSuperUsuario()) {
+      return mostrarAviso("Solo el Super Usuario puede eliminar registros de compras.", "error");
+    }
+    const tituloEl = document.getElementById("del-compra-titulo");
+    const msgEl = document.getElementById("del-compra-mensaje");
+    if (tipo === "orden") {
+      const ord = ordenes.find((o) => o.id === id);
+      if (!ord) return;
+      pendienteEliminar = { tipo: "orden", id };
+      if (tituloEl) tituloEl.textContent = `Eliminar orden ${ord.numero_orden || ""}`;
+      if (msgEl) {
+        msgEl.textContent =
+          `¿Seguro que deseas eliminar la orden ${ord.numero_orden || "sin número"} ` +
+          `(${ord.proveedores?.nombre || "sin proveedor"})? También se eliminarán los gastos vinculados en el proyecto y, si no quedan más órdenes, la solicitud volverá a estado «Aprobada».`;
+      }
+    } else {
+      const sol = solicitudes.find((s) => s.id === id);
+      if (!sol) return;
+      pendienteEliminar = { tipo: "solicitud", id };
+      if (tituloEl) tituloEl.textContent = `Eliminar solicitud ${sol.numero || ""}`;
+      if (msgEl) {
+        msgEl.textContent =
+          `¿Seguro que deseas eliminar la solicitud ${sol.numero || "sin número"} («${sol.titulo || ""}»)? ` +
+          `Se eliminarán sus ítems del comparativo, sus órdenes de compra asociadas y cualquier gasto vinculado en el proyecto.`;
+      }
+    }
+    abrirModal(modalEliminar);
+  }
+
+  async function ejecutarEliminacionCompra() {
+    if (!esSuperUsuario() || !pendienteEliminar) return;
+    const btnConfirmar = document.getElementById("del-compra-confirmar");
+    if (btnConfirmar) btnConfirmar.disabled = true;
+
+    try {
+      if (pendienteEliminar.tipo === "orden") {
+        const ord = ordenes.find((o) => o.id === pendienteEliminar.id);
+        if (!ord) {
+          cerrarModal(modalEliminar);
+          return;
+        }
+        const solPadre = solicitudes.find((s) => s.id === ord.solicitud_id);
+        await eliminarGastosDeOrdenSeguro(ord, solPadre?.proyecto_id || null);
+
+        const { error: errDelOrd } = await window.sb.from("compras_ordenes").delete().eq("id", ord.id);
+        if (errDelOrd) throw errDelOrd;
+
+        if (ord.solicitud_id) {
+          const { data: restantes, error: errRem } = await window.sb
+            .from("compras_ordenes")
+            .select("id")
+            .eq("solicitud_id", ord.solicitud_id);
+          if (!errRem && (!restantes || restantes.length === 0) && solPadre?.estado === "ordenada") {
+            const { error: errRev } = await window.sb
+              .from("compras_solicitudes")
+              .update({ estado: "aprobada" })
+              .eq("id", ord.solicitud_id);
+            if (errRev) console.warn("No se pudo revertir el estado de la solicitud a aprobada:", errRev);
+          }
+        }
+        mostrarAviso(`Orden ${ord.numero_orden || ""} eliminada correctamente.`, "exito");
+      } else {
+        const sol = solicitudes.find((s) => s.id === pendienteEliminar.id);
+        if (!sol) {
+          cerrarModal(modalEliminar);
+          return;
+        }
+        const { data: ordenesSol } = await window.sb
+          .from("compras_ordenes")
+          .select("id, numero_orden")
+          .eq("solicitud_id", sol.id);
+        for (const oc of ordenesSol || []) {
+          await eliminarGastosDeOrdenSeguro(oc, sol.proyecto_id || null);
+        }
+
+        const { error: errDelSol } = await window.sb.from("compras_solicitudes").delete().eq("id", sol.id);
+        if (errDelSol) throw errDelSol;
+
+        if (solicitudActual?.id === sol.id) {
+          solicitudActual = null;
+          itemsActuales = [];
+          cerrarModal(modalCmp);
+          cerrarModal(modalComite);
+        }
+        mostrarAviso(`Solicitud ${sol.numero || ""} eliminada correctamente.`, "exito");
+      }
+
+      pendienteEliminar = null;
+      cerrarModal(modalEliminar);
+      await cargarDatos();
+    } catch (err) {
+      manejarError(err, "No se pudo eliminar el registro de compra");
+    } finally {
+      if (btnConfirmar) btnConfirmar.disabled = false;
+    }
+  }
+
+  document.getElementById("del-compra-cerrar")?.addEventListener("click", () => {
+    pendienteEliminar = null;
+    cerrarModal(modalEliminar);
   });
+  document.getElementById("del-compra-cancelar")?.addEventListener("click", () => {
+    pendienteEliminar = null;
+    cerrarModal(modalEliminar);
+  });
+  document.getElementById("del-compra-confirmar")?.addEventListener("click", ejecutarEliminacionCompra);
 
   document.getElementById("tabla-ordenes").addEventListener("click", async (e) => {
+    const btnDel = e.target.closest("[data-eliminar-orden]");
+    if (btnDel) return abrirModalEliminarCompra("orden", btnDel.dataset.eliminarOrden);
     const btn = e.target.closest("[data-pdf-orden]");
     if (!btn) return;
     const ord = ordenes.find((o) => o.id === btn.dataset.pdfOrden);
@@ -2123,6 +2797,10 @@
   // Tecla Escape para cerrar el modal superior activo
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
+    if (modalEliminar && !modalEliminar.classList.contains("hidden")) {
+      pendienteEliminar = null;
+      return cerrarModal(modalEliminar);
+    }
     if (!modalHist.classList.contains("hidden")) return cerrarModal(modalHist);
     if (!modalComite.classList.contains("hidden")) return cerrarModal(modalComite);
     if (!modalCmp.classList.contains("hidden")) return cerrarModal(modalCmp);

@@ -30,7 +30,15 @@
   // --------------------------------------------------------------------
   // Plantilla e importación
   // --------------------------------------------------------------------
-  document.getElementById("btn-descargar-plantilla").addEventListener("click", () => PCT.descargarPlantillaCotizacion());
+  const btnPlantilla = document.getElementById("btn-descargar-plantilla");
+  btnPlantilla?.addEventListener("click", async () => {
+    btnPlantilla.disabled = true;
+    try {
+      await PCT.descargarPlantillaCotizacion();
+    } finally {
+      btnPlantilla.disabled = false;
+    }
+  });
 
   // Si la cotización trae los dos totales (IVA pleno y AIU), se pregunta con
   // cuál aceptó el cliente. Devuelve "aiu" | "iva" | null (si cancela).

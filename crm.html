@@ -322,6 +322,25 @@
       </div>
     </div>
 
+    <!-- Banner Marcar como Enviada al Cliente (etapa En Oferta / Cotización) -->
+    <div id="drawer-banner-envio-cliente" class="hidden rounded-xl border border-blue-200 bg-blue-50/70 p-3.5">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p class="text-xs font-bold text-blue-950 flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[17px] text-primary" aria-hidden="true">mark_email_read</span>
+            Envío al Cliente
+          </p>
+          <p id="drawer-envio-cliente-info" class="text-[11px] text-blue-800 mt-0.5">
+            Cuando presentes la propuesta al cliente, márcala como enviada para iniciar el seguimiento comercial.
+          </p>
+        </div>
+        <button id="btn-marcar-enviada-cliente" type="button"
+          class="flex-shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-700 shadow-sm transition-colors disabled:opacity-60">
+          <span class="material-symbols-outlined text-[15px]" aria-hidden="true">send</span> Marcar como Enviada al Cliente
+        </button>
+      </div>
+    </div>
+
     <!-- Banner Ganada / Convertir en Proyecto -->
     <div id="drawer-banner-ganada" class="hidden rounded-xl border border-emerald-200 bg-emerald-50 p-4">
       <div class="flex items-start justify-between gap-3">
@@ -333,10 +352,16 @@
             Esta cotización ha sido adjudicada. Puedes pasarla a ejecución operativa en el módulo de Proyectos con un solo clic.
           </p>
         </div>
-        <button id="btn-convertir-proyecto" type="button"
-          class="flex-shrink-0 flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 shadow-sm transition-colors">
-          <span class="material-symbols-outlined text-[16px]" aria-hidden="true">rocket_launch</span> Convertir en Proyecto
-        </button>
+        <div class="flex items-center gap-2 flex-shrink-0">
+          <button id="btn-convertir-proyecto" type="button"
+            class="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 shadow-sm transition-colors">
+            <span class="material-symbols-outlined text-[16px]" aria-hidden="true">rocket_launch</span> Convertir en Proyecto
+          </button>
+          <a id="link-ver-proyecto" href="proyectos.html"
+            class="hidden items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 shadow-sm transition-colors">
+            <span class="material-symbols-outlined text-[16px]" aria-hidden="true">open_in_new</span> Ver Proyecto
+          </a>
+        </div>
       </div>
     </div>
 
@@ -627,6 +652,13 @@
     </div>
 
     <div id="puente-oferta-banner" class="hidden rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900"></div>
+    <div id="puente-oferta-requerida-banner" class="hidden rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 flex items-start gap-2">
+      <span class="material-symbols-outlined text-[18px] text-amber-600 shrink-0 mt-0.5" aria-hidden="true">warning</span>
+      <div>
+        <p class="font-bold">Oferta comercial obligatoria</p>
+        <p class="mt-0.5">Debes adjuntar la oferta comercial (Excel) antes de pasar a Ganado y crear el proyecto.</p>
+      </div>
+    </div>
 
     <form id="form-puente-proyecto" class="space-y-4 text-xs">
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -673,10 +705,13 @@
       </div>
 
       <!-- Plantilla / Cotización Excel -->
-      <div class="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3.5 space-y-2">
+      <div id="puente-excel-box" class="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3.5 space-y-2">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <p class="font-bold text-indigo-950">Plantilla / Cotización Excel (.xlsx)</p>
+            <p class="font-bold text-indigo-950 flex items-center gap-2">
+              Plantilla / Cotización Excel (.xlsx)
+              <span id="puente-excel-obligatorio-badge" class="hidden rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-[10px] font-bold text-amber-800">Obligatorio</span>
+            </p>
             <p class="text-[11px] text-indigo-800">Importa Cotización + Presupuesto de costos (y TRM) en 1 solo paso.</p>
           </div>
           <label class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700">

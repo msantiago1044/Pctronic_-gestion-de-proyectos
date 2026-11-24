@@ -10,11 +10,16 @@
   const esComercialSolo = rolNorm === "comercial";
 
   const ESTADOS = {
-    levantamiento: { label: "Levantamiento", color: "bg-slate-500", badge: "bg-slate-100 text-slate-800", comercial: true },
+    levantamiento: { label: "Visita / Levantamiento", color: "bg-slate-500", badge: "bg-slate-100 text-slate-800", comercial: true },
     en_proceso: { label: "En proceso", color: "bg-primary", badge: "bg-blue-100 text-blue-800", comercial: false },
     finalizado: { label: "Finalizado", color: "bg-amber-500", badge: "bg-amber-100 text-amber-800", comercial: false },
-    enviado_cliente: { label: "Enviado al cliente", color: "bg-emerald-500", badge: "bg-emerald-100 text-emerald-800", comercial: true },
+    enviado_comercial: { label: "Enviado al Comercial", color: "bg-emerald-500", badge: "bg-emerald-100 text-emerald-800", comercial: true },
   };
+
+  function normalizarEstadoOferta(estado) {
+    if (estado === "enviado_cliente") return "enviado_comercial";
+    return ESTADOS[estado] ? estado : "levantamiento";
+  }
 
   const PRIORIDADES = {
     urgente: { label: "Urgente", badge: "bg-rose-100 text-rose-800 border-rose-200" },
@@ -29,13 +34,27 @@
   let perfiles = [];
   let ofertaActual = null;
   let proyectosPorOportunidad = new Map();
+  let oportunidadesPorId = new Map();
+  let oportunidadesPorOfertaId = new Map();
   let vistaActual = localStorage.getItem("pctronic_ofertas_vista") || "tablero";
   let relevoPendiente = null; // { id, nuevoEstado, origen }
+  let envioComercialPendiente = null; // { id, origen }
   let arrastrandoId = null;
   let puenteExcelData = null; // { items, trm_cotizacion, inicio, archivoNombre }
   let puenteArchivoFile = null;
 
   const nombrePerfil = (id) => perfiles.find((p) => p.id === id)?.nombre_completo || "Sin asignar";
+
+  function obtenerOportunidadDeOferta(o) {
+    if (!o) return null;
+    return (o.oportunidad_id && oportunidadesPorId.get(o.oportunidad_id)) || oportunidadesPorOfertaId.get(o.id) || null;
+  }
+
+  function obtenerComercialSugerido(o) {
+    if (!o) return "";
+    const linkedOp = obtenerOportunidadDeOferta(o);
+    return o.comercial_destino_id || linkedOp?.responsable_id || linkedOp?.creado_por || o.creado_por || "";
+  }
 
   // Resaltar columnas comerciales si el rol es comercial
   if (esComercialSolo) {
@@ -45,6 +64,14 @@
         col.classList.add("ring-1", "ring-primary/30");
       }
     });
+  }
+
+  async function cargarOportunidadesVinculadasSeguras() {
+    const resExt = await window.sb
+      .from("crm_oportunidades")
+      .select("id, proyecto_id, oferta_preventa_id, responsable_id, creado_por, etapa, probabilidad, titulo");
+    if (!resExt.error) return resExt;
+    return window.sb.from("crm_oportunidades").select("id, proyecto_id, oferta_preventa_id, responsable_id, etapa, titulo");
   }
 
   async function cargarDatos() {
@@ -57,7 +84,7 @@
         window.sb.from("clientes").select("id, nombre").order("nombre"),
         window.sb.from("empresas").select("id, nombre").order("nombre"),
         window.sb.from("profiles").select("id, nombre_completo").order("nombre_completo"),
-        window.sb.from("crm_oportunidades").select("id, proyecto_id, oferta_preventa_id"),
+        cargarOportunidadesVinculadasSeguras(),
       ]);
 
       if (resOf.error) throw resOf.error;
@@ -69,8 +96,12 @@
       empresas = resEmp.data || [];
       perfiles = resProf.data || [];
       proyectosPorOportunidad = new Map();
+      oportunidadesPorId = new Map();
+      oportunidadesPorOfertaId = new Map();
       if (!resOps.error && Array.isArray(resOps.data)) {
         resOps.data.forEach((op) => {
+          oportunidadesPorId.set(op.id, op);
+          if (op.oferta_preventa_id) oportunidadesPorOfertaId.set(op.oferta_preventa_id, op);
           if (op.proyecto_id) {
             proyectosPorOportunidad.set(op.id, op.proyecto_id);
             if (op.oferta_preventa_id) proyectosPorOportunidad.set(`of:${op.oferta_preventa_id}`, op.proyecto_id);
@@ -103,14 +134,18 @@
       const el = document.getElementById(id);
       if (el) el.innerHTML = `<option value="">Sin asignar</option>${optsProf}`;
     });
+    ["drawer-comercial-destino", "envio-comercial-destino"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = `<option value="">Selecciona comercial...</option>${optsProf}`;
+    });
     const selFiltroResp = document.getElementById("filtro-responsable");
     if (selFiltroResp) selFiltroResp.innerHTML = `<option value="">Responsable: Todos</option>${optsProf}`;
   }
 
   function actualizarKPIs() {
-    const activas = ofertas.filter((o) => ["levantamiento", "en_proceso"].includes(o.estado));
-    const finalizadas = ofertas.filter((o) => o.estado === "finalizado");
-    const enviadas = ofertas.filter((o) => o.estado === "enviado_cliente");
+    const activas = ofertas.filter((o) => ["levantamiento", "en_proceso"].includes(normalizarEstadoOferta(o.estado)));
+    const finalizadas = ofertas.filter((o) => normalizarEstadoOferta(o.estado) === "finalizado");
+    const enviadas = ofertas.filter((o) => normalizarEstadoOferta(o.estado) === "enviado_comercial");
     const montoEnviadas = enviadas.reduce((s, o) => s + Number(o.valor_estimado || 0), 0);
 
     document.getElementById("kpi-total").textContent = ofertas.length;
@@ -156,7 +191,7 @@
     Object.keys(ESTADOS).forEach((estado) => {
       const cont = document.getElementById(`cards-${estado}`);
       if (!cont) return;
-      const lista = filtradas.filter((o) => o.estado === estado);
+      const lista = filtradas.filter((o) => normalizarEstadoOferta(o.estado) === estado);
       const subtotal = lista.reduce((s, o) => s + Number(o.valor_estimado || 0), 0);
 
       const colEl = document.querySelector(`.kanban-col[data-estado="${estado}"]`);
@@ -172,11 +207,15 @@
 
       cont.innerHTML = lista
         .map((o) => {
+          const estadoNorm = normalizarEstadoOferta(o.estado);
           const pr = PRIORIDADES[o.prioridad] || PRIORIDADES.media;
           const resp = o.profiles?.nombre_completo || "Sin asignar";
           const inicial = resp.trim().charAt(0).toUpperCase();
           const subs = Array.isArray(o.subtareas) ? o.subtareas : [];
           const hechas = subs.filter((s) => s.hecha).length;
+          const excelInfo = obtenerExcelDeOferta(o);
+          const proyId = obtenerProyectoIdDeOferta(o);
+          const mostrarEnviarComercial = estadoNorm === "en_proceso" || estadoNorm === "finalizado";
 
           return `
             <div draggable="true" class="card-oferta group rounded-xl border border-gray-200 bg-white p-3.5 shadow-sm hover:shadow-md hover:border-primary/40 transition-all cursor-grab active:cursor-grabbing" data-id="${o.id}">
@@ -184,12 +223,14 @@
                 <span class="inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-semibold ${pr.badge}">${pr.label}</span>
                 <div class="flex items-center gap-1 flex-wrap justify-end">
                   ${o.plazo_ejecucion ? `<span class="inline-flex items-center gap-0.5 rounded-md bg-sky-50 border border-sky-200 px-1.5 py-0.5 text-[10px] font-medium text-sky-700" title="Plazo de ejecución"><span class="material-symbols-outlined text-[12px]">schedule</span>${escapeHtml(o.plazo_ejecucion)}</span>` : ""}
-                  ${o.archivo_cotizacion_nombre ? `<span class="inline-flex items-center gap-0.5 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-700" title="${escapeHtml(o.archivo_cotizacion_nombre)}"><span class="material-symbols-outlined text-[12px]">table_view</span> Excel</span>` : ""}
+                  ${excelInfo.path ? `<button type="button" data-action="descargar-excel" data-oferta-id="${o.id}" class="inline-flex items-center gap-0.5 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-100" title="Descargar ${escapeHtml(excelInfo.nombre || "Cotizacion.xlsx")}"><span class="material-symbols-outlined text-[12px]">download</span> Excel</button>` : ""}
                   ${o.oportunidad_id ? `<span class="inline-flex items-center gap-0.5 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700" title="Vinculada al CRM"><span class="material-symbols-outlined text-[12px]">handshake</span> CRM</span>` : ""}
+                  ${proyId ? `<a href="proyecto-detalle.html?id=${encodeURIComponent(proyId)}" class="inline-flex items-center gap-0.5 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-emerald-700" title="Abrir proyecto operativo"><span class="material-symbols-outlined text-[12px]">rocket_launch</span> Ver Proyecto</a>` : ""}
                 </div>
               </div>
               <h3 class="text-xs font-bold text-gray-900 group-hover:text-primary line-clamp-2">${escapeHtml(o.titulo)}</h3>
               <p class="mt-1 text-[11px] text-gray-500 truncate">${escapeHtml(o.clientes?.nombre || "Sin cliente")}${o.empresas?.nombre ? " · " + escapeHtml(o.empresas.nombre) : ""}</p>
+              ${excelInfo.nombre ? `<p class="mt-1 text-[10px] text-emerald-700 truncate flex items-center gap-1"><span class="material-symbols-outlined text-[12px]">table_view</span>${escapeHtml(excelInfo.nombre)}</p>` : ""}
               <div class="mt-3 flex items-center justify-between border-t border-gray-100 pt-2 text-xs">
                 <span class="font-bold text-gray-900">${formatoMoneda(o.valor_estimado)}</span>
                 ${subs.length ? `<span class="text-[10px] text-gray-500 flex items-center gap-0.5"><span class="material-symbols-outlined text-[13px]">checklist</span>${hechas}/${subs.length}</span>` : ""}
@@ -198,7 +239,14 @@
                 <span class="flex items-center gap-1"><span class="material-symbols-outlined text-[13px]">event</span>${o.fecha_limite ? formatoFecha(o.fecha_limite) : "Sin fecha"}</span>
                 <div class="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-primary font-bold" title="${escapeHtml(resp)}">${inicial}</div>
               </div>
-              <div class="mt-2.5 flex items-center justify-between gap-1 border-t border-gray-100 pt-2">
+              ${mostrarEnviarComercial ? `
+              <div class="mt-2.5 pt-2 border-t border-gray-100">
+                <button type="button" data-action="enviar-comercial" data-oferta-id="${o.id}"
+                  class="flex w-full items-center justify-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1.5 text-[11px] font-bold text-white hover:bg-indigo-700 shadow-sm transition-colors">
+                  <span class="material-symbols-outlined text-[14px]">send</span> Enviar al Comercial
+                </button>
+              </div>` : ""}
+              <div class="mt-2 flex items-center justify-between gap-1 border-t border-gray-100 pt-2">
                 <button type="button" data-action="duplicar" data-oferta-id="${o.id}"
                   class="inline-flex items-center gap-0.5 rounded-md px-1.5 py-1 text-[10px] font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors" title="Duplicar oferta en Levantamiento">
                   <span class="material-symbols-outlined text-[13px]">content_copy</span> Duplicar
@@ -207,10 +255,15 @@
                   class="inline-flex items-center gap-0.5 rounded-md px-1.5 py-1 text-[10px] font-medium text-blue-600 hover:bg-blue-50 hover:text-blue-800 transition-colors" title="Registrar nota de seguimiento">
                   <span class="material-symbols-outlined text-[13px]">rate_review</span> Seguimiento
                 </button>
-                <button type="button" data-action="finalizar" data-oferta-id="${o.id}" ${o.estado === "finalizado" ? "disabled" : ""}
-                  class="inline-flex items-center gap-0.5 rounded-md px-1.5 py-1 text-[10px] font-medium ${o.estado === "finalizado" ? "text-gray-300 cursor-not-allowed" : "text-amber-700 hover:bg-amber-50 hover:text-amber-900"} transition-colors" title="Mover a Finalizado">
+                ${estadoNorm === "enviado_comercial" ? `
+                <button type="button" data-action="enviar-comercial" data-oferta-id="${o.id}"
+                  class="inline-flex items-center gap-0.5 rounded-md px-1.5 py-1 text-[10px] font-medium text-emerald-700 hover:bg-emerald-50 transition-colors" title="Notificar o reenviar al comercial">
+                  <span class="material-symbols-outlined text-[13px]">send</span> Reenviar
+                </button>` : `
+                <button type="button" data-action="finalizar" data-oferta-id="${o.id}" ${estadoNorm === "finalizado" ? "disabled" : ""}
+                  class="inline-flex items-center gap-0.5 rounded-md px-1.5 py-1 text-[10px] font-medium ${estadoNorm === "finalizado" ? "text-gray-300 cursor-not-allowed" : "text-amber-700 hover:bg-amber-50 hover:text-amber-900"} transition-colors" title="Mover a Finalizado">
                   <span class="material-symbols-outlined text-[13px]">task_alt</span> Finalizar
-                </button>
+                </button>`}
               </div>
             </div>`;
         })
@@ -224,7 +277,7 @@
     tbody.innerHTML = filtradas.length
       ? filtradas
           .map((o) => {
-            const est = ESTADOS[o.estado] || ESTADOS.levantamiento;
+            const est = ESTADOS[normalizarEstadoOferta(o.estado)] || ESTADOS.levantamiento;
             const pr = PRIORIDADES[o.prioridad] || PRIORIDADES.media;
             const subs = Array.isArray(o.subtareas) ? o.subtareas : [];
             const hechas = subs.filter((s) => s.hecha).length;
@@ -292,8 +345,8 @@
       ? [...lista]
           .reverse()
           .map((r) => {
-            const deEst = r.de_estado ? (ESTADOS[r.de_estado]?.label || r.de_estado) : "Inicio";
-            const aEst = ESTADOS[r.a_estado]?.label || r.a_estado;
+            const deEst = r.de_estado ? (ESTADOS[normalizarEstadoOferta(r.de_estado)]?.label || r.de_estado) : "Inicio";
+            const aEst = ESTADOS[normalizarEstadoOferta(r.a_estado)]?.label || r.a_estado;
             const tituloRelevo = r.de_estado && r.de_estado === r.a_estado ? `Seguimiento · ${aEst}` : `${deEst} → ${aEst}`;
             return `
             <div class="rounded-lg border border-gray-100 bg-gray-50 p-2.5 text-xs">
@@ -311,8 +364,10 @@
 
   function obtenerProyectoIdDeOferta(o) {
     if (!o) return null;
+    const linkedOp = obtenerOportunidadDeOferta(o);
     return (
       o.proyecto_id ||
+      linkedOp?.proyecto_id ||
       (o.oportunidad_id && proyectosPorOportunidad.get(o.oportunidad_id)) ||
       proyectosPorOportunidad.get(`of:${o.id}`) ||
       null
@@ -375,13 +430,43 @@
     }
   }
 
+  function pintarBannerEnvioComercial(o) {
+    const badgeEl = document.getElementById("drawer-envio-comercial-badge");
+    const infoEl = document.getElementById("drawer-envio-comercial-info");
+    const selComercial = document.getElementById("drawer-comercial-destino");
+    const btnEnviar = document.getElementById("btn-enviar-comercial");
+    if (!selComercial || !btnEnviar) return;
+
+    const comercialId = obtenerComercialSugerido(o);
+    selComercial.value = comercialId || "";
+
+    const estadoNorm = normalizarEstadoOferta(o?.estado);
+    const yaEnviada = estadoNorm === "enviado_comercial" || Boolean(o?.enviado_comercial_at);
+    if (yaEnviada) {
+      if (badgeEl) badgeEl.classList.remove("hidden");
+      const destNombre = comercialId ? nombrePerfil(comercialId) : "Comercial";
+      const fechaTxt = o?.enviado_comercial_at ? ` el ${formatoFecha(o.enviado_comercial_at)}` : "";
+      if (infoEl) {
+        infoEl.textContent = `Enviada a ${destNombre}${fechaTxt}. Puedes notificar nuevamente o cambiar el comercial destino si es necesario.`;
+      }
+      btnEnviar.innerHTML = `<span class="material-symbols-outlined text-[15px]" aria-hidden="true">send</span> Reenviar al Comercial`;
+    } else {
+      if (badgeEl) badgeEl.classList.add("hidden");
+      if (infoEl) {
+        infoEl.textContent =
+          "Cuando la cotización esté lista, envíala al comercial responsable para que la presente al cliente desde el CRM.";
+      }
+      btnEnviar.innerHTML = `<span class="material-symbols-outlined text-[15px]" aria-hidden="true">send</span> Enviar al Comercial`;
+    }
+  }
+
   function abrirDrawer(id) {
     const o = ofertas.find((x) => x.id === id);
     if (!o) return;
     ofertaActual = JSON.parse(JSON.stringify(o));
 
     document.getElementById("drawer-titulo").value = o.titulo || "";
-    document.getElementById("drawer-estado").value = o.estado || "levantamiento";
+    document.getElementById("drawer-estado").value = normalizarEstadoOferta(o.estado);
     document.getElementById("drawer-responsable").value = o.responsable_id || "";
     document.getElementById("drawer-cliente").value = o.cliente_id || "";
     document.getElementById("drawer-empresa").value = o.empresa_id || "";
@@ -394,13 +479,16 @@
 
     const linkCrm = document.getElementById("drawer-link-crm");
     if (o.oportunidad_id) {
+      linkCrm.href = `crm.html?id=${encodeURIComponent(o.oportunidad_id)}`;
       linkCrm.classList.remove("hidden");
       linkCrm.classList.add("inline-flex");
     } else {
+      linkCrm.href = "crm.html";
       linkCrm.classList.add("hidden");
       linkCrm.classList.remove("inline-flex");
     }
 
+    pintarBannerEnvioComercial(ofertaActual);
     pintarBannerProyectoOferta(ofertaActual);
     pintarBloqueExcelOferta(ofertaActual);
     renderSubtareas();
@@ -419,14 +507,176 @@
     }, 200);
   }
 
-  // Relevo obligatorio al cambiar etapa
+  // Envío directo al Comercial (sin bloqueadores artificiales y con fallback seguro si la migración SQL no ha corrido)
+  function abrirModalEnviarComercial(id, origen = "kanban") {
+    const o = ofertas.find((x) => x.id === id);
+    if (!o) return;
+    envioComercialPendiente = { id, origen };
+    const comercialSugerido = obtenerComercialSugerido(o);
+    const resumenEl = document.getElementById("envio-comercial-resumen");
+    if (resumenEl) {
+      resumenEl.innerHTML = `Vas a enviar la oferta <b>${escapeHtml(o.titulo)}</b> al comercial para que la presente al cliente desde el CRM. Confirma el comercial destinatario:`;
+    }
+    const selDest = document.getElementById("envio-comercial-destino");
+    if (selDest) selDest.value = comercialSugerido || "";
+    const notaEl = document.getElementById("envio-comercial-nota");
+    if (notaEl) notaEl.value = "";
+    document.getElementById("modal-enviar-comercial")?.classList.remove("hidden");
+  }
+
+  function cerrarModalEnviarComercial(revertirSelect = true) {
+    document.getElementById("modal-enviar-comercial")?.classList.add("hidden");
+    if (revertirSelect && envioComercialPendiente?.origen === "drawer" && ofertaActual) {
+      document.getElementById("drawer-estado").value = normalizarEstadoOferta(ofertaActual.estado);
+    }
+    envioComercialPendiente = null;
+  }
+
+  async function actualizarEstadoOfertaConFallback(id, { estado, comercialDestinoId, enviadoComercialAt, responsableId, historial, ahoraIso }) {
+    const payloadBase = {
+      estado,
+      responsable_id: responsableId,
+      historial_relevos: historial,
+      updated_at: ahoraIso,
+    };
+    const payloadCompleto = {
+      ...payloadBase,
+      ...(comercialDestinoId !== undefined ? { comercial_destino_id: comercialDestinoId } : {}),
+      ...(enviadoComercialAt !== undefined ? { enviado_comercial_at: enviadoComercialAt } : {}),
+    };
+
+    const intentar = async (patch) => window.sb.from("crm_ofertas_preventa").update(patch).eq("id", id);
+
+    let res = await intentar(payloadCompleto);
+    if (!res.error) return { estadoGuardado: estado };
+
+    const esFaltaColumna = (err) =>
+      err && (err.code === "42703" || err.code === "PGRST204" || /comercial_destino_id|enviado_comercial_at|column|schema cache/i.test(String(err.message || "")));
+    const esCheckEstado = (err) =>
+      err && (err.code === "23514" || /check|constraint|estado/i.test(String(err.message || "")));
+
+    if (esFaltaColumna(res.error)) {
+      res = await intentar(payloadBase);
+      if (!res.error) return { estadoGuardado: estado };
+    }
+
+    if (estado === "enviado_comercial" && esCheckEstado(res.error)) {
+      const patchFallback = { ...payloadCompleto, estado: "enviado_cliente" };
+      res = await intentar(patchFallback);
+      if (!res.error) return { estadoGuardado: "enviado_cliente" };
+      if (esFaltaColumna(res.error)) {
+        res = await intentar({ ...payloadBase, estado: "enviado_cliente" });
+        if (!res.error) return { estadoGuardado: "enviado_cliente" };
+      }
+    }
+
+    throw res.error;
+  }
+
+  async function enviarOfertaAlComercial(id, comercialId, nota = "", { desdeDrawer = false } = {}) {
+    const o = ofertas.find((x) => x.id === id);
+    if (!o) return;
+    const destinoId = comercialId || obtenerComercialSugerido(o) || null;
+    const ahoraIso = new Date().toISOString();
+    const historial = Array.isArray(o.historial_relevos) ? [...o.historial_relevos] : [];
+    historial.push({
+      fecha: ahoraIso,
+      de_estado: normalizarEstadoOferta(o.estado),
+      a_estado: "enviado_comercial",
+      de_responsable_id: o.responsable_id || null,
+      a_responsable_id: destinoId || o.responsable_id || null,
+      nota: nota || "Oferta enviada al Comercial",
+      usuario_id: usuarioActualId || null,
+    });
+
+    try {
+      await actualizarEstadoOfertaConFallback(id, {
+        estado: "enviado_comercial",
+        comercialDestinoId: destinoId,
+        enviadoComercialAt: ahoraIso,
+        responsableId: destinoId || o.responsable_id || null,
+        historial,
+        ahoraIso,
+      });
+
+      // Mantener sincronizada la oportunidad CRM en etapa 'cotizacion' (lista para que el comercial la envíe al cliente)
+      const linkedOp = obtenerOportunidadDeOferta(o);
+      const opId = o.oportunidad_id || linkedOp?.id || null;
+      if (opId) {
+        const etapasAnteriores = ["por_revisar", "prospecto", "visita", "cotizacion"];
+        if (!linkedOp?.etapa || etapasAnteriores.includes(linkedOp.etapa)) {
+          try {
+            await window.sb
+              .from("crm_oportunidades")
+              .update({
+                etapa: "cotizacion",
+                probabilidad: Math.max(Number(linkedOp?.probabilidad || 0), 50),
+                updated_at: ahoraIso,
+              })
+              .eq("id", opId);
+          } catch (errCrm) {
+            console.warn("No se pudo actualizar etapa CRM al enviar oferta:", errCrm);
+          }
+        }
+        try {
+          await window.sb.from("crm_actividades").insert({
+            oportunidad_id: opId,
+            tipo: "tarea",
+            titulo: "Oferta lista enviada por Pre-venta",
+            descripcion: nota || `Pre-venta marcó la oferta "${o.titulo}" como Enviada al Comercial.`,
+            creado_por: usuarioActualId || null,
+          });
+        } catch (errAct) {
+          /* no bloqueante */
+        }
+      }
+
+      // Notificación dirigida al comercial responsable
+      if (typeof window.PCT_NOTIFICAR === "function") {
+        const excelInfo = obtenerExcelDeOferta(o);
+        await window.PCT_NOTIFICAR({
+          tipo: "oferta_lista",
+          titulo: `Oferta lista para cliente: ${o.titulo}`,
+          mensaje: `${profile?.nombre_completo || "Pre-venta"} envió la oferta${excelInfo.nombre ? ` (${excelInfo.nombre})` : ""}${nota ? ` · ${nota}` : ""}. Envíala al cliente desde el CRM.`,
+          url: opId ? `crm.html?id=${opId}` : `ofertas.html?id=${o.id}`,
+          usuario_destino: destinoId || null,
+          rol_destino: destinoId ? [] : ["comercial", "jefe_comercial", "super_usuario"],
+        });
+      }
+
+      cerrarModalEnviarComercial(false);
+      mostrarAviso(
+        destinoId
+          ? `Oferta enviada a ${nombrePerfil(destinoId)} y notificada.`
+          : "Oferta marcada como Enviada al Comercial.",
+        "exito"
+      );
+      await cargarDatos();
+      if (desdeDrawer && ofertaActual?.id === id) {
+        abrirDrawer(id);
+      }
+    } catch (err) {
+      manejarError(err, "No se pudo enviar la oferta al comercial");
+    }
+  }
+
+  // Relevo al cambiar etapa
   function abrirModalRelevo(id, nuevoEstado, origen = "kanban") {
     const o = ofertas.find((x) => x.id === id);
-    if (!o || o.estado === nuevoEstado) return;
-    relevoPendiente = { id, nuevoEstado, origen };
+    if (!o) return;
+    const estadoActualNorm = normalizarEstadoOferta(o.estado);
+    const nuevoNorm = normalizarEstadoOferta(nuevoEstado);
+    if (estadoActualNorm === nuevoNorm) return;
 
-    const deLabel = ESTADOS[o.estado]?.label || o.estado;
-    const aLabel = ESTADOS[nuevoEstado]?.label || nuevoEstado;
+    if (nuevoNorm === "enviado_comercial") {
+      abrirModalEnviarComercial(id, origen);
+      return;
+    }
+
+    relevoPendiente = { id, nuevoEstado: nuevoNorm, origen };
+
+    const deLabel = ESTADOS[estadoActualNorm]?.label || estadoActualNorm;
+    const aLabel = ESTADOS[nuevoNorm]?.label || nuevoNorm;
     document.getElementById("relevo-resumen").innerHTML = `Vas a mover <b>${escapeHtml(o.titulo)}</b> de <b>${escapeHtml(deLabel)}</b> a <b>${escapeHtml(aLabel)}</b>. Confirma o asigna el nuevo responsable para registrar el relevo.`;
     document.getElementById("relevo-responsable").value = o.responsable_id || "";
     document.getElementById("relevo-nota").value = "";
@@ -436,7 +686,7 @@
   function cerrarModalRelevo(revertirSelect = true) {
     document.getElementById("modal-relevo").classList.add("hidden");
     if (revertirSelect && relevoPendiente?.origen === "drawer" && ofertaActual) {
-      document.getElementById("drawer-estado").value = ofertaActual.estado;
+      document.getElementById("drawer-estado").value = normalizarEstadoOferta(ofertaActual.estado);
     }
     relevoPendiente = null;
   }
@@ -450,10 +700,17 @@
     const nuevoResp = document.getElementById("relevo-responsable").value || null;
     const nota = document.getElementById("relevo-nota").value.trim() || null;
 
+    if (nuevoEstado === "enviado_comercial") {
+      cerrarModalRelevo(false);
+      await enviarOfertaAlComercial(id, nuevoResp, nota || "", { desdeDrawer: origen === "drawer" });
+      return;
+    }
+
+    const ahoraIso = new Date().toISOString();
     const historial = Array.isArray(o.historial_relevos) ? [...o.historial_relevos] : [];
     historial.push({
-      fecha: new Date().toISOString(),
-      de_estado: o.estado,
+      fecha: ahoraIso,
+      de_estado: normalizarEstadoOferta(o.estado),
       a_estado: nuevoEstado,
       de_responsable_id: o.responsable_id || null,
       a_responsable_id: nuevoResp,
@@ -462,26 +719,12 @@
     });
 
     try {
-      const { error } = await window.sb
-        .from("crm_ofertas_preventa")
-        .update({
-          estado: nuevoEstado,
-          responsable_id: nuevoResp,
-          historial_relevos: historial,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", id);
-
-      if (error) throw error;
-
-      // Si pasa a Enviado al cliente y tiene oportunidad vinculada, actualizar etapa en CRM
-      if (nuevoEstado === "enviado_cliente" && o.oportunidad_id) {
-        const { error: errCrm } = await window.sb
-          .from("crm_oportunidades")
-          .update({ etapa: "negociacion", updated_at: new Date().toISOString() })
-          .eq("id", o.oportunidad_id);
-        if (errCrm) throw errCrm;
-      }
+      await actualizarEstadoOfertaConFallback(id, {
+        estado: nuevoEstado,
+        responsableId: nuevoResp,
+        historial,
+        ahoraIso,
+      });
 
       cerrarModalRelevo(false);
       mostrarAviso(`Oferta movida a ${ESTADOS[nuevoEstado]?.label || nuevoEstado}`, "exito");
@@ -612,9 +855,9 @@
     }
   }
 
-  async function descargarExcelOferta() {
-    if (!ofertaActual) return;
-    const { path, nombre } = obtenerExcelDeOferta(ofertaActual);
+  async function descargarExcelOferta(ofertaObj = ofertaActual) {
+    if (!ofertaObj) return;
+    const { path, nombre } = obtenerExcelDeOferta(ofertaObj);
     if (!path) return;
     try {
       const { data, error } = await window.sb.storage.from("documentos").createSignedUrl(path, 120);
@@ -684,6 +927,11 @@
 
   async function abrirModalPuenteOferta() {
     if (!ofertaActual) return;
+    const proyExistente = obtenerProyectoIdDeOferta(ofertaActual);
+    if (proyExistente) {
+      mostrarAviso("Esta oferta ya fue convertida en proyecto.", "info");
+      return;
+    }
     puenteExcelData = null;
     puenteArchivoFile = null;
     document.getElementById("puente-excel").value = "";
@@ -860,7 +1108,16 @@
         } catch (eTrm) { /* silencioso si la columna aún no está migrada */ }
       }
 
-      // 2. Vincular oportunidad CRM si existe
+      // 2. Vincular proyecto en la oferta Pre-venta (defensivo si columna proyecto_id aún no está migrada) y en oportunidad CRM
+      try {
+        await window.sb
+          .from("crm_ofertas_preventa")
+          .update({ proyecto_id: proyectoId, updated_at: new Date().toISOString() })
+          .eq("id", ofertaActual.id);
+      } catch (eOfProy) {
+        /* silencioso si la columna proyecto_id aún no está migrada */
+      }
+
       if (ofertaActual.oportunidad_id) {
         try {
           await window.sb
@@ -1101,6 +1358,11 @@
       if (action === "duplicar") duplicarOferta(ofertaId);
       else if (action === "seguimiento") registrarSeguimiento(ofertaId);
       else if (action === "finalizar") abrirModalRelevo(ofertaId, "finalizado", "kanban");
+      else if (action === "enviar-comercial") abrirModalEnviarComercial(ofertaId, "kanban");
+      else if (action === "descargar-excel") {
+        const of = ofertas.find((x) => x.id === ofertaId);
+        if (of) descargarExcelOferta(of);
+      }
     });
 
     // Abrir drawer al hacer clic en tarjeta o fila
@@ -1117,7 +1379,33 @@
     document.getElementById("btn-drawer-guardar")?.addEventListener("click", guardarOferta);
     document.getElementById("btn-drawer-eliminar")?.addEventListener("click", eliminarOferta);
     document.getElementById("btn-oferta-enviar-proyecto")?.addEventListener("click", abrirModalPuenteOferta);
-    document.getElementById("btn-oferta-excel-descargar")?.addEventListener("click", descargarExcelOferta);
+    document.getElementById("btn-oferta-excel-descargar")?.addEventListener("click", () => descargarExcelOferta(ofertaActual));
+    document.getElementById("btn-enviar-comercial")?.addEventListener("click", async () => {
+      if (!ofertaActual) return;
+      const btn = document.getElementById("btn-enviar-comercial");
+      const comercialId = document.getElementById("drawer-comercial-destino")?.value || obtenerComercialSugerido(ofertaActual) || null;
+      if (btn) btn.disabled = true;
+      try {
+        await enviarOfertaAlComercial(ofertaActual.id, comercialId, "", { desdeDrawer: true });
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    });
+    document.getElementById("btn-envio-comercial-cerrar")?.addEventListener("click", () => cerrarModalEnviarComercial(true));
+    document.getElementById("btn-envio-comercial-cancelar")?.addEventListener("click", () => cerrarModalEnviarComercial(true));
+    document.getElementById("btn-envio-comercial-confirmar")?.addEventListener("click", async () => {
+      if (!envioComercialPendiente) return;
+      const btn = document.getElementById("btn-envio-comercial-confirmar");
+      const { id, origen } = envioComercialPendiente;
+      const comercialId = document.getElementById("envio-comercial-destino")?.value || null;
+      const nota = document.getElementById("envio-comercial-nota")?.value.trim() || "";
+      if (btn) btn.disabled = true;
+      try {
+        await enviarOfertaAlComercial(id, comercialId, nota, { desdeDrawer: origen === "drawer" });
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    });
     document.getElementById("oferta-excel-input")?.addEventListener("change", (e) => {
       const file = e.target.files?.[0];
       e.target.value = "";
@@ -1152,7 +1440,7 @@
     });
 
     document.getElementById("drawer-estado")?.addEventListener("change", (e) => {
-      if (ofertaActual && e.target.value !== ofertaActual.estado) {
+      if (ofertaActual && e.target.value !== normalizarEstadoOferta(ofertaActual.estado)) {
         abrirModalRelevo(ofertaActual.id, e.target.value, "drawer");
       }
     });
